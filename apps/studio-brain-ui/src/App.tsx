@@ -644,15 +644,16 @@ export function App() {
   const [starterPackPending, setStarterPackPending] = useState<string | null>(null);
   const [starterPackMessage, setStarterPackMessage] = useState<string | null>(null);
   const [starterPackError, setStarterPackError] = useState<string | null>(null);
+  const [maintenancePending, setMaintenancePending] = useState<"reseed" | null>(null);
+  const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
+  const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const optionalOfflineCount = data.services.filter((service) => service.optional && service.state === "offline").length;
   const activeTaskCount = data.tasks.filter((task) => task.status === "queued" || task.status === "claimed").length;
   const failedTaskCount = data.tasks.filter((task) => task.status === "failed").length;
   const enabledRuleCount = data.rules.filter((rule) => rule.enabled).length;
-  const primaryDashboardUrl = frontDoorUrl;
   const n8nUrl = frontDoorServiceUrl("n8n");
-  const openclawUrl = frontDoorServiceUrl("openclaw");
   const secureHint = browserProtocol === "https:" ? "TLS active" : "HTTP only";
   const configuredAlertCount = data.alerts.configured_channel_count;
   const activeAlertCount = data.runtimeAlerts.active_alerts.length;
@@ -660,6 +661,7 @@ export function App() {
   const workspaceSettings = data.workspace.settings;
   const styleSourceCount = workspaceSettings.style_seed.source_paths.length;
   const alertEmailCount = workspaceSettings.alert_destinations.email_to.length;
+  const displayedFrontDoor = workspaceSettings.public_base_url || frontDoorUrl;
   const activeStarterPack = data.starterPacks.find(
     (pack) => pack.rule_slugs.length && pack.rule_slugs.every((slug) => data.rules.some((rule) => rule.slug === slug && rule.enabled)),
   );
@@ -915,6 +917,37 @@ export function App() {
       setStarterPackError(error instanceof Error ? error.message : "Unable to apply starter pack");
     } finally {
       setStarterPackPending(null);
+    }
+  }
+
+  async function reseedAutomationDefaults() {
+    setMaintenancePending("reseed");
+    setMaintenanceMessage(null);
+    setMaintenanceError(null);
+    try {
+      const response = await fetch(`${API.openclaw}/bootstrap/defaults`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? `Bootstrap reseed failed with ${response.status}`);
+      }
+      const payload = (await response.json()) as {
+        seeded_rule_count?: number;
+        starter_pack_count?: number;
+        playbook_count?: number;
+      };
+      setMaintenanceMessage(
+        `Reseeded ${payload.seeded_rule_count ?? 0} rules, ${payload.starter_pack_count ?? 0} starter packs, and ${payload.playbook_count ?? 0} playbooks.`,
+      );
+      await refreshData();
+    } catch (error) {
+      setMaintenanceError(error instanceof Error ? error.message : "Unable to reseed automation defaults");
+    } finally {
+      setMaintenancePending(null);
     }
   }
 
@@ -1325,32 +1358,34 @@ export function App() {
         <article className="panel command-card accent-gold">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Surface</p>
-              <h2>Operator Entry</h2>
+              <p className="section-kicker">Front Door</p>
+              <h2>Operator Access</h2>
             </div>
-            <span className="count-pill">{browserProtocol === "https:" ? "secure" : "live"}</span>
+            <span className="count-pill">{workspaceSettings.https_mode === "https_enabled" ? "https preferred" : "lan by ip"}</span>
           </div>
-          <div className="link-list">
-            <a className="link-chip" href={primaryDashboardUrl}>
-              <span>Control room</span>
-              <p>Primary operator front door for the entire control plane.</p>
-            </a>
-            <a className="link-chip" href={n8nUrl}>
-              <span>n8n editor</span>
-              <p>Workflow automation console for starter packs and webhook wiring.</p>
-            </a>
-            <a className="link-chip" href={openclawUrl}>
-              <span>OpenClaw API</span>
-              <p>Rule orchestration, bootstrap state, and policy enforcement surface.</p>
-            </a>
+          <div className="surface-grid">
+            <div className="surface-card emphasis-card">
+              <span className="metric-label">Primary operator URL</span>
+              <strong>{displayedFrontDoor}</strong>
+              <p>Keep operators on one entrypoint and avoid raw service ports for normal use.</p>
+            </div>
+            <div className="surface-card">
+              <span className="metric-label">LAN fallback</span>
+              <strong>{frontDoorUrl}</strong>
+              <p>Immediate full-network access by IP or current host while hostname and trust are still being finalized.</p>
+            </div>
+            <div className="surface-card">
+              <span className="metric-label">Automation admin</span>
+              <strong>{n8nUrl}</strong>
+              <p>Reserved for workflow administration, webhook debugging, and deeper engineering work.</p>
+            </div>
           </div>
           <p className="panel-note">
-            Operator-facing access should stay concentrated here. Direct ports remain available for
-            engineering and worker traffic, but the dashboard should be the normal entry path.
+            The control room is the product front door. n8n and OpenClaw remain available, but they are support surfaces,
+            not the normal novice entry path.
           </p>
           <p className="panel-note">
-            HTTPS becomes fully trusted after the Caddy local root certificate is imported on each
-            operator Mac.
+            HTTPS becomes fully trusted after the Caddy local root certificate is imported on each operator Mac.
           </p>
         </article>
 
@@ -1386,7 +1421,7 @@ export function App() {
           <div className="panel-header">
             <div>
               <p className="section-kicker">Automation</p>
-              <h2>Bootstrap And Alerts</h2>
+              <h2>Maintenance</h2>
             </div>
             <span className={`status-pill ${data.bootstrapStatus.status === "imported" || data.bootstrapStatus.status === "skipped" ? "ok" : "warn"}`}>
               {data.bootstrapStatus.status}
@@ -1406,7 +1441,28 @@ export function App() {
               <strong>{failedTaskCount}</strong>
             </div>
           </div>
+          <div className="header-actions top-gap">
+            <button
+              className="action-button"
+              disabled={maintenancePending !== null}
+              onClick={reseedAutomationDefaults}
+            >
+              {maintenancePending === "reseed" ? "reseeding" : "reseed defaults"}
+            </button>
+            <button
+              className="action-button ok"
+              disabled={starterPackPending !== null || !activeStarterPack}
+              onClick={() => activeStarterPack && applyStarterPack(activeStarterPack.slug)}
+            >
+              {starterPackPending && activeStarterPack ? "applying" : "reapply live posture"}
+            </button>
+          </div>
           <p className="panel-note">{data.bootstrapStatus.detail}</p>
+          <p className="panel-note">
+            Active posture: {activeStarterPack?.name ?? "custom or mixed rule state"}
+          </p>
+          {maintenanceMessage ? <p className="feedback ok">{maintenanceMessage}</p> : null}
+          {maintenanceError ? <p className="feedback bad">{maintenanceError}</p> : null}
         </article>
       </section>
 
