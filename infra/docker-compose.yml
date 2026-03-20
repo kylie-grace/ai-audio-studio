@@ -23,7 +23,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./db/00-create-databases.sql:/docker-entrypoint-initdb.d/00-create-databases.sql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
     networks: [studio-net]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-studio}"]
@@ -178,6 +179,8 @@ services:
       postgres:
         condition: service_healthy
       ollama:
+        condition: service_healthy
+      project-state:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8110/health"]
@@ -369,10 +372,11 @@ services:
     build:
       context: ../apps/studio-brain-ui
       dockerfile: Dockerfile
-    environment:
-      VITE_PROJECT_STATE_URL: http://localhost:8080
-      VITE_CRM_API_URL: http://localhost:8090
-      VITE_OPENCLAW_URL: http://localhost:8100
+      args:
+        # VITE_* vars are baked into the JS bundle at build time — must be passed as build args
+        VITE_PROJECT_STATE_URL: ${VITE_PROJECT_STATE_URL:-http://localhost:8080}
+        VITE_CRM_API_URL: ${VITE_CRM_API_URL:-http://localhost:8090}
+        VITE_OPENCLAW_URL: ${VITE_OPENCLAW_URL:-http://localhost:8100}
     networks: [studio-net]
     depends_on:
       - project-state

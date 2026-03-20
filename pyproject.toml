@@ -1,0 +1,8 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# The conftest.py at root adds the project root to sys.path.
+# Individual test files use importlib to load from hyphenated directories.
+addopts = "-v --tb=short"

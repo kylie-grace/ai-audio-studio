@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     approved_at          TIMESTAMPTZ,
     artifacts            JSONB NOT NULL DEFAULT '[]',
     error_message        TEXT,
+    retry_count          INTEGER NOT NULL DEFAULT 0,
+    max_retries          INTEGER NOT NULL DEFAULT 3,
     requested_by         TEXT NOT NULL DEFAULT 'system',
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()

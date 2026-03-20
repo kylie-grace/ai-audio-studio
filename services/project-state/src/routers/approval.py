@@ -1,5 +1,8 @@
 """Approval queue router — human approval and rejection of queued jobs."""
+import json
+import os
 from datetime import datetime, timezone
+
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
@@ -7,6 +10,21 @@ from ..db import get_pool
 from ..fsm import validate_transition
 
 router = APIRouter()
+
+# Allowlist of actors permitted to approve/reject jobs.
+# Set AUTHORIZED_ACTORS in env as comma-separated list (e.g. "owner,engineer").
+# If env var is unset, defaults to ["owner"] to prevent open access.
+_RAW = os.environ.get("AUTHORIZED_ACTORS", "owner")
+AUTHORIZED_ACTORS: set[str] = {a.strip() for a in _RAW.split(",") if a.strip()}
+
+
+def _require_authorized(actor: str) -> None:
+    if actor not in AUTHORIZED_ACTORS:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Actor '{actor}' is not in the authorized actors list. "
+                   f"Update AUTHORIZED_ACTORS in your .env to add them.",
+        )
 
 
 class RejectBody(BaseModel):
@@ -24,6 +42,8 @@ async def list_approval_queue():
 
 @router.post("/{job_id}/approve")
 async def approve_job(job_id: str, x_actor: str = Header(...)):
+    _require_authorized(x_actor)
+
     pool = await get_pool()
     job = await pool.fetchrow("SELECT * FROM jobs WHERE id = $1", job_id)
     if not job:
@@ -33,21 +53,24 @@ async def approve_job(job_id: str, x_actor: str = Header(...)):
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
+    now = datetime.now(timezone.utc)
     await pool.execute(
         """UPDATE jobs SET status='approved', approved_by=$1, approved_at=$2,
            updated_at=now() WHERE id=$3""",
-        x_actor, datetime.now(timezone.utc), job_id
+        x_actor, now, job_id,
     )
     await pool.execute(
-        """INSERT INTO audit_log (job_id, actor, action, tier)
-           VALUES ($1, $2, 'approve', 3)""",
-        job_id, f"human:{x_actor}"
+        """INSERT INTO audit_log (job_id, project_id, actor, action, tier)
+           VALUES ($1, $2, $3, 'approve', 3)""",
+        job_id, job["project_id"], f"human:{x_actor}",
     )
     return {"job_id": job_id, "status": "approved", "approved_by": x_actor}
 
 
 @router.post("/{job_id}/reject")
 async def reject_job(job_id: str, body: RejectBody, x_actor: str = Header(...)):
+    _require_authorized(x_actor)
+
     pool = await get_pool()
     job = await pool.fetchrow("SELECT * FROM jobs WHERE id = $1", job_id)
     if not job:
@@ -60,11 +83,12 @@ async def reject_job(job_id: str, body: RejectBody, x_actor: str = Header(...)):
     await pool.execute(
         """UPDATE jobs SET status='rejected', error_message=$1, updated_at=now()
            WHERE id=$2""",
-        body.reason, job_id
+        body.reason, job_id,
     )
     await pool.execute(
-        """INSERT INTO audit_log (job_id, actor, action, tier, payload)
-           VALUES ($1, $2, 'reject', 3, $3)""",
-        job_id, f"human:{x_actor}", {"reason": body.reason}
+        """INSERT INTO audit_log (job_id, project_id, actor, action, tier, payload)
+           VALUES ($1, $2, $3, 'reject', 3, $4::jsonb)""",
+        job_id, job["project_id"], f"human:{x_actor}",
+        json.dumps({"reason": body.reason}),
     )
     return {"job_id": job_id, "status": "rejected"}

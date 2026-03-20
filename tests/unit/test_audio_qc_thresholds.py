@@ -1,9 +1,18 @@
 """Unit tests for audio QC thresholds — no audio files needed."""
+import importlib.util
+import os
 import pytest
-import sys
-sys.path.insert(0, "/app")
 
-from services.audio_qc.src.thresholds import get_thresholds, TARGETS
+ROOT = os.path.join(os.path.dirname(__file__), "../..")
+_mod = importlib.util.spec_from_file_location(
+    "thresholds",
+    os.path.join(ROOT, "services/audio-qc/src/thresholds.py")
+)
+thresholds_module = importlib.util.module_from_spec(_mod)
+_mod.loader.exec_module(thresholds_module)
+
+get_thresholds = thresholds_module.get_thresholds
+TARGETS = thresholds_module.TARGETS
 
 
 class TestThresholds:

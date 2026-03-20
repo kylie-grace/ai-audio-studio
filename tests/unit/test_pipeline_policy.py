@@ -1,9 +1,18 @@
 """Unit tests for engineer effort level / pipeline policy gating."""
+import importlib.util
+import os
 import pytest
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
-from services.project_state.src.pipeline_policy import is_module_permitted, permitted_modules
+ROOT = os.path.join(os.path.dirname(__file__), "../..")
+_mod = importlib.util.spec_from_file_location(
+    "pipeline_policy",
+    os.path.join(ROOT, "services/project-state/src/pipeline_policy.py")
+)
+pipeline_policy = importlib.util.module_from_spec(_mod)
+_mod.loader.exec_module(pipeline_policy)
+
+is_module_permitted = pipeline_policy.is_module_permitted
+permitted_modules = pipeline_policy.permitted_modules
 
 
 class TestEffortLevels:

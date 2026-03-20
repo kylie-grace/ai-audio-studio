@@ -16,10 +16,15 @@ echo "Ollama is ready."
 pull_model() {
   local model="$1"
   echo "Pulling ${model}..."
-  curl -sf -X POST "${OLLAMA_URL}/api/pull" \
+  local result
+  result=$(curl -sf -X POST "${OLLAMA_URL}/api/pull" \
     -H "Content-Type: application/json" \
     -d "{\"name\": \"${model}\"}" \
-    | tail -1
+    | tail -1)
+  if ! echo "$result" | grep -q '"status":"success"'; then
+    echo "ERROR: Failed to pull ${model}. Last response: ${result}" >&2
+    exit 1
+  fi
   echo "Done: ${model}"
 }
 
@@ -29,5 +34,5 @@ pull_model "${CLASSIFIER_MODEL:-qwen2.5:3b}"
 pull_model "${EMBEDDING_MODEL:-nomic-embed-text}"
 
 echo ""
-echo "All models pulled. Verify with:"
+echo "All models pulled successfully. Verify with:"
 echo "  curl http://localhost:11434/api/tags | python3 -m json.tool"

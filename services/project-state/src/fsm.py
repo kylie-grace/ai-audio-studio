@@ -13,19 +13,27 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "approved":          {"in-progress", "complete"},
     "rejected":          set(),   # Terminal state — no further transitions
     "complete":          set(),   # Terminal state
-    "failed":            {"pending"},  # Retry path only
+    "failed":            {"pending"},  # Retry path only (subject to max_retries check)
 }
 
 TERMINAL_STATES = {"rejected", "complete"}
 
 
-def validate_transition(current: str, next_status: str, approval_required: bool = True) -> None:
+def validate_transition(
+    current: str,
+    next_status: str,
+    approval_required: bool = True,
+    retry_count: int = 0,
+    max_retries: int = 3,
+) -> None:
     """
     Validate a job status transition.
 
     Raises ValueError if the transition is not allowed.
-    Additional constraint: approval_required jobs cannot go from
-    in-progress directly to complete.
+
+    Additional constraints:
+    - approval_required jobs cannot go from in-progress directly to complete.
+    - failed → pending is blocked once retry_count >= max_retries.
     """
     allowed = ALLOWED_TRANSITIONS.get(current, set())
     if next_status not in allowed:
@@ -38,6 +46,12 @@ def validate_transition(current: str, next_status: str, approval_required: bool 
             "Job has approval_required=True. Cannot move from 'in-progress' "
             "directly to 'complete'. Must pass through 'awaiting-approval' → 'approved'."
         )
+    if current == "failed" and next_status == "pending":
+        if retry_count >= max_retries:
+            raise ValueError(
+                f"Job has reached max_retries ({max_retries}). "
+                "Cannot retry a job that has exceeded its retry limit."
+            )
 
 
 def is_terminal(status: str) -> bool:
