@@ -1,3 +1,7 @@
+#
+# Optional split-mode worker stack.
+# Run this only on a second Mac when you want the control plane and worker separated.
+#
 services:
   studio-worker:
     build:

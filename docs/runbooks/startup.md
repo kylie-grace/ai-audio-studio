@@ -16,7 +16,7 @@ bash services/ollama/pull_models.sh
 # Optional: expose the dashboard and APIs to your LAN
 # Set BIND_HOST=0.0.0.0 in infra/.env before starting
 
-# Start the Mac mini control plane
+# Start the local control plane
 docker compose --env-file infra/.env -f infra/docker-compose.yml up -d
 
 # Watch logs during startup
@@ -38,10 +38,12 @@ curl -sf http://localhost:11434/api/tags && echo "ollama OK"
 ```
 
 ## Access UIs
-- **Studio Brain UI** (approval queue): http://localhost:3000
-- **n8n workflows**: http://localhost:5678 (login: see infra/.env N8N_USER/N8N_PASSWORD)
+- **Studio Brain UI**: http://localhost:3000
+- **n8n workflows**: http://localhost:5678 (login: see `infra/.env` `N8N_USER`/`N8N_PASSWORD`)
 - **LAN dashboard**: `http://<mac-mini-lan-ip>:3000` when `BIND_HOST=0.0.0.0`
-- **Studio worker runbook**: see [studio-worker.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/studio-worker.md)
+- **Split-worker runbook**: see [studio-worker.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/studio-worker.md)
+
+If you are running a single Mac, stop here. `docker-compose.worker.yml` is optional.
 
 ## Stop the stack
 

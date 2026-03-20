@@ -112,17 +112,25 @@ function asArray(value: unknown): string[] {
   return [];
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
-    } catch {
-      return {};
-    }
+function formatUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return {
+      origin: `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`,
+      path: parsed.pathname !== "/" ? parsed.pathname : "",
+    };
+  } catch {
+    return { origin: url, path: "" };
   }
-  return {};
+}
+
+function summarizeTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function statusTone(state: ServiceState | string) {
@@ -168,6 +176,11 @@ export function App() {
     loadState: "loading",
     error: null,
   });
+
+  const healthyCount = data.services.filter((service) => service.state === "healthy").length;
+  const workerCount = data.workers.length;
+  const activeTaskCount = data.tasks.filter((task) => task.status === "queued" || task.status === "claimed").length;
+  const enabledRuleCount = data.rules.filter((rule) => rule.enabled).length;
 
   useEffect(() => {
     let active = true;
@@ -226,10 +239,16 @@ export function App() {
           <p className="eyebrow">AI Audio Studio</p>
           <h1>Studio Brain UI</h1>
           <p className="lede">
-            Mac mini control plane, studio Mac worker, and live orchestration state in
-            one dashboard. This view polls the running APIs through the container proxy
-            so it works on the LAN without CORS plumbing.
+            Production control surface for the Mac mini and optional worker node. Live
+            service health, approvals, orchestration rules, and task execution all flow
+            through the same LAN-safe proxy path.
           </p>
+          <div className="hero-tags">
+            <span className="tag">LAN ready</span>
+            <span className="tag">approval-gated</span>
+            <span className="tag">live polling</span>
+            <span className="tag">worker optional</span>
+          </div>
         </div>
         <div className="hero-meta">
           <div className="metric">
@@ -241,23 +260,45 @@ export function App() {
             <strong>{data.loadState}</strong>
             {data.error ? <span className="metric-subtle">{data.error}</span> : null}
           </div>
+          <div className="metric metric-grid">
+            <div>
+              <span className="metric-label">Services</span>
+              <strong>{healthyCount}/{data.services.length}</strong>
+            </div>
+            <div>
+              <span className="metric-label">Workers</span>
+              <strong>{workerCount}</strong>
+            </div>
+            <div>
+              <span className="metric-label">Rules</span>
+              <strong>{enabledRuleCount}</strong>
+            </div>
+            <div>
+              <span className="metric-label">Active Tasks</span>
+              <strong>{activeTaskCount}</strong>
+            </div>
+          </div>
         </div>
       </section>
 
       <section className="card-grid">
-        {data.services.map((service) => (
-          <article key={service.name} className={`panel service-card ${statusTone(service.state)}`}>
-            <div className="panel-header">
-              <h2>{service.name}</h2>
-              <span className={`status-pill ${statusTone(service.state)}`}>{service.state}</span>
-            </div>
-            <p>{service.note}</p>
-            <a href={service.url} target="_blank" rel="noreferrer">
-              {service.url}
-            </a>
-            <span className="metric-subtle">{service.detail}</span>
-          </article>
-        ))}
+        {data.services.map((service) => {
+          const formatted = formatUrl(service.url);
+          return (
+            <article key={service.name} className={`panel service-card ${statusTone(service.state)}`}>
+              <div className="panel-header">
+                <h2>{service.name}</h2>
+                <span className={`status-pill ${statusTone(service.state)}`}>{service.state}</span>
+              </div>
+              <p>{service.note}</p>
+              <div className="endpoint">
+                <span className="endpoint-origin">{formatted.origin}</span>
+                {formatted.path ? <span className="endpoint-path">{formatted.path}</span> : null}
+              </div>
+              <span className="metric-subtle">{service.detail}</span>
+            </article>
+          );
+        })}
       </section>
 
       <section className="content-grid">
@@ -279,7 +320,10 @@ export function App() {
                   <div className="row-meta">
                     <span className={`status-pill ${statusTone(worker.status)}`}>{worker.status}</span>
                     <span className="muted">{asArray(worker.capabilities).join(", ")}</span>
-                    <span className="muted">{worker.api_base_url ?? "no api url"}</span>
+                    <span className="muted">
+                      {worker.api_base_url ? formatUrl(worker.api_base_url).origin : "no api url"}
+                    </span>
+                    <span className="muted">seen {summarizeTime(worker.last_seen_at)}</span>
                   </div>
                 </div>
               ))
@@ -306,8 +350,9 @@ export function App() {
                   </div>
                   <div className="row-meta">
                     <span className={`status-pill ${rule.enabled ? "ok" : "bad"}`}>
-                      tier {rule.required_tier}
+                      {rule.enabled ? "enabled" : "disabled"}
                     </span>
+                    <span className="muted">tier {rule.required_tier}</span>
                     <span className="muted">{rule.style_profile_name ?? "no style profile"}</span>
                     <span className="muted">
                       {rule.approval_required ? "approval required" : "no approval"}
@@ -330,16 +375,16 @@ export function App() {
         <div className="table-stack">
           {data.tasks.length ? (
             data.tasks.slice(0, 8).map((task) => (
-              <div key={task.id} className="table-row">
-                <div>
-                  <strong>{task.task_type}</strong>
-                  <div className="muted">
-                    {task.worker_slug ?? task.claimed_by ?? "unassigned"} · {task.priority}
+                <div key={task.id} className="table-row">
+                  <div>
+                    <strong>{task.task_type}</strong>
+                    <div className="muted">
+                      {task.worker_slug ?? task.claimed_by ?? "unassigned"} · {task.priority}
                   </div>
                 </div>
                 <div className="row-meta">
                   <span className={`status-pill ${statusTone(task.status)}`}>{task.status}</span>
-                  <span className="muted">{task.created_at}</span>
+                  <span className="muted">{summarizeTime(task.created_at)}</span>
                   {task.error_message ? <span className="muted">{task.error_message}</span> : null}
                 </div>
               </div>

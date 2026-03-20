@@ -1,16 +1,16 @@
 # AI Audio Studio Platform
 
-> **Active build, not production-ready.** The repository now contains a working control-plane baseline with DB-backed services, worker registration, and remote-task plumbing, but it is still under construction. Treat it as an MVP foundation for a Mac mini control plane plus studio Mac worker, not a finished production system.
+> **Active build, not production-ready.** The repository now contains a working control-plane baseline with DB-backed services, worker registration, and remote-task plumbing, but it is still under construction. Treat it as an MVP foundation for a single powerful Mac or a Mac mini plus optional studio Mac worker, not a finished production system.
 
 Automated studio operations platform for independent recording studios. Reduces admin overhead by 80-90% while maintaining human control over all creative, financial, and client-facing decisions.
 
 ## Architecture
 
-Mac mini control plane plus studio worker:
-- **Mac mini (Studio Brain)** — always-on Docker stack: UI, n8n, Ollama, Postgres, APIs, orchestration
-- **Studio Mac worker** — separate macOS node for DAW-adjacent tasks, file prep, revision script generation, delivery packaging
-- **Shared volume** — `/Volumes/StudioShare/` or equivalent shared mount visible to both machines
-- **LAN access** — set `BIND_HOST=0.0.0.0` to expose the dashboard and APIs to the local network
+Single-machine first, split-worker optional:
+- **Single Mac mode** — one Mac runs the whole Docker stack locally, including UI, n8n, Ollama, Postgres, APIs, and orchestration.
+- **Split mode** — the Mac mini runs the control plane and a second Mac runs `studio-worker` for filesystem-heavy or DAW-adjacent tasks.
+- **Shared volume** — `/Volumes/StudioShare/` or equivalent shared mount visible to any machine executing file tasks.
+- **LAN access** — set `BIND_HOST=0.0.0.0` to expose the dashboard and APIs to the local network.
 
 ## Quick Start
 
@@ -34,10 +34,10 @@ cp infra/env.example infra/.env
 # 3. Pull Ollama models (takes 10-30 min depending on connection)
 bash services/ollama/pull_models.sh
 
-# 4. Start the Mac mini control plane
+# 4. Start the control plane on the local Mac
 docker compose --env-file infra/.env -f infra/docker-compose.yml up -d
 
-# 5. Optional: start the studio worker on the studio Mac
+# 5. Optional: start the studio worker on a second Mac
 docker compose --env-file infra/.env -f infra/docker-compose.worker.yml up -d
 
 # 6. Verify all services healthy
@@ -58,6 +58,8 @@ open http://localhost:5678                  # n8n workflow editor
 # If BIND_HOST=0.0.0.0, access from another machine with:
 # http://<mac-mini-lan-ip>:3000
 ```
+
+Single-machine mode does not require `docker-compose.worker.yml`; the worker file is only for split deployments.
 
 ### Headless Validation
 
@@ -89,7 +91,7 @@ Current validation is headless and MVP-oriented:
 | `session-prep` | 8150 | Stem validation and session organization |
 | `revision-parser` | 8160 | Natural language → DAW change objects |
 | `delivery-packager` | 8170 | QC-gated delivery bundle assembly |
-| `studio-worker` | 8190 | Remote studio Mac task agent |
+| `studio-worker` | 8190 | Optional remote studio Mac task agent |
 | `ollama` | 11434 | Local LLM serving |
 | `postgres` | 5432 | Shared database (internal only) |
 
@@ -103,10 +105,11 @@ Implemented or partially implemented:
 - effort-level gating helper
 - audio QC threshold presets
 - Docker service graph and prompt/task scaffolding
-- studio worker service for remote file-task execution
+- studio worker service for optional remote file-task execution
 
 Still incomplete:
 - live approval queue UI and worker health widgets
+- full single-machine execution parity across the stack
 - full OpenClaw execution against all email/content modules
 - richer style-profile extraction and per-client/per-project context layering
 - audio QC remote execution and DAW automation hooks
@@ -125,7 +128,7 @@ Still incomplete:
 - **Style Profiles**: paste tone guidance, point at reference files, or combine both through `crm-api /style-profiles`
 - **Orchestration Rules**: configure OpenClaw routing contracts through `openclaw /rules`
 - **Studio Worker Queue**: enqueue bounded remote tasks in `project-state /workers/tasks`
-- **Studio Worker Agent**: run `infra/docker-compose.worker.yml` on the studio Mac to claim and execute tasks
+- **Studio Worker Agent**: run `infra/docker-compose.worker.yml` only when you want a second Mac to claim and execute tasks
 - **Auto-seeded defaults**: CRM seeds a baseline studio tone profile and OpenClaw seeds email/content routing rules on startup
 
 ## Safety Model
@@ -161,6 +164,18 @@ docker compose -f infra/docker-compose.yml restart project-state
 docker compose -f infra/docker-compose.yml exec postgres \
   psql -U studio -d studiodb -f /docker-entrypoint-initdb.d/init.sql
 ```
+
+## Deployment Modes
+
+Use single-machine mode when one Mac should do everything locally:
+- Start `infra/docker-compose.yml`
+- Leave `infra/docker-compose.worker.yml` stopped
+- Keep all tasks on the local machine unless you explicitly need a second node
+
+Use split mode when you want a dedicated worker Mac:
+- Start `infra/docker-compose.yml` on the control-plane machine
+- Start `infra/docker-compose.worker.yml` on the worker machine
+- Point `MAC_MINI_BASE_URL` at the control-plane host and share the same project paths
 
 ## Task Files
 

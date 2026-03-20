@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Run a lightweight worker service on the studio Mac so the Mac mini can hand off bounded filesystem and DAW-adjacent tasks without moving the whole control plane.
+Run a lightweight worker service on a second Mac so the control plane can hand off bounded filesystem and DAW-adjacent tasks without moving the whole stack.
 
 ## Initial scope
 
@@ -19,6 +19,7 @@ The code is split into `config`, `paths`, `runner`, `tasks`, and `adapters` so D
 - Docker Desktop installed on the studio Mac
 - Shared storage mounted at the same path as the Mac mini, or `PATH_TRANSLATION_JSON` configured
 - The Mac mini control plane reachable on the LAN
+- If you are on a single Mac, you do not need this worker at all.
 
 ## Configure
 
