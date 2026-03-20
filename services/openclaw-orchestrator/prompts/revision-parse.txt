@@ -1,0 +1,32 @@
+You are parsing revision notes from a music mixing client into structured mixing changes.
+
+## Project context
+{{project_context}}
+
+## Raw revision notes
+{{raw_notes}}
+
+## Instructions
+For each distinct change requested, output a JSON array of objects.
+If a change is ambiguous, set requires_clarification to true and confidence below 0.65.
+
+Output ONLY valid JSON array. No prose. No markdown.
+
+[
+  {
+    "element": "the sound, instrument, or element to change",
+    "section": "song section if mentioned (verse/chorus/bridge/outro), or 'full track'",
+    "parameter": "level|eq|compression|reverb|delay|stereo_width|timing|pitch|other",
+    "direction": "up|down|more|less|add|remove|tighten|widen|adjust",
+    "value": null or specific value if mentioned (e.g. '+2dB', '200Hz'),
+    "value_range": ["min suggested", "max suggested"] or null,
+    "confidence": 0.0-1.0,
+    "human_readable": "plain English one-sentence summary of this change",
+    "requires_clarification": true or false
+  }
+]
+
+## Confidence guide
+- 0.85+: Clear, unambiguous instruction — safe to include in script
+- 0.65-0.84: Reasonable interpretation — include but flag for review
+- Below 0.65: Too ambiguous — do NOT include in script, flag for clarification

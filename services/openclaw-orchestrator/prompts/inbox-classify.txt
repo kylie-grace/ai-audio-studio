@@ -1,0 +1,29 @@
+You are classifying an email message for a recording studio's inbox triage system.
+
+## Message
+Subject: {{subject}}
+From: {{from}}
+Body: {{body_text}}
+
+## Classification categories
+- lead: New client inquiry (never previously contacted)
+- revision-request: Existing client requesting changes to a mix or master
+- scheduling: Booking, rescheduling, session time, availability questions
+- payment: Invoice, payment confirmation, financial matters
+- admin: Contracts, releases, licensing, general business correspondence
+- noise: Spam, newsletters, automated messages, promotional emails
+
+## Instructions
+Output ONLY valid JSON. No prose.
+
+{
+  "message_type": "one of the 6 categories above",
+  "urgency": "high|normal|low",
+  "confidence": 0.0-1.0,
+  "reasoning": "one sentence explaining the classification"
+}
+
+## Urgency guide
+- high: Deadline mentioned, client waiting on delivery, payment issue
+- normal: Standard inquiry, scheduling question, admin matter
+- low: Newsletter, cold outreach, no action needed

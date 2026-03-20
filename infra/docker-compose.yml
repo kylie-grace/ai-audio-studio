@@ -1,0 +1,235 @@
+version: "3.9"
+
+networks:
+  studio-net:
+    driver: bridge
+
+volumes:
+  ollama-data:
+  postgres-data:
+  n8n-data:
+  shared-projects:
+  draft-queue:
+  approval-queue:
+
+services:
+
+  # ── Postgres (shared DB for all services) ─────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-studiodb}
+      POSTGRES_USER: ${POSTGRES_USER:-studio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks: [studio-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-studio}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  # ── Ollama (local LLM serving — no cloud calls) ────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-data:/root/.ollama
+    networks: [studio-net]
+    environment:
+      OLLAMA_HOST: 0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:11434:11434"
+
+  # ── n8n (workflow automation and webhooks) ─────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: ${N8N_DB:-n8ndb}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-studio}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD}
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:5678}
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: 336  # 14 days
+    volumes:
+      - n8n-data:/home/node/.n8n
+    networks: [studio-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5678/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:5678:5678"
+
+  # ── Project State Service ──────────────────────────────────────────────
+  project-state:
+    build:
+      context: ../services/project-state
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      APPROVAL_QUEUE_PATH: /data/approval-queue
+      PORT: "8080"
+    volumes:
+      - shared-projects:/data/projects
+      - approval-queue:/data/approval-queue
+    networks: [studio-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  # ── CRM API ───────────────────────────────────────────────────────────
+  crm-api:
+    build:
+      context: ../services/crm-api
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      PORT: "8090"
+    networks: [studio-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:8090:8090"
+
+  # ── OpenClaw Orchestrator ──────────────────────────────────────────────
+  openclaw:
+    build:
+      context: ../services/openclaw-orchestrator
+      dockerfile: Dockerfile
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      PROJECT_STATE_URL: http://project-state:8080
+      CRM_API_URL: http://crm-api:8090
+      PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
+      CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-qwen2.5:3b}
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      POLICY_ENFORCEMENT: ${POLICY_ENFORCEMENT:-strict}
+      PORT: "8100"
+    volumes:
+      - ../services/openclaw-orchestrator/prompts:/app/prompts:ro
+      - shared-projects:/data/projects
+      - draft-queue:/data/draft-queue
+      - approval-queue:/data/approval-queue
+    networks: [studio-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      project-state:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:8100:8100"
+
+  # ── Content Pipeline (social drafting) ────────────────────────────────
+  content-pipeline:
+    build:
+      context: ../services/content-pipeline
+      dockerfile: Dockerfile
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      PROJECT_STATE_URL: http://project-state:8080
+      DRAFT_QUEUE_PATH: /data/draft-queue
+      PORT: "8110"
+    volumes:
+      - draft-queue:/data/draft-queue
+      - shared-projects:/data/projects
+    networks: [studio-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8110/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:8110:8110"
+
+  # ── Audio QC Service ───────────────────────────────────────────────────
+  audio-qc:
+    build:
+      context: ../services/audio-qc
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      PROJECT_STATE_URL: http://project-state:8080
+      SHARED_PROJECTS_PATH: /data/projects
+      PORT: "8120"
+    volumes:
+      - shared-projects:/data/projects
+    networks: [studio-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      project-state:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8120/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:8120:8120"
+
+  # ── Studio Brain UI ────────────────────────────────────────────────────
+  studio-brain-ui:
+    build:
+      context: ../apps/studio-brain-ui
+      dockerfile: Dockerfile
+    environment:
+      VITE_PROJECT_STATE_URL: http://localhost:8080
+      VITE_CRM_API_URL: http://localhost:8090
+      VITE_OPENCLAW_URL: http://localhost:8100
+    networks: [studio-net]
+    depends_on:
+      - project-state
+      - crm-api
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:3000:3000"

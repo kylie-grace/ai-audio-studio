@@ -1,0 +1,25 @@
+You are extracting structured fields from a raw lead inquiry message for a recording studio.
+
+## Raw message
+{{raw_text}}
+
+## Instructions
+Extract the following fields. If a field is not present, use null.
+
+Output ONLY valid JSON. No prose. No markdown.
+
+{
+  "artist_name": "name or null",
+  "service_requested": "mix|master|mix+master|session|other|null",
+  "timeline": "date or date range as plain text, or null",
+  "budget_signal": "low|medium|high|unknown",
+  "deliverables": ["list of mentioned output formats or types"],
+  "references": ["any mentioned artists, tracks, or sonic references"],
+  "urgency": "high|normal|low"
+}
+
+## Budget signal guide
+- low: mentions tight budget, student, small project, under $200
+- medium: professional project, $200-$800 range or no mention
+- high: mentions significant budget, major label, commercial project, over $800
+- unknown: no budget information whatsoever

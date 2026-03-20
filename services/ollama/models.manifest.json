@@ -1,0 +1,25 @@
+{
+  "models": [
+    {
+      "name": "qwen2.5:14b-instruct",
+      "role": "planner",
+      "description": "Strong reasoning and drafting. Used by lead-intake, revision-parser, social-drafting.",
+      "min_ram_gb": 10,
+      "pull_priority": 1
+    },
+    {
+      "name": "qwen2.5:3b",
+      "role": "classifier",
+      "description": "Fast classification and routing. Used by inbox-triage, lead normalizer.",
+      "min_ram_gb": 2,
+      "pull_priority": 2
+    },
+    {
+      "name": "nomic-embed-text",
+      "role": "embedding",
+      "description": "Text embeddings for project memory and retrieval. Optional.",
+      "min_ram_gb": 1,
+      "pull_priority": 3
+    }
+  ]
+}

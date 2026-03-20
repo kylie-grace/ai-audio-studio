@@ -1,0 +1,60 @@
+# Environment secrets - NEVER commit
+infra/.env
+**/.env
+**/*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / React
+node_modules/
+apps/studio-brain-ui/dist/
+apps/studio-brain-ui/.vite/
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Docker volumes (local data)
+infra/volumes/
+
+# Ollama model weights (pulled at runtime, not committed)
+services/ollama/models/
+
+# Audio files - too large for git (use shared volume)
+*.wav
+*.aif
+*.aiff
+*.mp3
+*.flac
+*.ogg
+*.stem.mp4
+
+# n8n local SQLite (when not using Postgres)
+services/n8n/*.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test artifacts
+tests/fixtures/generated/
+htmlcov/
+.coverage
+coverage.xml
+
+# Logs
+*.log
+logs/
