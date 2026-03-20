@@ -462,6 +462,7 @@ code {
 }
 
 .snapshot-card {
+  position: relative;
   display: grid;
   gap: 8px;
   padding: 16px 18px;
@@ -472,10 +473,20 @@ code {
     rgba(255, 255, 255, 0.02);
 }
 
+.snapshot-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(243, 203, 115, 0.92), rgba(91, 149, 173, 0.82));
+  opacity: 0.9;
+}
+
 .snapshot-card strong {
   display: block;
-  font-size: 1rem;
-  letter-spacing: -0.02em;
+  font-size: 1.02rem;
+  letter-spacing: -0.03em;
 }
 
 .snapshot-card p {

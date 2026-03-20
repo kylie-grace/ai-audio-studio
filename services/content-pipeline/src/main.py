@@ -48,15 +48,27 @@ class DraftSocialBody(BaseModel):
 
 
 def generate_caption(brief: str, platform: str, content_type: str) -> tuple[str, list[str], str]:
+    return generate_caption_with_context(brief, platform, content_type, studio_name="the studio", style_summary="")
+
+
+def generate_caption_with_context(
+    brief: str,
+    platform: str,
+    content_type: str,
+    studio_name: str,
+    style_summary: str,
+) -> tuple[str, list[str], str]:
     tags = {
         "instagram": ["mixing", "mastering", "recordingstudio", "newmusic", "audioengineer", "independentartist"],
         "facebook": ["mixing", "mastering", "studio"],
         "threads": ["mixing", "studio", "music"],
         "linkedin": ["audio", "production", "mixing", "studio"],
     }[platform]
+    studio_line = studio_name.strip() if studio_name.strip() else "the studio"
+    style_line = f" Tone: {style_summary.strip()}" if style_summary.strip() else ""
     caption = (
-        f"{content_type.replace('-', ' ').title()} update: {brief.strip()} "
-        f"This draft was prepared for review before anything is posted."
+        f"{studio_line} {content_type.replace('-', ' ').title()} update: {brief.strip()} "
+        f"This draft was prepared for review before anything is posted.{style_line}"
     ).strip()
     limit = PLATFORM_LIMITS[platform]["max_chars"]
     if len(caption) > limit:
@@ -64,6 +76,18 @@ def generate_caption(brief: str, platform: str, content_type: str) -> tuple[str,
     short = caption[:147] + "..." if len(caption) > 150 else caption
     hashtags = [f"#{tag}" for tag in tags[: PLATFORM_LIMITS[platform]["tags"]]]
     return caption, hashtags, short
+
+
+async def load_workspace_context(pool: asyncpg.Pool) -> tuple[str, str]:
+    settings = await pool.fetchrow("SELECT studio_name FROM workspace_settings WHERE singleton = TRUE")
+    style_profile = await pool.fetchrow(
+        "SELECT extracted_guidance FROM style_profiles WHERE scope='studio' ORDER BY created_at ASC LIMIT 1"
+    )
+    guidance = json.loads(style_profile["extracted_guidance"]) if style_profile and style_profile["extracted_guidance"] else {}
+    return (
+        settings["studio_name"] if settings and settings["studio_name"] else "the studio",
+        guidance.get("summary", ""),
+    )
 
 
 @app.get("/health")
@@ -91,10 +115,17 @@ async def draft_social(body: DraftSocialBody):
     )
 
     drafts = []
+    studio_name, style_summary = await load_workspace_context(pool)
     for platform in body.platforms:
         if platform not in PLATFORM_LIMITS:
             raise HTTPException(status_code=422, detail=f"Unsupported platform: {platform}")
-        caption, hashtags, short = generate_caption(body.brief, platform, body.content_type)
+        caption, hashtags, short = generate_caption_with_context(
+            body.brief,
+            platform,
+            body.content_type,
+            studio_name=studio_name,
+            style_summary=style_summary,
+        )
         row = await pool.fetchrow(
             """INSERT INTO social_drafts
                (project_id, job_id, platform, caption, hashtags, asset_manifest, variant_short, status)

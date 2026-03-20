@@ -5,6 +5,7 @@
 - Treat single-machine mode as the default deployment. The studio worker remains optional capacity for DAW-side execution on the same Mac or a second Mac.
 - Finish the legacy cutover so the old infra mental model is retired and the product is described consistently as `ai-audio-studio`.
 - Preserve the current reality in docs: strong control-plane MVP, not yet novice-complete product.
+- Document the network posture clearly: full-LAN IP access works immediately, hostname/TLS is the preferred operator path, and direct ports remain for engineering and worker traffic.
 
 ## Next
 - Extend the new workspace questionnaire into broader operator-safe settings coverage so normal setup does not require editing compose or env files beyond secrets and host wiring.
@@ -14,6 +15,7 @@
 - Add alert fan-out through webhook, email, and n8n from one configuration surface.
 - Expose more operator-safe settings in the control room so service behavior can be tuned without editing compose files.
 - Improve first-run UX so a studio owner can get from fresh clone to usable dashboard, starter workflows, and baseline studio configuration with a clear guided path.
+- Make hostname and certificate trust setup feel like a standard onboarding step rather than hidden ops knowledge.
 
 ## Productionizing
 - Finish DAW adapters beyond dry run, with SoundFlow and ReaScript execution validated on a real studio Mac.

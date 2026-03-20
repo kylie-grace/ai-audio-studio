@@ -880,6 +880,18 @@ export function App() {
     workspaceSettings.deployment_mode === "control_plane_plus_worker" ? "worker optional" : "single machine",
     workspaceSettings.public_base_url || frontDoorUrl,
   ];
+  const frontDoorMode =
+    workspaceSettings.https_mode === "https_enabled"
+      ? "HTTPS on stack"
+      : workspaceSettings.https_mode === "https_terminated_elsewhere"
+        ? "HTTPS upstream"
+        : "LAN HTTP";
+  const integrationReadinessLabel =
+    integrationFlags >= 4 ? "integration ready" : integrationFlags >= 2 ? "partially wired" : "minimal wiring";
+  const workerPostureLabel =
+    workspaceSettings.worker.enabled && workspaceSettings.deployment_mode === "control_plane_plus_worker"
+      ? "worker posture active"
+      : "worker optional";
 
   return (
     <main className="app-shell">
@@ -921,19 +933,24 @@ export function App() {
             </p>
           </article>
           <article className="snapshot-card">
-            <span className="metric-label">Network</span>
+            <span className="metric-label">LAN front door</span>
+            <strong>{frontDoorUrl}</strong>
+            <p>{frontDoorMode}</p>
+          </article>
+          <article className="snapshot-card">
+            <span className="metric-label">Operator front door</span>
             <strong>{workspaceSettings.public_base_url || frontDoorUrl}</strong>
             <p>{workspaceSettings.https_mode.replace(/_/g, " ")}</p>
           </article>
           <article className="snapshot-card">
-            <span className="metric-label">Context</span>
-            <strong>{data.workspace.style_profile_count} style profile(s)</strong>
-            <p>{styleSourceCount} reference file(s) · {alertEmailCount} alert destination(s)</p>
+            <span className="metric-label">Readiness</span>
+            <strong>{integrationReadinessLabel}</strong>
+            <p>{data.workspace.style_profile_count} style profile(s) · {styleSourceCount} reference file(s)</p>
           </article>
           <article className="snapshot-card">
             <span className="metric-label">Integrations</span>
             <strong>{integrationFlags} enabled</strong>
-            <p>{workspaceSettings.worker.enabled ? "worker enabled" : "worker optional"}</p>
+            <p>{alertEmailCount} alert destination(s) · {workerPostureLabel}</p>
           </article>
         </div>
         <div className="onboarding-actions-bar">
@@ -964,7 +981,7 @@ export function App() {
         </div>
         <div className="onboarding-grid">
           <article className="mini-card">
-            <span className="metric-label">1. Identity</span>
+            <span className="metric-label">1. Studio identity</span>
             <label className="field">
               <span className="metric-label">Studio name</span>
               <input
@@ -1007,12 +1024,12 @@ export function App() {
           </article>
 
           <article className="mini-card">
-            <span className="metric-label">2. Front Door</span>
+            <span className="metric-label">2. Posture</span>
             <label className="field">
-              <span className="metric-label">Public base URL</span>
+              <span className="metric-label">Public front door</span>
               <input
                 value={workspaceDraft.public_base_url}
-                placeholder="https://localhost"
+                placeholder={frontDoorUrl}
                 onChange={(event) => setWorkspaceDraft((current) => ({ ...current, public_base_url: event.target.value }))}
               />
             </label>
@@ -1026,19 +1043,19 @@ export function App() {
                     https_mode: event.target.value as WorkspaceSettings["https_mode"],
                   }))}
               >
-                <option value="local_http">HTTP only for now</option>
-                <option value="https_enabled">Caddy HTTPS enabled</option>
-                <option value="https_terminated_elsewhere">HTTPS terminated elsewhere</option>
+                <option value="local_http">LAN HTTP</option>
+                <option value="https_enabled">HTTPS on this stack</option>
+                <option value="https_terminated_elsewhere">HTTPS terminated upstream</option>
               </select>
             </label>
             <div className="mini-inline-note">
-              <span>Current browser</span>
+              <span>Live LAN view</span>
               <strong>{frontDoorUrl}</strong>
             </div>
           </article>
 
           <article className="mini-card">
-            <span className="metric-label">3. Shared Paths</span>
+            <span className="metric-label">3. Shared paths</span>
             {(["projects", "deliveries", "draft_queue", "approval_queue", "incoming_stems"] as const).map((pathKey) => (
               <label key={pathKey} className="field">
                 <span className="metric-label">{pathKey.replace(/_/g, " ")}</span>
@@ -1058,7 +1075,7 @@ export function App() {
           </article>
 
           <article className="mini-card">
-            <span className="metric-label">4. Studio Voice</span>
+            <span className="metric-label">4. Style and tone</span>
             <label className="field">
               <span className="metric-label">Style profile name</span>
               <input
@@ -1097,7 +1114,7 @@ export function App() {
           </article>
 
           <article className="mini-card">
-            <span className="metric-label">5. Alerts And Integrations</span>
+            <span className="metric-label">5. Alerts and integrations</span>
             <label className="field">
               <span className="metric-label">Alert emails</span>
               <textarea
@@ -1155,7 +1172,7 @@ export function App() {
           </article>
 
           <article className="mini-card">
-            <span className="metric-label">6. Optional Worker</span>
+            <span className="metric-label">6. Optional worker</span>
             <label className="toggle-chip">
               <input
                 type="checkbox"

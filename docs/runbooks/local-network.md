@@ -2,7 +2,28 @@
 
 ## Goal
 
-Expose Studio Brain cleanly on the local network with one HTTPS operator URL, proxied control-plane APIs behind the dashboard, and direct ports kept mostly for engineering and worker traffic.
+Expose `ai-audio-studio` cleanly on the local network with:
+- immediate full-LAN access by IP
+- an optional hostname-based HTTPS front door for operators
+- direct service ports preserved for engineering and worker traffic
+
+## Network Posture
+
+Use these layers intentionally:
+
+- `IP + HTTP` is the fastest bring-up path.
+  Example: `http://192.168.1.50:3000`
+- `Hostname + HTTPS` is the preferred day-to-day operator path once local DNS or hosts entries are in place.
+  Example: `https://studio-brain.local`
+- `Direct ports` remain valid for engineering, debugging, and worker callbacks.
+  Examples: `:5678`, `:8080`, `:8090`, `:8100`, `:8190`
+
+Recommended operator progression:
+1. Start with IP access and confirm the dashboard loads.
+2. Add the HTTPS edge stack.
+3. Point the hostname at the control-plane machine.
+4. Trust the Caddy root certificate on operator devices.
+5. Move normal operator access to the hostname URL.
 
 ## Configure
 
@@ -10,8 +31,37 @@ Expose Studio Brain cleanly on the local network with one HTTPS operator URL, pr
 2. Set `BIND_HOST=0.0.0.0`.
 3. Set `CONTROL_PLANE_HOST` to the hostname operators should use, such as `studio-brain.local`.
 4. Set `N8N_WEBHOOK_URL` to the LAN URL webhook sources should hit.
+   Example: `http://192.168.1.50:5678`
+5. Keep `OPERATOR_API_TOKEN` and `WORKER_API_TOKEN` set before exposing the stack beyond localhost.
 
-## Start
+## Start With Full-LAN IP Access
+
+```bash
+docker compose --env-file infra/.env \
+  -f infra/docker-compose.yml \
+  up -d
+```
+
+Verify from another machine on the same network:
+
+```bash
+curl -sf http://<control-plane-ip>:3000 >/dev/null && echo "dashboard reachable"
+curl -sf http://<control-plane-ip>:5678/healthz && echo "n8n reachable"
+curl -sf http://<control-plane-ip>:8080/health && echo "project-state reachable"
+curl -sf http://<control-plane-ip>:8090/health && echo "crm-api reachable"
+curl -sf http://<control-plane-ip>:8100/health && echo "openclaw reachable"
+```
+
+Immediate access pattern:
+- Dashboard: `http://<control-plane-ip>:3000`
+- n8n: `http://<control-plane-ip>:5678`
+- project-state: `http://<control-plane-ip>:8080`
+- crm-api: `http://<control-plane-ip>:8090`
+- openclaw: `http://<control-plane-ip>:8100`
+
+## Add Hostname And HTTPS
+
+Start the edge stack:
 
 ```bash
 docker compose --env-file infra/.env \
@@ -20,9 +70,23 @@ docker compose --env-file infra/.env \
   up -d
 ```
 
-## Trust The Caddy LAN Certificate
+This enables Caddy with `tls internal` for LAN use.
 
-The edge stack uses Caddy `tls internal`, which creates a private CA for your LAN.
+## Point The Hostname
+
+`CONTROL_PLANE_HOST` must resolve to the control-plane machine.
+
+Choose one:
+- local DNS on the router, Pi-hole, or internal DNS
+- `/etc/hosts` entry on each operator machine
+
+Example hosts entry:
+
+```text
+192.168.1.50 studio-brain.local n8n.studio-brain.local openclaw.studio-brain.local
+```
+
+## Trust The Caddy LAN Certificate
 
 Export the root certificate:
 
@@ -30,23 +94,34 @@ Export the root certificate:
 bash scripts/export_caddy_root_cert.sh infra/.env
 ```
 
-This writes `infra/caddy-root.crt`. Import that certificate into the login keychain on each operator Mac and mark it trusted.
+This writes `infra/caddy-root.crt`.
+
+Import that certificate into the login keychain on each operator Mac and mark it trusted.
+
+Until that certificate is trusted:
+- `https://$CONTROL_PLANE_HOST` will load with browser warnings
+- `http://<control-plane-ip>:3000` remains the clean fallback
 
 ## Access Pattern
 
-- Primary operator URL: `https://$CONTROL_PLANE_HOST`
-- Same-Mac HTTPS fallback: `https://localhost`
-- n8n over HTTPS: `https://n8n.$CONTROL_PLANE_HOST`
-- OpenClaw over HTTPS: `https://openclaw.$CONTROL_PLANE_HOST`
-- Dashboard fallback: `http://<mac-ip>:3000`
-- n8n editor: `http://<mac-ip>:5678`
-- APIs and worker registration stay on their direct ports
+Preferred operator URLs:
+- Dashboard: `https://$CONTROL_PLANE_HOST`
+- n8n: `https://n8n.$CONTROL_PLANE_HOST`
+- OpenClaw: `https://openclaw.$CONTROL_PLANE_HOST`
+
+Fallback URLs:
+- Dashboard: `http://<control-plane-ip>:3000`
+- n8n: `http://<control-plane-ip>:5678`
+- OpenClaw: `http://<control-plane-ip>:8100`
+
+Engineering and worker traffic:
+- direct ports remain plain HTTP on the LAN
+- `studio-worker` should point at the control-plane machine by IP or resolvable hostname
 
 ## Notes
 
-- The dashboard is the main front door. It proxies the control-plane APIs and internal service health so novice operators do not need to memorize raw ports.
-- HTTPS is real, but it uses a private LAN CA from Caddy. Until `infra/caddy-root.crt` is imported and trusted on the operator Mac, browsers will warn.
-- `https://localhost` now works on the control-plane Mac without custom hostname mapping. `https://$CONTROL_PLANE_HOST` still needs local DNS or a hosts entry that points at the Mac running Docker.
-- Dedicated `n8n` and `openclaw` HTTPS subdomains remain available for deeper administration. Direct API and worker ports remain plain HTTP on the LAN.
-- Keep `OPERATOR_API_TOKEN` and `WORKER_API_TOKEN` set before exposing the stack beyond localhost.
+- The dashboard is the main front door. It proxies control-plane APIs so novice operators do not need to memorize raw ports.
+- Full-network IP access is the baseline deployment posture when `BIND_HOST=0.0.0.0`.
+- Hostname/TLS is the polish layer, not a prerequisite for first successful bring-up.
 - Single-machine mode is valid. A second worker Mac is optional.
+- If you are replacing an older host or legacy dashboard, follow [legacy-cutover.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/legacy-cutover.md) before retiring it.

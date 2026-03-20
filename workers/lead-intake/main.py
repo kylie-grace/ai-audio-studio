@@ -95,6 +95,10 @@ def normalize_lead(raw_text: str, form_fields: dict) -> dict:
 
 
 def draft_reply(normalized: dict) -> str:
+    return draft_reply_with_context(normalized, studio_name="the studio", style_summary="")
+
+
+def draft_reply_with_context(normalized: dict, studio_name: str, style_summary: str) -> str:
     artist = normalized["artist_name"]
     service = normalized["service_requested"]
     timeline = normalized.get("timeline") or "your target timeline"
@@ -104,11 +108,25 @@ def draft_reply(normalized: dict) -> str:
     if normalized.get("deliverables") == []:
         questions.append("Let me know the final deliverables you need.")
     follow_up = " ".join(questions[:2])
+    studio_line = studio_name.strip() if studio_name.strip() else "the studio"
+    style_line = f" Tone note: {style_summary.strip()}" if style_summary.strip() else ""
     return (
-        f"Thanks for reaching out about {service} work for {artist}.\n\n"
+        f"Thanks for reaching out to {studio_line} about {service} work for {artist}.\n\n"
         f"I’ve noted {timeline} as the working timeline and I can review the project details before confirming scope. "
-        f"I usually reply to booking questions within one business day.\n\n"
+        f"I usually reply to booking questions within one business day.{style_line}\n\n"
         f"{follow_up}".strip()
+    )
+
+
+async def load_workspace_context(pool: asyncpg.Pool) -> tuple[str, str]:
+    settings = await pool.fetchrow("SELECT studio_name FROM workspace_settings WHERE singleton = TRUE")
+    style_profile = await pool.fetchrow(
+        "SELECT extracted_guidance FROM style_profiles WHERE scope='studio' ORDER BY created_at ASC LIMIT 1"
+    )
+    guidance = json.loads(style_profile["extracted_guidance"]) if style_profile and style_profile["extracted_guidance"] else {}
+    return (
+        settings["studio_name"] if settings and settings["studio_name"] else "the studio",
+        guidance.get("summary", ""),
     )
 
 
@@ -123,7 +141,8 @@ async def webhook_lead_intake(body: LeadIntakeBody):
     normalized = normalize_lead(body.raw_text, body.form_fields)
     fit_score = score_fit(normalized)
     urgency_score = score_urgency(normalized)
-    reply = draft_reply(normalized)
+    studio_name, style_summary = await load_workspace_context(pool)
+    reply = draft_reply_with_context(normalized, studio_name=studio_name, style_summary=style_summary)
     artist_name = normalized["artist_name"]
     slug = slugify(artist_name)
     existing = await pool.fetchrow("SELECT * FROM projects WHERE slug=$1", slug)

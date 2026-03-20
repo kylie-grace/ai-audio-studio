@@ -10,7 +10,7 @@ Single-machine first, split-worker optional:
 - **Single Mac mode** — one Mac runs the whole Docker stack locally, including UI, n8n, Ollama, Postgres, APIs, and orchestration.
 - **Split mode** — the Mac mini runs the control plane and a second Mac runs `studio-worker` for filesystem-heavy or DAW-adjacent tasks.
 - **Shared volume** — `/Volumes/StudioShare/` or equivalent shared mount visible to any machine executing file tasks.
-- **LAN access** — set `BIND_HOST=0.0.0.0` to expose the dashboard and APIs to the local network.
+- **LAN access** — set `BIND_HOST=0.0.0.0` to expose the dashboard and APIs to the full local network by IP.
 - **HTTPS edge** — add `infra/docker-compose.edge.yml` when you want a single TLS front door for dashboard access on the LAN.
 
 ## Product Status
@@ -83,6 +83,11 @@ Then open the control room and complete the first-run workspace questionnaire. I
 - alert destinations
 - optional worker settings
 
+Network access posture:
+- Fastest access: `http://<control-plane-ip>:3000`
+- Preferred operator URL after hostname setup: `https://$CONTROL_PLANE_HOST`
+- Engineering/admin fallbacks remain available on direct ports such as `:5678`, `:8080`, `:8090`, and `:8100`
+
 ### Verify health
 
 ```bash
@@ -95,7 +100,7 @@ open http://localhost:3000                  # studio-brain-ui
 open http://localhost:5678                  # n8n workflow editor
 
 # If BIND_HOST=0.0.0.0, access from another machine with:
-# http://<mac-mini-lan-ip>:3000
+# http://<control-plane-ip>:3000
 ```
 
 Single-machine mode does not require `docker-compose.worker.yml`; the worker file is only for split deployments.
@@ -110,6 +115,14 @@ docker compose --env-file infra/.env \
 This serves the dashboard at `https://$CONTROL_PLANE_HOST` through Caddy with an internal LAN certificate.
 Export the Caddy root certificate with `bash scripts/export_caddy_root_cert.sh infra/.env` and trust it on operator devices for clean HTTPS access.
 The edge stack also exposes `https://n8n.$CONTROL_PLANE_HOST` and `https://openclaw.$CONTROL_PLANE_HOST`.
+
+Recommended access sequence:
+1. Bring the stack up with `BIND_HOST=0.0.0.0`.
+2. Verify the dashboard by IP at `http://<control-plane-ip>:3000`.
+3. Add the HTTPS edge stack.
+4. Point `CONTROL_PLANE_HOST` at that same machine in local DNS or `/etc/hosts`.
+5. Trust the exported Caddy root certificate on operator Macs.
+6. Move daily operator use to `https://$CONTROL_PLANE_HOST`.
 
 Optional local worker on the same Mac:
 ```bash
@@ -252,9 +265,11 @@ Use `infra/docker-compose.edge.yml` when you want HTTPS on a single front door f
 
 For novice-friendly operations:
 - Use `https://$CONTROL_PLANE_HOST` as the main dashboard entrypoint.
+- Use `http://<control-plane-ip>:3000` as the immediate LAN fallback before hostname/TLS trust is complete.
 - Keep Docker Desktop filtered by the `ai-audio-studio` project name.
 - Use the seeded rule packs and supplied n8n workflow templates before creating custom automation.
 - Expect a dedicated onboarding/settings flow to replace part of the current env-driven setup over the next milestones.
+- Use the legacy cutover checklist before retiring any older automation host or dashboard.
 
 ## Task Files
 
@@ -279,4 +294,5 @@ Each task file contains: purpose, dependencies, file list, input/output contract
 - `docs/architecture/` — ADRs, system diagrams, prompt contracts
 - `docs/runbooks/` — Operator procedures and safety checklists
 - [docs/runbooks/local-network.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/local-network.md) — LAN and HTTPS setup
+- [docs/runbooks/legacy-cutover.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/legacy-cutover.md) — retiring legacy infra cleanly
 - [docs/runbooks/n8n-bootstrap.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/n8n-bootstrap.md) — importable workflow templates

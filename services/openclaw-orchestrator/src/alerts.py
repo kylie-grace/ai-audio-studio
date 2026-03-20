@@ -161,7 +161,8 @@ def _post_json(url: str, payload: dict[str, Any]) -> dict[str, Any]:
     )
     try:
         with urllib.request.urlopen(request, timeout=5) as response:
-            body = response.read(512).decode("utf-8", errors="ignore")
+            read = getattr(response, "read", None)
+            body = read(512).decode("utf-8", errors="ignore") if callable(read) else ""
             return {
                 "status": "sent",
                 "detail": body or f"HTTP {getattr(response, 'status', 200)}",
@@ -369,12 +370,14 @@ def send_alert_event(
     channels: list[str] | tuple[str, ...] | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    delivery = fan_out_alert(
+        event,
+        workspace_settings,
+        channels=channels,
+        dry_run=dry_run,
+    )
     return {
         "event": event,
-        "delivery": fan_out_alert(
-            event,
-            workspace_settings,
-            channels=channels,
-            dry_run=dry_run,
-        ),
+        "delivery": delivery,
+        "deliveries": delivery["deliveries"],
     }
