@@ -393,9 +393,16 @@ services:
       context: ../apps/studio-brain-ui
       dockerfile: Dockerfile
     networks: [studio-net]
+    restart: unless-stopped
     depends_on:
-      - project-state
-      - crm-api
+      project-state:
+        condition: service_healthy
+      crm-api:
+        condition: service_healthy
+      openclaw:
+        condition: service_healthy
+      n8n:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000"]
       interval: 15s
