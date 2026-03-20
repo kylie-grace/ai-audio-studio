@@ -49,6 +49,15 @@ type RulePack = {
   rule_count: number;
 };
 
+type StarterPack = {
+  slug: string;
+  name: string;
+  description: string;
+  rule_slugs: string[];
+  alert_channels: string[];
+  rules: OrchestrationRule[];
+};
+
 type Playbook = {
   slug: string;
   name: string;
@@ -209,6 +218,7 @@ type DashboardData = {
   workers: WorkerNode[];
   rules: OrchestrationRule[];
   rulePacks: RulePack[];
+  starterPacks: StarterPack[];
   playbooks: Playbook[];
   tasks: WorkerTask[];
   approvals: ApprovalItem[];
@@ -530,7 +540,7 @@ function groupByZone(services: ServiceRecord[]) {
 }
 
 async function loadDashboardData(): Promise<DashboardData> {
-  const [services, workers, rules, rulePacks, playbooks, tasks, approvals, styleProfiles, alerts, runtimeAlerts, bootstrapStatus, workspace] =
+  const [services, workers, rules, rulePacks, starterPacks, playbooks, tasks, approvals, styleProfiles, alerts, runtimeAlerts, bootstrapStatus, workspace] =
     await Promise.all([
       Promise.all(
         serviceCatalog.map(async (service) => ({
@@ -541,6 +551,7 @@ async function loadDashboardData(): Promise<DashboardData> {
       fetchJson<WorkerNode[]>(`${API.projectState}/workers/`),
       fetchJson<OrchestrationRule[]>(`${API.openclaw}/rules`),
       fetchJson<RulePack[]>(`${API.openclaw}/rule-packs`),
+      fetchJson<StarterPack[]>(`${API.openclaw}/starter-packs`),
       fetchJson<Playbook[]>(`${API.openclaw}/playbooks`),
       fetchJson<WorkerTask[]>(`${API.projectState}/workers/tasks/list`),
       fetchJson<ApprovalItem[]>(`${API.projectState}/approval-queue/`),
@@ -557,6 +568,7 @@ async function loadDashboardData(): Promise<DashboardData> {
     workers,
     rules,
     rulePacks,
+    starterPacks,
     playbooks,
     tasks,
     approvals,
@@ -581,6 +593,7 @@ export function App() {
     workers: [],
     rules: [],
     rulePacks: [],
+    starterPacks: [],
     playbooks: [],
     tasks: [],
     approvals: [],
@@ -628,6 +641,9 @@ export function App() {
   const [alertActionPending, setAlertActionPending] = useState<"test" | "dispatch" | null>(null);
   const [alertActionMessage, setAlertActionMessage] = useState<string | null>(null);
   const [alertActionError, setAlertActionError] = useState<string | null>(null);
+  const [starterPackPending, setStarterPackPending] = useState<string | null>(null);
+  const [starterPackMessage, setStarterPackMessage] = useState<string | null>(null);
+  const [starterPackError, setStarterPackError] = useState<string | null>(null);
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const optionalOfflineCount = data.services.filter((service) => service.optional && service.state === "offline").length;
@@ -644,6 +660,9 @@ export function App() {
   const workspaceSettings = data.workspace.settings;
   const styleSourceCount = workspaceSettings.style_seed.source_paths.length;
   const alertEmailCount = workspaceSettings.alert_destinations.email_to.length;
+  const activeStarterPack = data.starterPacks.find(
+    (pack) => pack.rule_slugs.length && pack.rule_slugs.every((slug) => data.rules.some((rule) => rule.slug === slug && rule.enabled)),
+  );
   const integrationFlags = [
     workspaceSettings.integrations.n8n,
     workspaceSettings.integrations.gmail_readonly,
@@ -867,6 +886,35 @@ export function App() {
       setAlertActionError(error instanceof Error ? error.message : "Unable to execute alert action");
     } finally {
       setAlertActionPending(null);
+    }
+  }
+
+  async function applyStarterPack(slug: string) {
+    setStarterPackPending(slug);
+    setStarterPackMessage(null);
+    setStarterPackError(null);
+    try {
+      const response = await fetch(`${API.openclaw}/starter-packs/${slug}/apply`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ exclusive: true }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? `Starter pack apply failed with ${response.status}`);
+      }
+      const payload = (await response.json()) as { applied_pack?: { name?: string }; active_rule_count?: number };
+      setStarterPackMessage(
+        `${payload.applied_pack?.name ?? slug} applied. ${payload.active_rule_count ?? 0} rule(s) are now active.`,
+      );
+      await refreshData();
+    } catch (error) {
+      setStarterPackError(error instanceof Error ? error.message : "Unable to apply starter pack");
+    } finally {
+      setStarterPackPending(null);
     }
   }
 
@@ -1703,6 +1751,51 @@ export function App() {
         <article className="panel panel-span-4">
           <div className="panel-header">
             <div>
+              <p className="section-kicker">Automations</p>
+              <h2>Starter Packs</h2>
+            </div>
+            <span className="count-pill">{data.starterPacks.length}</span>
+          </div>
+          <div className="table-stack">
+            {data.starterPacks.length ? (
+              data.starterPacks.map((pack) => (
+                <div key={pack.slug} className="table-row">
+                  <div className="row-main">
+                    <strong>{pack.name}</strong>
+                    <div className="muted">{pack.description}</div>
+                    <div className="muted">
+                      {pack.rules.length} rule(s) · alerts via {pack.alert_channels.join(", ")}
+                    </div>
+                  </div>
+                  <div className="row-meta">
+                    <span className={`status-pill ${activeStarterPack?.slug === pack.slug ? "ok" : "warn"}`}>
+                      {activeStarterPack?.slug === pack.slug ? "active posture" : "available"}
+                    </span>
+                    <button
+                      className="action-button"
+                      disabled={starterPackPending !== null}
+                      onClick={() => applyStarterPack(pack.slug)}
+                    >
+                      {starterPackPending === pack.slug ? "applying" : "apply"}
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="empty-state">No starter packs available yet.</p>
+            )}
+          </div>
+          {starterPackMessage ? <p className="feedback ok">{starterPackMessage}</p> : null}
+          {starterPackError ? <p className="feedback bad">{starterPackError}</p> : null}
+          <p className="panel-note">
+            Starter packs are the novice-safe automation presets. Applying one updates the active orchestration
+            posture without hand-editing rules.
+          </p>
+        </article>
+
+        <article className="panel panel-span-4">
+          <div className="panel-header">
+            <div>
               <p className="section-kicker">Rules</p>
               <h2>Rule Packs</h2>
             </div>
@@ -1731,8 +1824,8 @@ export function App() {
         <article className="panel panel-span-4">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Automations</p>
-              <h2>Starter Playbooks</h2>
+              <p className="section-kicker">Playbooks</p>
+              <h2>Starter Automations</h2>
             </div>
             <span className="count-pill">{data.playbooks.length}</span>
           </div>

@@ -22,6 +22,8 @@ from .rules import (
     decode_jsonb,
     matches_conditions,
     serialize_rule,
+    starter_pack_application,
+    starter_pack_by_slug,
     starter_packs,
 )
 
@@ -140,6 +142,10 @@ class AlertTestBody(BaseModel):
     context: dict = {}
 
 
+class ApplyStarterPackBody(BaseModel):
+    exclusive: bool = True
+
+
 def fetch_json(url: str) -> dict:
     try:
         with urlopen(url, timeout=5) as response:
@@ -216,6 +222,49 @@ async def list_starter_packs():
         "Default Studio Tone",
     )
     return starter_packs(str(style_profile["id"]) if style_profile else None)
+
+
+@app.post("/starter-packs/{slug}/apply")
+async def apply_starter_pack(slug: str, body: ApplyStarterPackBody = ApplyStarterPackBody()):
+    pool = await get_pool()
+    style_profile = await pool.fetchrow(
+        "SELECT id FROM style_profiles WHERE name=$1 ORDER BY created_at ASC LIMIT 1",
+        "Default Studio Tone",
+    )
+    style_profile_id = str(style_profile["id"]) if style_profile else None
+    try:
+        application = starter_pack_application(slug, exclusive=body.exclusive, style_profile_id=style_profile_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Starter pack not found") from exc
+
+    await seed_default_orchestration_rules(pool)
+    for rule_slug in application["enabled_rule_slugs"]:
+        await pool.execute(
+            "UPDATE orchestration_rules SET enabled=true, updated_at=now() WHERE slug=$1",
+            rule_slug,
+        )
+    for rule_slug in application["disabled_rule_slugs"]:
+        await pool.execute(
+            "UPDATE orchestration_rules SET enabled=false, updated_at=now() WHERE slug=$1",
+            rule_slug,
+        )
+
+    enabled_rules = await pool.fetch(
+        """SELECT r.*, s.name AS style_profile_name
+           FROM orchestration_rules r
+           LEFT JOIN style_profiles s ON s.id = r.style_profile_id
+           WHERE r.enabled = true
+           ORDER BY r.trigger_module, r.trigger_action"""
+    )
+    return {
+        "status": "ok",
+        "applied_pack": application["pack"],
+        "exclusive": application["exclusive"],
+        "enabled_rule_count": len(application["enabled_rule_slugs"]),
+        "disabled_rule_count": len(application["disabled_rule_slugs"]),
+        "active_rule_count": len(enabled_rules),
+        "active_rules": [serialize_rule(row) for row in enabled_rules],
+    }
 
 
 @app.get("/playbooks")

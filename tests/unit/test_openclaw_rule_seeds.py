@@ -19,6 +19,8 @@ STARTER_PACKS = MODULE.STARTER_PACKS
 default_rule_packs = MODULE.default_rule_packs
 default_orchestration_rules = MODULE.default_orchestration_rules
 matches_conditions = MODULE.matches_conditions
+starter_pack_application = MODULE.starter_pack_application
+starter_pack_by_slug = MODULE.starter_pack_by_slug
 starter_packs = MODULE.starter_packs
 
 
@@ -64,3 +66,20 @@ def test_starter_packs_cover_full_default_surface():
 
     baseline = next(pack for pack in starter if pack["slug"] == "operator-baseline")
     assert any(rule["slug"] == "revision-parse-protools" for rule in baseline["rules"])
+
+
+def test_starter_pack_lookup_and_application_plan():
+    pack = starter_pack_by_slug("operator-baseline", "profile-1")
+    assert pack is not None
+    assert pack["slug"] == "operator-baseline"
+
+    application = starter_pack_application("operator-baseline", exclusive=True, style_profile_id="profile-1")
+    assert "lead-intake-email" in application["enabled_rule_slugs"]
+    assert "content-social-instagram" in application["disabled_rule_slugs"]
+    assert application["exclusive"] is True
+
+
+def test_nonexclusive_pack_application_keeps_other_default_rules_enabled():
+    application = starter_pack_application("content-engine", exclusive=False, style_profile_id="profile-1")
+    assert "content-social-instagram" in application["enabled_rule_slugs"]
+    assert application["disabled_rule_slugs"] == []

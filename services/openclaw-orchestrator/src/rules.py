@@ -302,3 +302,27 @@ def starter_packs(style_profile_id: str | None = None) -> list[dict]:
             }
         )
     return packs
+
+
+def starter_pack_by_slug(slug: str, style_profile_id: str | None = None) -> dict | None:
+    for pack in starter_packs(style_profile_id):
+        if pack["slug"] == slug:
+            return pack
+    return None
+
+
+def starter_pack_application(slug: str, exclusive: bool = True, style_profile_id: str | None = None) -> dict:
+    pack = starter_pack_by_slug(slug, style_profile_id)
+    if pack is None:
+        raise KeyError(slug)
+
+    default_rule_slugs = [rule["slug"] for rule in default_orchestration_rules(style_profile_id)]
+    enabled_rule_slugs = list(pack["rule_slugs"])
+    disabled_rule_slugs = [rule_slug for rule_slug in default_rule_slugs if exclusive and rule_slug not in enabled_rule_slugs]
+
+    return {
+        "pack": pack,
+        "enabled_rule_slugs": enabled_rule_slugs,
+        "disabled_rule_slugs": disabled_rule_slugs,
+        "exclusive": exclusive,
+    }
