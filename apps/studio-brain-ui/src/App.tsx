@@ -115,6 +115,22 @@ type AlertConfig = {
   thresholds: AlertThreshold[];
 };
 
+type AlertDeliveryResult = {
+  channel: string;
+  status: string;
+  detail: string;
+};
+
+type AlertActionResponse = {
+  status?: string;
+  event?: RuntimeAlert;
+  deliveries?: AlertDeliveryResult[];
+  dispatched_count?: number;
+  results?: Array<{
+    deliveries: AlertDeliveryResult[];
+  }>;
+};
+
 type RuntimeAlert = {
   slug: string;
   severity: string;
@@ -609,6 +625,9 @@ export function App() {
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [onboardingMessage, setOnboardingMessage] = useState<string | null>(null);
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
+  const [alertActionPending, setAlertActionPending] = useState<"test" | "dispatch" | null>(null);
+  const [alertActionMessage, setAlertActionMessage] = useState<string | null>(null);
+  const [alertActionError, setAlertActionError] = useState<string | null>(null);
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const optionalOfflineCount = data.services.filter((service) => service.optional && service.state === "offline").length;
@@ -622,6 +641,16 @@ export function App() {
   const configuredAlertCount = data.alerts.configured_channel_count;
   const activeAlertCount = data.runtimeAlerts.active_alerts.length;
   const serviceZones = groupByZone(data.services);
+  const workspaceSettings = data.workspace.settings;
+  const styleSourceCount = workspaceSettings.style_seed.source_paths.length;
+  const alertEmailCount = workspaceSettings.alert_destinations.email_to.length;
+  const integrationFlags = [
+    workspaceSettings.integrations.n8n,
+    workspaceSettings.integrations.gmail_readonly,
+    workspaceSettings.integrations.gmail_send,
+    workspaceSettings.integrations.instagram,
+    workspaceSettings.integrations.facebook,
+  ].filter(Boolean).length;
 
   useEffect(() => {
     const storedName = window.localStorage.getItem(OPERATOR_NAME_KEY);
@@ -797,10 +826,60 @@ export function App() {
     }
   }
 
+  async function runAlertAction(action: "test" | "dispatch") {
+    setAlertActionPending(action);
+    setAlertActionMessage(null);
+    setAlertActionError(null);
+    try {
+      const response = await fetch(
+        action === "test" ? `${API.openclaw}/alerts/test` : `${API.openclaw}/alerts/dispatch-active`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body:
+            action === "test"
+              ? JSON.stringify({
+                  slug: "control-room-test",
+                  severity: "warn",
+                  detail: "Manual test alert triggered from the Studio Brain control room.",
+                })
+              : undefined,
+        },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? `${action} alert action failed with ${response.status}`);
+      }
+      const payload = (await response.json()) as AlertActionResponse;
+      const deliveries =
+        payload.deliveries ??
+        (payload.results ?? []).flatMap((result) => result.deliveries ?? []);
+      setAlertActionMessage(
+        action === "test"
+          ? `Test alert executed across ${deliveries.length} channel result(s).`
+          : `Dispatched ${payload.dispatched_count ?? 0} active alert(s).`,
+      );
+      await refreshData();
+    } catch (error) {
+      setAlertActionError(error instanceof Error ? error.message : "Unable to execute alert action");
+    } finally {
+      setAlertActionPending(null);
+    }
+  }
+
   const onboardingRequired = data.workspace.onboarding_required;
   const onboardingMissingCount = data.workspace.missing_fields.length;
   const onboardingStepLabels = ["Studio", "Paths", "Style", "Alerts", "Integrations"];
   const onboardingStepCount = onboardingStepLabels.length;
+  const settingsPills = [
+    workspaceSettings.studio_name || "unnamed studio",
+    workspaceSettings.operator_name || "operator missing",
+    workspaceSettings.deployment_mode === "control_plane_plus_worker" ? "worker optional" : "single machine",
+    workspaceSettings.public_base_url || frontDoorUrl,
+  ];
 
   return (
     <main className="app-shell">
@@ -808,7 +887,12 @@ export function App() {
         <div className="panel-header onboarding-header">
           <div>
             <p className="section-kicker">Bootstrap</p>
-            <h2>{editingWorkspaceSetup || onboardingRequired ? "First-run onboarding" : "Workspace ready"}</h2>
+            <h2>{editingWorkspaceSetup || onboardingRequired ? "First-run onboarding" : "Workspace settings"}</h2>
+            <p className="panel-note">
+              {onboardingRequired
+                ? "Capture the studio identity, deployment posture, paths, style seed, alerts, and optional worker details."
+                : "Review the saved workspace settings, then jump into operations without reopening the questionnaire."}
+            </p>
           </div>
           <div className="onboarding-header-actions">
             <span className={`status-pill ${onboardingRequired ? "warn" : "ok"}`}>
@@ -827,17 +911,56 @@ export function App() {
             </button>
           </div>
         </div>
-        <p className="panel-note">
-          This is the missing novice layer: tell the system who the studio is, how this machine is being used,
-          where files live, what tone to write in, how operators should be alerted, and whether a worker Mac is optional.
-        </p>
-        <div className="summary-pill-row onboarding-steps-row">
-          {onboardingStepLabels.map((label) => (
-            <span key={label} className="summary-pill">
-              {label}
-            </span>
-          ))}
-          <span className="summary-pill">{onboardingStepCount} steps</span>
+        <div className="settings-snapshot-grid">
+          <article className="snapshot-card">
+            <span className="metric-label">Saved workspace</span>
+            <strong>{workspaceSettings.studio_name || "Unnamed studio"}</strong>
+            <p>
+              {workspaceSettings.operator_name || "owner"} ·{" "}
+              {workspaceSettings.deployment_mode === "control_plane_plus_worker" ? "control plane + worker" : "single machine"}
+            </p>
+          </article>
+          <article className="snapshot-card">
+            <span className="metric-label">Network</span>
+            <strong>{workspaceSettings.public_base_url || frontDoorUrl}</strong>
+            <p>{workspaceSettings.https_mode.replace(/_/g, " ")}</p>
+          </article>
+          <article className="snapshot-card">
+            <span className="metric-label">Context</span>
+            <strong>{data.workspace.style_profile_count} style profile(s)</strong>
+            <p>{styleSourceCount} reference file(s) · {alertEmailCount} alert destination(s)</p>
+          </article>
+          <article className="snapshot-card">
+            <span className="metric-label">Integrations</span>
+            <strong>{integrationFlags} enabled</strong>
+            <p>{workspaceSettings.worker.enabled ? "worker enabled" : "worker optional"}</p>
+          </article>
+        </div>
+        <div className="onboarding-actions-bar">
+          <div className="summary-pill-row onboarding-steps-row">
+            {settingsPills.map((pill) => (
+              <span key={pill} className="summary-pill">
+                {pill}
+              </span>
+            ))}
+            <span className="summary-pill">{onboardingStepCount} steps</span>
+          </div>
+          <div className="onboarding-actions">
+            <button className="action-button" type="button" onClick={refreshData}>
+              refresh workspace
+            </button>
+            <button
+              className="action-button ok"
+              type="button"
+              onClick={() => {
+                setEditingWorkspaceSetup(true);
+                setOnboardingStep(0);
+                setWorkspaceDraft(workspaceSettings);
+              }}
+            >
+              {onboardingRequired ? "continue setup" : "edit saved settings"}
+            </button>
+          </div>
         </div>
         <div className="onboarding-grid">
           <article className="mini-card">
@@ -846,7 +969,10 @@ export function App() {
               <span className="metric-label">Studio name</span>
               <input
                 value={workspaceDraft.studio_name}
-                onChange={(event) => setWorkspaceDraft((current) => ({ ...current, studio_name: event.target.value }))}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setWorkspaceDraft((current) => ({ ...current, studio_name: nextValue }));
+                }}
               />
             </label>
             <label className="field">
@@ -1074,9 +1200,14 @@ export function App() {
             <span className="metric-label">Still missing</span>
             <strong>{data.workspace.missing_fields.length ? data.workspace.missing_fields.join(", ") : "Nothing required is missing."}</strong>
           </div>
-          <button className="action-button ok" disabled={onboardingSaving} onClick={saveWorkspaceSettings}>
-            {onboardingSaving ? "saving" : "save onboarding"}
-          </button>
+          <div className="wizard-footer-actions">
+            <button className="action-button" disabled={onboardingSaving} onClick={refreshData}>
+              refresh now
+            </button>
+            <button className="action-button ok" disabled={onboardingSaving} onClick={saveWorkspaceSettings}>
+              {onboardingSaving ? "saving" : "save settings"}
+            </button>
+          </div>
         </div>
         {onboardingMessage ? <p className="feedback ok">{onboardingMessage}</p> : null}
         {onboardingError ? <p className="feedback bad">{onboardingError}</p> : null}
@@ -1377,7 +1508,23 @@ export function App() {
               <p className="section-kicker">Escalation</p>
               <h2>Live Alerts</h2>
             </div>
-            <span className="count-pill">{activeAlertCount}</span>
+            <div className="header-actions">
+              <span className="count-pill">{activeAlertCount}</span>
+              <button
+                className="action-button"
+                disabled={alertActionPending !== null}
+                onClick={() => runAlertAction("test")}
+              >
+                {alertActionPending === "test" ? "testing" : "test alert"}
+              </button>
+              <button
+                className="action-button ok"
+                disabled={alertActionPending !== null || !data.runtimeAlerts.active_alerts.length}
+                onClick={() => runAlertAction("dispatch")}
+              >
+                {alertActionPending === "dispatch" ? "dispatching" : "dispatch active"}
+              </button>
+            </div>
           </div>
           <div className="alert-summary-grid">
             <div className="mini-card">
@@ -1425,6 +1572,8 @@ export function App() {
               </div>
             ))}
           </div>
+          {alertActionMessage ? <p className="feedback ok">{alertActionMessage}</p> : null}
+          {alertActionError ? <p className="feedback bad">{alertActionError}</p> : null}
         </article>
       </section>
 

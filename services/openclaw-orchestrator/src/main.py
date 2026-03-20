@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import os
 from contextlib import asynccontextmanager
+from urllib.error import URLError
+from urllib.request import urlopen
 
 import asyncpg
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from .alerts import alert_config
+from .alerts import alert_config, build_alert_event, send_alert_event
 from .bootstrap_status import bootstrap_status
 from .policy import BLOCKLIST, check_permission
 from .playbooks import default_playbooks
@@ -32,6 +34,9 @@ WORKER_URLS = {
     "delivery-packager": "http://delivery-packager:8170/package-delivery",
     "mix-planner": "http://mix-planner:8180/mix-plan",
 }
+
+CRM_API_URL = os.environ.get("CRM_API_URL", "http://crm-api:8090")
+PROJECT_STATE_URL = os.environ.get("PROJECT_STATE_URL", "http://project-state:8080")
 
 _pool: asyncpg.Pool | None = None
 
@@ -125,6 +130,34 @@ class TriggerDispatchBody(BaseModel):
     context: dict = {}
 
 
+class AlertTestBody(BaseModel):
+    slug: str = "operator-test"
+    severity: str = "warn"
+    detail: str = "Manual test alert from Studio Brain."
+    summary: str | None = None
+    channels: list[str] | None = None
+    dry_run: bool = False
+    context: dict = {}
+
+
+def fetch_json(url: str) -> dict:
+    try:
+        with urlopen(url, timeout=5) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except URLError as exc:
+        raise HTTPException(status_code=502, detail=f"Unable to reach upstream dependency: {exc.reason}") from exc
+
+
+def load_workspace_settings() -> dict:
+    payload = fetch_json(f"{CRM_API_URL}/workspace-settings")
+    return payload if isinstance(payload, dict) else {}
+
+
+def load_runtime_alerts() -> dict:
+    payload = fetch_json(f"{PROJECT_STATE_URL}/alerts/summary")
+    return payload if isinstance(payload, dict) else {}
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "policy": os.environ.get("POLICY_ENFORCEMENT", "strict")}
@@ -192,7 +225,59 @@ async def list_playbooks():
 
 @app.get("/alerts/config")
 async def get_alert_config():
-    return alert_config()
+    return alert_config(load_workspace_settings())
+
+
+@app.post("/alerts/test")
+async def send_test_alert(body: AlertTestBody):
+    workspace_settings = load_workspace_settings()
+    event = build_alert_event(
+        body.slug,
+        body.severity,
+        body.detail,
+        source="operator:test-alert",
+        summary=body.summary,
+        context=body.context,
+        kind="test-alert",
+        test=True,
+    )
+    return send_alert_event(
+        event,
+        workspace_settings,
+        channels=body.channels,
+        dry_run=body.dry_run,
+    )
+
+
+@app.post("/alerts/dispatch-active")
+async def dispatch_active_alerts():
+    workspace_settings = load_workspace_settings()
+    runtime = load_runtime_alerts()
+    alerts = runtime.get("active_alerts") or []
+    if not alerts:
+        return {
+            "status": "ok",
+            "dispatched_count": 0,
+            "results": [],
+        }
+
+    results = [
+        send_alert_event(
+            build_alert_event(
+                alert["slug"],
+                alert["severity"],
+                alert["detail"],
+                source="runtime-summary",
+            ),
+            workspace_settings,
+        )
+        for alert in alerts
+    ]
+    return {
+        "status": "ok",
+        "dispatched_count": len(results),
+        "results": results,
+    }
 
 
 @app.get("/bootstrap/status")
@@ -210,7 +295,7 @@ async def bootstrap_defaults():
         "rule_pack_count": len(default_rule_packs(None)),
         "starter_pack_count": len(starter_packs(None)),
         "playbook_count": len(default_playbooks()),
-        "configured_alert_channel_count": alert_config()["configured_channel_count"],
+        "configured_alert_channel_count": alert_config(load_workspace_settings())["configured_channel_count"],
         "bootstrap_status": bootstrap_status()["status"],
     }
 

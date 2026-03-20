@@ -14,6 +14,9 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 alert_config = MODULE.alert_config
+resolve_alert_destinations = MODULE.resolve_alert_destinations
+build_alert_event = MODULE.build_alert_event
+send_alert_event = MODULE.send_alert_event
 
 
 def test_alert_config_reports_default_and_optional_channels(monkeypatch):
@@ -41,3 +44,47 @@ def test_alert_config_marks_optional_channels_when_values_exist(monkeypatch):
     assert config["configured_channel_count"] == 4
     assert by_slug["webhook"]["configured"] is True
     assert by_slug["email"]["configured"] is True
+
+
+def test_workspace_destinations_override_env(monkeypatch):
+    monkeypatch.setenv("ALERT_WEBHOOK_URL", "https://hooks.example.test/env")
+    monkeypatch.setenv("ALERT_EMAIL_TO", "env@example.test")
+
+    destinations = resolve_alert_destinations(
+        {
+            "alert_destinations": {
+                "webhook_url": "https://hooks.example.test/workspace",
+                "email_to": ["workspace@example.test"],
+            }
+        }
+    )
+
+    assert destinations["webhook_url"] == "https://hooks.example.test/workspace"
+    assert destinations["email_to"] == ["workspace@example.test"]
+
+
+def test_send_alert_event_reports_delivery_status(monkeypatch):
+    class FakeResponse:
+        status = 202
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(MODULE.urllib.request, "urlopen", lambda request, timeout=5: FakeResponse())
+
+    result = send_alert_event(
+        build_alert_event("operator-test", "warn", "Manual test"),
+        {
+            "alert_destinations": {
+                "webhook_url": "https://hooks.example.test/workspace",
+                "email_to": ["ops@example.test"],
+            }
+        },
+    )
+
+    by_channel = {delivery["channel"]: delivery for delivery in result["deliveries"]}
+    assert by_channel["webhook"]["status"] == "sent"
+    assert by_channel["email"]["status"] == "prepared"
