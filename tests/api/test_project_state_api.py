@@ -19,7 +19,7 @@ SERVICE_ROOT = os.path.join(ROOT, "services/project-state")
 sys.path.insert(0, SERVICE_ROOT)
 
 from src import main  # type: ignore  # noqa: E402
-from src.routers import approval, audit, jobs, projects, workers  # type: ignore  # noqa: E402
+from src.routers import alerts, approval, audit, jobs, projects, workers  # type: ignore  # noqa: E402
 
 
 class FakeRow(dict):
@@ -95,11 +95,31 @@ class FakePool:
         }
         self.worker_tasks: list[FakeRow] = []
         self.audit_log: list[FakeRow] = []
+        self.worker_nodes: list[FakeRow] = [
+            FakeRow(
+                id="worker-1",
+                slug="fresh-worker",
+                display_name="Fresh Worker",
+                status="idle",
+                last_seen_at=now,
+            ),
+            FakeRow(
+                id="worker-2",
+                slug="stale-worker",
+                display_name="Stale Worker",
+                status="idle",
+                last_seen_at=now.replace(minute=max(now.minute - 10, 0)),
+            ),
+        ]
 
     async def fetchval(self, query: str, value: str) -> int:
         if "SELECT COUNT(*) FROM projects" in query:
             prefix = value.rstrip("%")
             return sum(1 for row in self.projects.values() if str(row["slug"]).startswith(prefix))
+        if "SELECT COUNT(*) FROM jobs WHERE status = 'awaiting-approval'" in query:
+            return sum(1 for row in self.jobs.values() if row["status"] == "awaiting-approval")
+        if "SELECT COUNT(*) FROM worker_tasks WHERE status = 'failed'" in query:
+            return sum(1 for row in self.worker_tasks if row.get("status") == "failed")
         raise AssertionError(f"Unhandled fetchval query: {query}")
 
     async def fetchrow(self, query: str, *args: Any) -> FakeRow | None:
@@ -141,6 +161,8 @@ class FakePool:
     async def fetch(self, query: str, *args: Any) -> list[FakeRow]:
         if "SELECT * FROM jobs WHERE status = 'awaiting-approval'" in query:
             return [row for row in self.jobs.values() if row["status"] == "awaiting-approval"]
+        if "SELECT slug, display_name, status, last_seen_at FROM worker_nodes" in query:
+            return list(self.worker_nodes)
         if "SELECT * FROM audit_log" in query:
             return list(self.audit_log)
         raise AssertionError(f"Unhandled fetch query: {query}")
@@ -206,6 +228,7 @@ def _install_fake_pool(pool: FakePool) -> None:
     audit.get_pool = get_pool
     jobs.get_pool = get_pool
     workers.get_pool = get_pool
+    alerts.get_pool = get_pool
 
 
 def test_mutating_requests_require_actor_header():
@@ -310,6 +333,22 @@ def test_worker_register_requires_worker_token_when_configured():
 
     assert response.status_code == 403
     assert "worker token" in response.json()["detail"]
+
+
+def test_alert_summary_reports_waiting_jobs_and_stale_workers():
+    pool = FakePool()
+    pool.worker_tasks.append(FakeRow(id="failed-task", status="failed"))
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.get("/alerts/summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["approvals_waiting"] == 2
+    assert payload["failed_worker_tasks"] == 1
+    assert len(payload["stale_workers"]) == 1
+    assert {alert["slug"] for alert in payload["active_alerts"]} == {"worker-failure", "stale-worker"}
 
 
 def test_direct_audit_write_requires_internal_caller():

@@ -111,6 +111,24 @@ type AlertConfig = {
   thresholds: AlertThreshold[];
 };
 
+type RuntimeAlert = {
+  slug: string;
+  severity: string;
+  detail: string;
+};
+
+type RuntimeAlertSummary = {
+  approvals_waiting: number;
+  failed_worker_tasks: number;
+  stale_workers: Array<{
+    slug: string;
+    display_name: string;
+    status: string;
+    last_seen_at: string | null;
+  }>;
+  active_alerts: RuntimeAlert[];
+};
+
 type DashboardData = {
   refreshedAt: string | null;
   services: ServiceCard[];
@@ -122,6 +140,7 @@ type DashboardData = {
   approvals: ApprovalItem[];
   styleProfiles: StyleProfile[];
   alerts: AlertConfig;
+  runtimeAlerts: RuntimeAlertSummary;
   loadState: "loading" | "ready" | "error";
   error: string | null;
 };
@@ -247,7 +266,7 @@ function primaryMode(workers: WorkerNode[]) {
 }
 
 async function loadDashboardData(): Promise<DashboardData> {
-  const [projectState, crm, openclaw, n8n, workers, rules, rulePacks, playbooks, tasks, approvals, styleProfiles, alerts] =
+  const [projectState, crm, openclaw, n8n, workers, rules, rulePacks, playbooks, tasks, approvals, styleProfiles, alerts, runtimeAlerts] =
     await Promise.all([
       fetchServiceState(`${API.projectState}/health`),
       fetchServiceState(`${API.crm}/health`),
@@ -261,6 +280,7 @@ async function loadDashboardData(): Promise<DashboardData> {
       fetchJson<ApprovalItem[]>(`${API.projectState}/approval-queue/`),
       fetchJson<StyleProfile[]>(`${API.crm}/style-profiles?scope=studio`),
       fetchJson<AlertConfig>(`${API.openclaw}/alerts/config`),
+      fetchJson<RuntimeAlertSummary>(`${API.projectState}/alerts/summary`),
     ]);
 
   return {
@@ -278,6 +298,7 @@ async function loadDashboardData(): Promise<DashboardData> {
     approvals,
     styleProfiles,
     alerts,
+    runtimeAlerts,
     loadState: "ready",
     error: null,
   };
@@ -303,6 +324,12 @@ export function App() {
       channels: [],
       thresholds: [],
     },
+    runtimeAlerts: {
+      approvals_waiting: 0,
+      failed_worker_tasks: 0,
+      stale_workers: [],
+      active_alerts: [],
+    },
     loadState: "loading",
     error: null,
   });
@@ -323,6 +350,7 @@ export function App() {
   const openclawUrl = frontDoorServiceUrl("openclaw");
   const secureHint = browserProtocol === "https:" ? "TLS active" : "HTTP only";
   const configuredAlertCount = data.alerts.configured_channel_count;
+  const activeAlertCount = data.runtimeAlerts.active_alerts.length;
 
   useEffect(() => {
     const storedName = window.localStorage.getItem(OPERATOR_NAME_KEY);
@@ -458,6 +486,10 @@ export function App() {
               <span className="metric-label">Approvals</span>
               <strong>{data.approvals.length}</strong>
             </div>
+            <div>
+              <span className="metric-label">Active Alerts</span>
+              <strong>{activeAlertCount}</strong>
+            </div>
           </div>
         </div>
       </section>
@@ -549,9 +581,28 @@ export function App() {
         <article className="panel">
           <div className="panel-header">
             <h2>Alerts And Escalations</h2>
-            <span className="count-pill">{configuredAlertCount}</span>
+            <span className="count-pill">{configuredAlertCount}/{data.alerts.channels.length}</span>
           </div>
           <div className="table-stack">
+            {data.runtimeAlerts.active_alerts.length ? (
+              data.runtimeAlerts.active_alerts.map((alert) => (
+                <div key={alert.slug} className="table-row">
+                  <div>
+                    <strong>{alert.slug}</strong>
+                    <div className="muted">{alert.detail}</div>
+                  </div>
+                  <div className="row-meta">
+                    <span className={`status-pill ${alert.severity === "bad" ? "bad" : "warn"}`}>
+                      {alert.severity}
+                    </span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="empty-state">No live alert thresholds are currently tripped.</p>
+            )}
+          </div>
+          <div className="table-stack top-gap">
             {data.alerts.channels.map((channel) => (
               <div key={channel.slug} className="table-row">
                 <div>
