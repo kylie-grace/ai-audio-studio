@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from .alerts import alert_config
+from .bootstrap_status import bootstrap_status
 from .policy import BLOCKLIST, check_permission
 from .playbooks import default_playbooks
 from .rules import (
@@ -194,6 +195,11 @@ async def get_alert_config():
     return alert_config()
 
 
+@app.get("/bootstrap/status")
+async def get_bootstrap_status():
+    return bootstrap_status()
+
+
 @app.post("/bootstrap/defaults")
 async def bootstrap_defaults():
     pool = await get_pool()
@@ -205,6 +211,7 @@ async def bootstrap_defaults():
         "starter_pack_count": len(starter_packs(None)),
         "playbook_count": len(default_playbooks()),
         "configured_alert_channel_count": alert_config()["configured_channel_count"],
+        "bootstrap_status": bootstrap_status()["status"],
     }
 
 

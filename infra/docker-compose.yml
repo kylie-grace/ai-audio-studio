@@ -67,8 +67,11 @@ services:
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
       EXECUTIONS_DATA_PRUNE: "true"
       EXECUTIONS_DATA_MAX_AGE: 336  # 14 days
+      N8N_BOOTSTRAP_STATUS_PATH: /home/node/.n8n/bootstrap-status.json
     volumes:
       - n8n-data:/home/node/.n8n
+      - ./n8n/workflows:/workflows:ro
+      - ./n8n/import-workflows.mjs:/bootstrap/import-workflows.mjs:ro
     networks: [studio-net]
     depends_on:
       postgres:
@@ -80,23 +83,6 @@ services:
       retries: 5
     ports:
       - "${BIND_HOST:-127.0.0.1}:5678:5678"
-
-  n8n-import:
-    image: n8nio/n8n:latest
-    environment:
-      DB_TYPE: postgresdb
-      DB_POSTGRESDB_HOST: postgres
-      DB_POSTGRESDB_DATABASE: ${N8N_DB:-n8ndb}
-      DB_POSTGRESDB_USER: ${POSTGRES_USER:-studio}
-      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-    volumes:
-      - ./n8n/workflows:/workflows:ro
-      - ./n8n/import-workflows.mjs:/bootstrap/import-workflows.mjs:ro
-    entrypoint: ["node", "/bootstrap/import-workflows.mjs"]
-    networks: [studio-net]
-    depends_on:
-      n8n:
-        condition: service_healthy
 
   # ── Project State Service ──────────────────────────────────────────────
   project-state:
@@ -157,12 +143,14 @@ services:
       CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-qwen2.5:3b}
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       POLICY_ENFORCEMENT: ${POLICY_ENFORCEMENT:-strict}
+      N8N_BOOTSTRAP_STATUS_PATH: /data/n8n/bootstrap-status.json
       PORT: "8100"
     volumes:
       - ../services/openclaw-orchestrator/prompts:/app/prompts:ro
       - shared-projects:/data/projects
       - draft-queue:/data/draft-queue
       - approval-queue:/data/approval-queue
+      - n8n-data:/data/n8n:ro
     networks: [studio-net]
     depends_on:
       postgres:

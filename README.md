@@ -38,13 +38,17 @@ bash services/ollama/pull_models.sh
 # 4. Start the control plane on the local Mac
 docker compose --env-file infra/.env -f infra/docker-compose.yml up -d
 
-# 5. Optional: add the HTTPS dashboard front door
+# 5. First-time only: import the starter n8n workflows
+# This runs once against the live n8n service and safely skips if workflows already exist.
+bash scripts/bootstrap_n8n.sh infra/.env
+
+# 6. Optional: add the HTTPS dashboard front door
 docker compose --env-file infra/.env -f infra/docker-compose.yml -f infra/docker-compose.edge.yml up -d
 
-# 6. Optional: start the studio worker on a second Mac
+# 7. Optional: start the studio worker on a second Mac
 docker compose --env-file infra/.env -f infra/docker-compose.worker.yml up -d
 
-# 7. Verify all services healthy
+# 8. Verify all services healthy
 docker compose --env-file infra/.env -f infra/docker-compose.yml ps
 ```
 
@@ -127,6 +131,7 @@ Implemented or partially implemented:
 - `openclaw` policy helper plus DB-backed orchestration rules and rule packs
 - `openclaw` starter playbooks for prebuilt operator automations
 - seeded n8n workflow templates under `infra/n8n/workflows/`
+- one-shot n8n bootstrap helper at `scripts/bootstrap_n8n.sh` with idempotent existing-workflow detection
 - effort-level gating helper
 - audio QC threshold presets
 - Docker service graph and prompt/task scaffolding

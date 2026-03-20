@@ -19,6 +19,10 @@ bash services/ollama/pull_models.sh
 # Start the local control plane
 docker compose --env-file infra/.env -f infra/docker-compose.yml up -d
 
+# First-time only: import the starter n8n workflow pack
+# This is a one-shot helper that runs against the live n8n container.
+bash scripts/bootstrap_n8n.sh infra/.env
+
 # Optional: include the local worker when one Mac should also execute worker tasks
 docker compose --profile local-worker --env-file infra/.env -f infra/docker-compose.yml up -d
 
@@ -57,7 +61,7 @@ curl -sf http://localhost:11434/api/tags && echo "ollama OK"
 - **n8n workflows**: http://localhost:5678 (login: see `infra/.env` `N8N_USER`/`N8N_PASSWORD`)
 - **LAN dashboard**: `http://<mac-mini-lan-ip>:3000` when `BIND_HOST=0.0.0.0`
 - **HTTPS dashboard**: `https://$CONTROL_PLANE_HOST` when using `docker-compose.edge.yml`
-- **Starter workflow webhooks**: `/webhook/studio/...` paths are imported into n8n automatically on first boot
+- **Starter workflow webhooks**: `/webhook/studio/...` paths appear after the one-shot `bash scripts/bootstrap_n8n.sh infra/.env` helper succeeds
 - **Split-worker runbook**: see [studio-worker.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/studio-worker.md)
 - **LAN/TLS runbook**: see [local-network.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/local-network.md)
 - **n8n import runbook**: see [n8n-bootstrap.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/n8n-bootstrap.md)

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Expose Studio Brain cleanly on the local network with a single HTTPS dashboard URL and stable direct service ports for engineering and worker traffic.
+Expose Studio Brain cleanly on the local network with one HTTPS operator URL, proxied control-plane APIs behind the dashboard, and direct ports kept mostly for engineering and worker traffic.
 
 ## Configure
 
@@ -43,6 +43,8 @@ This writes `infra/caddy-root.crt`. Import that certificate into the login keych
 
 ## Notes
 
-- HTTPS fronts the dashboard plus dedicated n8n and OpenClaw subdomains. Direct API and worker ports remain plain HTTP on the LAN.
+- The dashboard is the main front door. It proxies the control-plane APIs and internal service health so novice operators do not need to memorize raw ports.
+- HTTPS is real, but it uses a private LAN CA from Caddy. Until `infra/caddy-root.crt` is imported and trusted on the operator Mac, browsers will warn.
+- Dedicated `n8n` and `openclaw` HTTPS subdomains remain available for deeper administration. Direct API and worker ports remain plain HTTP on the LAN.
 - Keep `OPERATOR_API_TOKEN` and `WORKER_API_TOKEN` set before exposing the stack beyond localhost.
 - Single-machine mode is valid. A second worker Mac is optional.

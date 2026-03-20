@@ -2,11 +2,15 @@ import { useEffect, useState } from "react";
 
 type ServiceState = "healthy" | "degraded" | "offline";
 
-type ServiceCard = {
+type ServiceRecord = {
+  key: string;
   name: string;
+  zone: string;
   note: string;
+  role: string;
   url: string;
   healthUrl: string;
+  optional?: boolean;
   state: ServiceState;
   detail: string;
 };
@@ -129,9 +133,16 @@ type RuntimeAlertSummary = {
   active_alerts: RuntimeAlert[];
 };
 
+type BootstrapStatus = {
+  status: string;
+  workflow_count: number;
+  detail: string;
+  updated_at?: string;
+};
+
 type DashboardData = {
   refreshedAt: string | null;
-  services: ServiceCard[];
+  services: ServiceRecord[];
   workers: WorkerNode[];
   rules: OrchestrationRule[];
   rulePacks: RulePack[];
@@ -141,6 +152,7 @@ type DashboardData = {
   styleProfiles: StyleProfile[];
   alerts: AlertConfig;
   runtimeAlerts: RuntimeAlertSummary;
+  bootstrapStatus: BootstrapStatus;
   loadState: "loading" | "ready" | "error";
   error: string | null;
 };
@@ -166,37 +178,173 @@ const API = {
   crm: "/api/crm",
   openclaw: "/api/openclaw",
   n8n: "/api/n8n",
+  ollama: "/api/ollama",
+  contentPipeline: "/api/content-pipeline",
+  audioQc: "/api/audio-qc",
+  leadIntake: "/api/lead-intake",
+  inboxTriage: "/api/inbox-triage",
+  sessionPrep: "/api/session-prep",
+  revisionParser: "/api/revision-parser",
+  deliveryPackager: "/api/delivery-packager",
+  mixPlanner: "/api/mix-planner",
+  studioWorker: "/api/studio-worker",
 };
 
 const OPERATOR_NAME_KEY = "studioBrain.operatorName";
 const OPERATOR_TOKEN_KEY = "studioBrain.operatorToken";
 
-const serviceConfig = [
+const serviceCatalog: Array<Omit<ServiceRecord, "state" | "detail">> = [
   {
+    key: "project-state",
     name: "Project State",
-    note: "Canonical job state, approval queue, worker registry",
+    zone: "Control Plane",
+    note: "Canonical state, approvals, queueing",
+    role: "Audit backbone for jobs, worker registry, and approvals.",
     url: serviceUrl(8080),
     healthUrl: `${API.projectState}/health`,
   },
   {
+    key: "crm-api",
     name: "CRM API",
-    note: "Projects, leads, and style profiles",
+    zone: "Control Plane",
+    note: "Projects, leads, style profiles",
+    role: "Holds artist context and customer-facing records.",
     url: serviceUrl(8090),
     healthUrl: `${API.crm}/health`,
   },
   {
+    key: "openclaw",
     name: "OpenClaw",
-    note: "Policy-enforced orchestration and prebuilt rule packs",
+    zone: "Control Plane",
+    note: "Policy, rule packs, bootstrap status",
+    role: "Decides what can run, when it must stop, and what needs approval.",
     url: serviceUrl(8100),
     healthUrl: `${API.openclaw}/health`,
   },
   {
+    key: "n8n",
     name: "n8n",
+    zone: "Control Plane",
     note: "Workflow editor and webhook layer",
+    role: "Hosts starter automations and operator-facing webhook flows.",
     url: serviceUrl(5678),
     healthUrl: `${API.n8n}/healthz`,
   },
+  {
+    key: "ollama",
+    name: "Ollama",
+    zone: "AI Runtime",
+    note: "Local model serving",
+    role: "Runs local inference for planning, triage, and drafting.",
+    url: serviceUrl(11434),
+    healthUrl: `${API.ollama}/api/tags`,
+  },
+  {
+    key: "lead-intake",
+    name: "Lead Intake",
+    zone: "Automation Modules",
+    note: "Inbound lead analysis",
+    role: "Scores and drafts replies for new leads before approval.",
+    url: serviceUrl(8130),
+    healthUrl: `${API.leadIntake}/health`,
+  },
+  {
+    key: "inbox-triage",
+    name: "Inbox Triage",
+    zone: "Automation Modules",
+    note: "Email classification and reply drafting",
+    role: "Classifies inbox items and prepares draft responses.",
+    url: serviceUrl(8140),
+    healthUrl: `${API.inboxTriage}/health`,
+  },
+  {
+    key: "content-pipeline",
+    name: "Content Pipeline",
+    zone: "Automation Modules",
+    note: "Social and marketing drafting",
+    role: "Builds captions, content drafts, and packaging-ready assets.",
+    url: serviceUrl(8110),
+    healthUrl: `${API.contentPipeline}/health`,
+  },
+  {
+    key: "audio-qc",
+    name: "Audio QC",
+    zone: "Production Services",
+    note: "Quality control and artifact checks",
+    role: "Validates audio outputs before packaging or delivery.",
+    url: serviceUrl(8120),
+    healthUrl: `${API.audioQc}/health`,
+  },
+  {
+    key: "session-prep",
+    name: "Session Prep",
+    zone: "Production Services",
+    note: "Stem/session intake",
+    role: "Prepares project folders and session inputs for production.",
+    url: serviceUrl(8150),
+    healthUrl: `${API.sessionPrep}/health`,
+  },
+  {
+    key: "revision-parser",
+    name: "Revision Parser",
+    zone: "Production Services",
+    note: "Revision note interpretation",
+    role: "Turns client revision notes into bounded task plans.",
+    url: serviceUrl(8160),
+    healthUrl: `${API.revisionParser}/health`,
+  },
+  {
+    key: "delivery-packager",
+    name: "Delivery Packager",
+    zone: "Production Services",
+    note: "Export packaging and handoff",
+    role: "Bundles approved deliverables with QC context and logs.",
+    url: serviceUrl(8170),
+    healthUrl: `${API.deliveryPackager}/health`,
+  },
+  {
+    key: "mix-planner",
+    name: "Mix Planner",
+    zone: "Production Services",
+    note: "Project planning and work breakdown",
+    role: "Plans mix execution and downstream production sequencing.",
+    url: serviceUrl(8180),
+    healthUrl: `${API.mixPlanner}/health`,
+  },
+  {
+    key: "studio-worker",
+    name: "Studio Worker",
+    zone: "Execution Node",
+    note: "Optional DAW execution node",
+    role: "Claims bounded SoundFlow and ReaScript jobs when enabled.",
+    url: serviceUrl(8190),
+    healthUrl: `${API.studioWorker}/health`,
+    optional: true,
+  },
 ];
+
+const supportSurface = [
+  {
+    name: "Caddy Edge",
+    detail: "TLS and LAN front door for dashboard, n8n, and OpenClaw.",
+  },
+  {
+    name: "Postgres",
+    detail: "Shared state, audit history, style records, and workflow persistence.",
+  },
+  {
+    name: "Shared Volumes",
+    detail: "Projects, approvals, drafts, and delivery artifacts across services.",
+  },
+];
+
+const zoneDescriptions: Record<string, string> = {
+  "Control Plane": "Always-on brain services exposed to operators and automation.",
+  "AI Runtime": "Local inference used by drafting, planning, and orchestration modules.",
+  "Automation Modules": "Inbound and content flows that prepare drafts for approval.",
+  "Production Services": "Execution-adjacent services for planning, QC, packaging, and revisions.",
+  "Execution Node": "Optional worker surface for DAW-side actions on the same Mac or another Mac.",
+};
 
 function asArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String);
@@ -209,18 +357,6 @@ function asArray(value: unknown): string[] {
     }
   }
   return [];
-}
-
-function formatUrl(url: string) {
-  try {
-    const parsed = new URL(url);
-    return {
-      origin: `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`,
-      path: parsed.pathname !== "/" ? parsed.pathname : "",
-    };
-  } catch {
-    return { origin: url, path: "" };
-  }
 }
 
 function summarizeTime(value: string) {
@@ -238,6 +374,15 @@ function statusTone(state: ServiceState | string) {
   return "bad";
 }
 
+function primaryMode(workers: WorkerNode[]) {
+  return workers.length ? "Mac mini + worker ready" : "single-machine default";
+}
+
+function serviceLabel(service: ServiceRecord) {
+  if (service.optional && service.state === "offline") return "optional";
+  return service.state;
+}
+
 async function fetchJson<T>(path: string): Promise<T> {
   const response = await fetch(path, { headers: { Accept: "application/json" } });
   if (!response.ok) {
@@ -248,10 +393,11 @@ async function fetchJson<T>(path: string): Promise<T> {
 
 async function fetchServiceState(path: string): Promise<{ state: ServiceState; detail: string }> {
   try {
-    const data = await fetchJson<{ status?: string }>(path);
+    const data = await fetchJson<Record<string, unknown>>(path);
+    const statusValue = typeof data.status === "string" ? data.status : undefined;
     return {
-      state: data.status === "ok" ? "healthy" : "degraded",
-      detail: data.status === "ok" ? "reachable" : JSON.stringify(data),
+      state: statusValue === undefined || statusValue === "ok" ? "healthy" : "degraded",
+      detail: statusValue === "ok" || statusValue === undefined ? "reachable" : JSON.stringify(data),
     };
   } catch (error) {
     return {
@@ -261,17 +407,25 @@ async function fetchServiceState(path: string): Promise<{ state: ServiceState; d
   }
 }
 
-function primaryMode(workers: WorkerNode[]) {
-  return workers.length ? "control plane + worker" : "single-machine";
+function groupByZone(services: ServiceRecord[]) {
+  return Object.entries(
+    services.reduce<Record<string, ServiceRecord[]>>((accumulator, service) => {
+      accumulator[service.zone] ||= [];
+      accumulator[service.zone].push(service);
+      return accumulator;
+    }, {}),
+  );
 }
 
 async function loadDashboardData(): Promise<DashboardData> {
-  const [projectState, crm, openclaw, n8n, workers, rules, rulePacks, playbooks, tasks, approvals, styleProfiles, alerts, runtimeAlerts] =
+  const [services, workers, rules, rulePacks, playbooks, tasks, approvals, styleProfiles, alerts, runtimeAlerts, bootstrapStatus] =
     await Promise.all([
-      fetchServiceState(`${API.projectState}/health`),
-      fetchServiceState(`${API.crm}/health`),
-      fetchServiceState(`${API.openclaw}/health`),
-      fetchServiceState(`${API.n8n}/healthz`),
+      Promise.all(
+        serviceCatalog.map(async (service) => ({
+          ...service,
+          ...(await fetchServiceState(service.healthUrl)),
+        })),
+      ),
       fetchJson<WorkerNode[]>(`${API.projectState}/workers/`),
       fetchJson<OrchestrationRule[]>(`${API.openclaw}/rules`),
       fetchJson<RulePack[]>(`${API.openclaw}/rule-packs`),
@@ -281,15 +435,12 @@ async function loadDashboardData(): Promise<DashboardData> {
       fetchJson<StyleProfile[]>(`${API.crm}/style-profiles?scope=studio`),
       fetchJson<AlertConfig>(`${API.openclaw}/alerts/config`),
       fetchJson<RuntimeAlertSummary>(`${API.projectState}/alerts/summary`),
+      fetchJson<BootstrapStatus>(`${API.openclaw}/bootstrap/status`),
     ]);
 
   return {
     refreshedAt: new Date().toLocaleTimeString(),
-    services: [projectState, crm, openclaw, n8n].map((entry, index) => ({
-      ...serviceConfig[index],
-      state: entry.state,
-      detail: entry.detail,
-    })),
+    services,
     workers,
     rules,
     rulePacks,
@@ -299,6 +450,7 @@ async function loadDashboardData(): Promise<DashboardData> {
     styleProfiles,
     alerts,
     runtimeAlerts,
+    bootstrapStatus,
     loadState: "ready",
     error: null,
   };
@@ -307,7 +459,7 @@ async function loadDashboardData(): Promise<DashboardData> {
 export function App() {
   const [data, setData] = useState<DashboardData>({
     refreshedAt: null,
-    services: serviceConfig.map((service) => ({
+    services: serviceCatalog.map((service) => ({
       ...service,
       state: "offline",
       detail: "pending",
@@ -330,6 +482,11 @@ export function App() {
       stale_workers: [],
       active_alerts: [],
     },
+    bootstrapStatus: {
+      status: "pending",
+      workflow_count: 0,
+      detail: "Waiting for bootstrap status.",
+    },
     loadState: "loading",
     error: null,
   });
@@ -341,16 +498,17 @@ export function App() {
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
-  const workerCount = data.workers.length;
+  const optionalOfflineCount = data.services.filter((service) => service.optional && service.state === "offline").length;
   const activeTaskCount = data.tasks.filter((task) => task.status === "queued" || task.status === "claimed").length;
+  const failedTaskCount = data.tasks.filter((task) => task.status === "failed").length;
   const enabledRuleCount = data.rules.filter((rule) => rule.enabled).length;
-  const playbookCount = data.playbooks.length;
   const primaryDashboardUrl = frontDoorUrl;
   const n8nUrl = frontDoorServiceUrl("n8n");
   const openclawUrl = frontDoorServiceUrl("openclaw");
   const secureHint = browserProtocol === "https:" ? "TLS active" : "HTTP only";
   const configuredAlertCount = data.alerts.configured_channel_count;
   const activeAlertCount = data.runtimeAlerts.active_alerts.length;
+  const serviceZones = groupByZone(data.services);
 
   useEffect(() => {
     const storedName = window.localStorage.getItem(OPERATOR_NAME_KEY);
@@ -417,9 +575,10 @@ export function App() {
       const response = await fetch(`${API.projectState}/approval-queue/${jobId}/${decision}`, {
         method: "POST",
         headers,
-        body: decision === "reject"
-          ? JSON.stringify({ reason: rejectReasons[jobId]?.trim() || "Rejected from Studio Brain UI" })
-          : undefined,
+        body:
+          decision === "reject"
+            ? JSON.stringify({ reason: rejectReasons[jobId]?.trim() || "Rejected from Studio Brain UI" })
+            : undefined,
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
@@ -442,118 +601,187 @@ export function App() {
       <section className="hero">
         <div className="hero-copy">
           <p className="eyebrow">AI Audio Studio</p>
-          <h1>Studio Brain</h1>
+          <h1>Studio Brain Control Room</h1>
           <p className="lede">
-            Operator console for a single production Mac or a Mac mini control plane with an
-            optional studio worker. Rules, approvals, style context, and worker execution stay
-            visible in one place.
+            Live operator surface for the full Mac-first stack: orchestration, approvals, style context,
+            automation, production services, and the optional DAW worker in one place.
           </p>
           <div className="hero-tags">
             <span className="tag">{primaryMode(data.workers)}</span>
             <span className="tag">{secureHint}</span>
-            <span className="tag">approval gated</span>
-            <span className="tag">prebuilt rule packs</span>
+            <span className="tag">{healthyCount}/{data.services.length} services observed</span>
+            <span className="tag">{enabledRuleCount} active rules</span>
+            <span className="tag">{data.playbooks.length} starter automations</span>
           </div>
         </div>
-        <div className="hero-meta">
-          <div className="metric">
-            <span className="metric-label">Refresh</span>
-            <strong>{data.refreshedAt ?? "waiting"}</strong>
-          </div>
+        <div className="hero-rail">
           <div className={`metric ${statusTone(data.loadState)}`}>
-            <span className="metric-label">Dashboard</span>
+            <span className="metric-label">Control plane</span>
             <strong>{data.loadState}</strong>
-            {data.error ? <span className="metric-subtle">{data.error}</span> : null}
+            <span className="metric-subtle">{data.error ?? "Operator view is polling every 15 seconds."}</span>
           </div>
-          <div className="metric metric-grid">
-            <div>
-              <span className="metric-label">Services</span>
-              <strong>{healthyCount}/{data.services.length}</strong>
+          <div className="metric-grid mission-grid">
+            <div className="metric">
+              <span className="metric-label">Refreshed</span>
+              <strong>{data.refreshedAt ?? "waiting"}</strong>
             </div>
-            <div>
-              <span className="metric-label">Workers</span>
-              <strong>{workerCount}</strong>
-            </div>
-            <div>
-              <span className="metric-label">Rules</span>
-              <strong>{enabledRuleCount}</strong>
-            </div>
-            <div>
-              <span className="metric-label">Playbooks</span>
-              <strong>{playbookCount}</strong>
-            </div>
-            <div>
+            <div className="metric">
               <span className="metric-label">Approvals</span>
               <strong>{data.approvals.length}</strong>
             </div>
-            <div>
-              <span className="metric-label">Active Alerts</span>
+            <div className="metric">
+              <span className="metric-label">Live tasks</span>
+              <strong>{activeTaskCount}</strong>
+            </div>
+            <div className={`metric ${activeAlertCount ? "warn" : "ok"}`}>
+              <span className="metric-label">Active alerts</span>
               <strong>{activeAlertCount}</strong>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="content-grid top-grid">
-        <article className="panel">
+      <section className="command-grid">
+        <article className="panel command-card accent-gold">
           <div className="panel-header">
-            <h2>Access Surface</h2>
+            <div>
+              <p className="section-kicker">Surface</p>
+              <h2>Operator Entry</h2>
+            </div>
             <span className="count-pill">{browserProtocol === "https:" ? "secure" : "live"}</span>
           </div>
           <div className="link-list">
             <a className="link-chip" href={primaryDashboardUrl}>
-              <span>Dashboard</span>
-              <code>{primaryDashboardUrl}</code>
+              <span>Control room</span>
+              <p>Primary operator front door for the entire control plane.</p>
             </a>
             <a className="link-chip" href={n8nUrl}>
-              <span>n8n Editor</span>
-              <code>{n8nUrl}</code>
-            </a>
-            <a className="link-chip" href={serviceUrl(8080)}>
-              <span>Project State API</span>
-              <code>{serviceUrl(8080)}</code>
+              <span>n8n editor</span>
+              <p>Workflow automation console for starter packs and webhook wiring.</p>
             </a>
             <a className="link-chip" href={openclawUrl}>
               <span>OpenClaw API</span>
-              <code>{openclawUrl}</code>
+              <p>Rule orchestration, bootstrap state, and policy enforcement surface.</p>
             </a>
           </div>
           <p className="panel-note">
-            Use the dashboard as the operator front door. Direct service ports remain available for
-            engineering, automation, and worker registration.
+            Operator-facing access should stay concentrated here. Direct ports remain available for
+            engineering and worker traffic, but the dashboard should be the normal entry path.
+          </p>
+          <p className="panel-note">
+            HTTPS becomes fully trusted after the Caddy local root certificate is imported on each
+            operator Mac.
           </p>
         </article>
 
-        <article className="panel">
+        <article className="panel command-card accent-blue">
           <div className="panel-header">
-            <h2>Operating Mode</h2>
-            <span className={`status-pill ${workerCount ? "warn" : "ok"}`}>{primaryMode(data.workers)}</span>
-          </div>
-          <div className="mini-grid">
-            <div className="mini-card">
-              <span className="metric-label">Recommended</span>
-              <strong>One powerful Mac first</strong>
-              <span className="metric-subtle">
-                Keep the worker optional unless you need filesystem isolation or a dedicated studio workstation.
-              </span>
+            <div>
+              <p className="section-kicker">Posture</p>
+              <h2>Deployment Mode</h2>
             </div>
-            <div className="mini-card">
-              <span className="metric-label">Current</span>
-              <strong>{workerCount ? "Remote execution enabled" : "All local execution"}</strong>
-              <span className="metric-subtle">
-                {workerCount
-                  ? "A registered worker can claim bounded DAW and packaging tasks."
-                  : "The control plane can operate alone until a second Mac is available."}
-              </span>
+            <span className={`status-pill ${data.workers.length ? "warn" : "ok"}`}>{primaryMode(data.workers)}</span>
+          </div>
+          <div className="stat-strip">
+            <div>
+              <span className="metric-label">Observed services</span>
+              <strong>{healthyCount}/{data.services.length}</strong>
+            </div>
+            <div>
+              <span className="metric-label">Optional offline</span>
+              <strong>{optionalOfflineCount}</strong>
+            </div>
+            <div>
+              <span className="metric-label">Workers</span>
+              <strong>{data.workers.length}</strong>
             </div>
           </div>
+          <p className="panel-note">
+            Single-machine mode is the default. The worker is additive capacity for DAW-side execution,
+            not a requirement to use the stack.
+          </p>
+        </article>
+
+        <article className="panel command-card accent-green">
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Automation</p>
+              <h2>Bootstrap And Alerts</h2>
+            </div>
+            <span className={`status-pill ${data.bootstrapStatus.status === "imported" || data.bootstrapStatus.status === "skipped" ? "ok" : "warn"}`}>
+              {data.bootstrapStatus.status}
+            </span>
+          </div>
+          <div className="stat-strip">
+            <div>
+              <span className="metric-label">Starter workflows</span>
+              <strong>{data.bootstrapStatus.workflow_count}</strong>
+            </div>
+            <div>
+              <span className="metric-label">Alert channels</span>
+              <strong>{configuredAlertCount}/{data.alerts.channels.length}</strong>
+            </div>
+            <div>
+              <span className="metric-label">Failed tasks</span>
+              <strong>{failedTaskCount}</strong>
+            </div>
+          </div>
+          <p className="panel-note">{data.bootstrapStatus.detail}</p>
         </article>
       </section>
 
-      <section className="content-grid">
-        <article className="panel">
+      <section className="workspace-grid">
+        <article className="panel panel-span-8">
           <div className="panel-header">
-            <h2>Operator Controls</h2>
+            <div>
+              <p className="section-kicker">Topology</p>
+              <h2>Full Service Matrix</h2>
+            </div>
+            <span className="count-pill">{data.services.length}</span>
+          </div>
+          <div className="zone-stack">
+            {serviceZones.map(([zone, services]) => (
+              <section key={zone} className="zone-card">
+                <div className="zone-header">
+                  <div>
+                    <h3>{zone}</h3>
+                    <p>{zoneDescriptions[zone]}</p>
+                  </div>
+                  <span className="count-pill">{services.filter((service) => service.state === "healthy").length}/{services.length}</span>
+                </div>
+                <div className="table-stack">
+                  {services.map((service) => {
+                    return (
+                      <div key={service.key} className="table-row service-row">
+                        <div className="row-main">
+                          <strong>{service.name}</strong>
+                          <div className="muted">{service.role}</div>
+                          <div className="meta-inline">
+                            <span>{service.note}</span>
+                            <span>{service.optional ? "optional execution surface" : "proxied into the control plane"}</span>
+                          </div>
+                        </div>
+                        <div className="row-meta">
+                          <span className={`status-pill ${service.optional && service.state === "offline" ? "warn" : statusTone(service.state)}`}>
+                            {serviceLabel(service)}
+                          </span>
+                          <span className="muted">{service.detail}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        </article>
+
+        <aside className="panel panel-span-4">
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Operator</p>
+              <h2>Control Inputs</h2>
+            </div>
             <span className="count-pill">{operatorName}</span>
           </div>
           <div className="operator-grid">
@@ -572,90 +800,50 @@ export function App() {
             </label>
           </div>
           <p className="panel-note">
-            Approval actions below use these values as `X-Actor` and `X-Operator-Token`.
+            Approval actions send `X-Actor` and `X-Operator-Token`. Keep this panel set before operating the queue.
           </p>
           {actionMessage ? <p className="feedback ok">{actionMessage}</p> : null}
           {actionError ? <p className="feedback bad">{actionError}</p> : null}
-        </article>
 
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Alerts And Escalations</h2>
-            <span className="count-pill">{configuredAlertCount}/{data.alerts.channels.length}</span>
+          <div className="divider" />
+
+          <div className="panel-header compact-header">
+            <div>
+              <p className="section-kicker">Fabric</p>
+              <h2>Support Surface</h2>
+            </div>
           </div>
-          <div className="table-stack">
-            {data.runtimeAlerts.active_alerts.length ? (
-              data.runtimeAlerts.active_alerts.map((alert) => (
-                <div key={alert.slug} className="table-row">
-                  <div>
-                    <strong>{alert.slug}</strong>
-                    <div className="muted">{alert.detail}</div>
-                  </div>
-                  <div className="row-meta">
-                    <span className={`status-pill ${alert.severity === "bad" ? "bad" : "warn"}`}>
-                      {alert.severity}
-                    </span>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="empty-state">No live alert thresholds are currently tripped.</p>
-            )}
-          </div>
-          <div className="table-stack top-gap">
-            {data.alerts.channels.map((channel) => (
-              <div key={channel.slug} className="table-row">
-                <div>
-                  <strong>{channel.name}</strong>
-                  <div className="muted">{channel.detail}</div>
-                </div>
-                <div className="row-meta">
-                  <span className={`status-pill ${channel.configured ? "ok" : "warn"}`}>
-                    {channel.configured ? "configured" : "needs setup"}
-                  </span>
-                </div>
+          <div className="support-stack">
+            {supportSurface.map((item) => (
+              <div key={item.name} className="support-card">
+                <strong>{item.name}</strong>
+                <div className="muted">{item.detail}</div>
               </div>
             ))}
           </div>
-          <p className="panel-note">
-            Default thresholds cover approval backlog, failed worker tasks, and stale workers. External fan-out becomes active when `ALERT_WEBHOOK_URL` or `ALERT_EMAIL_TO` is set.
-          </p>
-        </article>
+        </aside>
       </section>
 
-      <section className="card-grid">
-        {data.services.map((service) => {
-          const formatted = formatUrl(service.url);
-          return (
-            <article key={service.name} className={`panel service-card ${statusTone(service.state)}`}>
-              <div className="panel-header">
-                <h2>{service.name}</h2>
-                <span className={`status-pill ${statusTone(service.state)}`}>{service.state}</span>
-              </div>
-              <p>{service.note}</p>
-              <div className="endpoint">
-                <span className="endpoint-origin">{formatted.origin}</span>
-                {formatted.path ? <span className="endpoint-path">{formatted.path}</span> : null}
-              </div>
-              <span className="metric-subtle">{service.detail}</span>
-            </article>
-          );
-        })}
-      </section>
-
-      <section className="content-grid">
-        <article className="panel">
+      <section className="workspace-grid">
+        <article className="panel panel-span-6">
           <div className="panel-header">
-            <h2>Approval Queue</h2>
+            <div>
+              <p className="section-kicker">Action Queue</p>
+              <h2>Approvals</h2>
+            </div>
             <span className="count-pill">{data.approvals.length}</span>
           </div>
           <div className="table-stack">
             {data.approvals.length ? (
-              data.approvals.slice(0, 5).map((job) => (
-                <div key={job.id} className="table-row">
-                  <div>
+              data.approvals.slice(0, 6).map((job) => (
+                <div key={job.id} className="table-row approval-row">
+                  <div className="row-main">
                     <strong>{job.module}</strong>
                     <div className="muted">{job.action}</div>
+                    <div className="meta-inline">
+                      <span>{job.requested_by ?? "system"}</span>
+                      <span>{summarizeTime(job.created_at)}</span>
+                    </div>
                     <label className="field compact-field">
                       <span className="metric-label">Reject reason</span>
                       <input
@@ -667,8 +855,6 @@ export function App() {
                   </div>
                   <div className="row-meta">
                     <span className="status-pill warn">awaiting approval</span>
-                    <span className="muted">{job.requested_by ?? "system"}</span>
-                    <span className="muted">{summarizeTime(job.created_at)}</span>
                     <div className="action-row">
                       <button
                         className="action-button ok"
@@ -694,26 +880,160 @@ export function App() {
           </div>
         </article>
 
-        <article className="panel">
+        <article className="panel panel-span-6">
           <div className="panel-header">
-            <h2>Style Profiles</h2>
+            <div>
+              <p className="section-kicker">Escalation</p>
+              <h2>Live Alerts</h2>
+            </div>
+            <span className="count-pill">{activeAlertCount}</span>
+          </div>
+          <div className="alert-summary-grid">
+            <div className="mini-card">
+              <span className="metric-label">Approval backlog</span>
+              <strong>{data.runtimeAlerts.approvals_waiting}</strong>
+            </div>
+            <div className="mini-card">
+              <span className="metric-label">Failed tasks</span>
+              <strong>{data.runtimeAlerts.failed_worker_tasks}</strong>
+            </div>
+            <div className="mini-card">
+              <span className="metric-label">Stale workers</span>
+              <strong>{data.runtimeAlerts.stale_workers.length}</strong>
+            </div>
+          </div>
+          <div className="table-stack top-gap">
+            {data.runtimeAlerts.active_alerts.length ? (
+              data.runtimeAlerts.active_alerts.map((alert) => (
+                <div key={alert.slug} className="table-row">
+                  <div className="row-main">
+                    <strong>{alert.slug}</strong>
+                    <div className="muted">{alert.detail}</div>
+                  </div>
+                  <div className="row-meta">
+                    <span className={`status-pill ${alert.severity === "bad" ? "bad" : "warn"}`}>{alert.severity}</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="empty-state">No live alert thresholds are currently tripped.</p>
+            )}
+          </div>
+          <div className="table-stack top-gap">
+            {data.alerts.channels.map((channel) => (
+              <div key={channel.slug} className="table-row">
+                <div className="row-main">
+                  <strong>{channel.name}</strong>
+                  <div className="muted">{channel.detail}</div>
+                </div>
+                <div className="row-meta">
+                  <span className={`status-pill ${channel.configured ? "ok" : "warn"}`}>
+                    {channel.configured ? "configured" : "needs setup"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      <section className="workspace-grid">
+        <article className="panel panel-span-5">
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Execution</p>
+              <h2>Worker Nodes</h2>
+            </div>
+            <span className="count-pill">{data.workers.length}</span>
+          </div>
+          <div className="table-stack">
+            {data.workers.length ? (
+              data.workers.map((worker) => (
+                <div key={worker.id} className="table-row">
+                  <div className="row-main">
+                    <strong>{worker.display_name}</strong>
+                    <div className="muted">
+                      {worker.slug} · {worker.platform} · {worker.host ?? "no host"}
+                    </div>
+                    <div className="meta-inline">
+                      <span>{asArray(worker.capabilities).join(", ")}</span>
+                    </div>
+                  </div>
+                  <div className="row-meta">
+                    <span className={`status-pill ${statusTone(worker.status)}`}>{worker.status}</span>
+                    <span className="muted">
+                      {worker.api_base_url ? "worker api reachable" : "no api url"}
+                    </span>
+                    <span className="muted">seen {summarizeTime(worker.last_seen_at)}</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="empty-state">No worker registrations yet. Single-machine mode remains fully usable.</p>
+            )}
+          </div>
+        </article>
+
+        <article className="panel panel-span-7">
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Runtime</p>
+              <h2>Task Feed</h2>
+            </div>
+            <span className="count-pill">{data.tasks.length}</span>
+          </div>
+          <div className="table-stack">
+            {data.tasks.length ? (
+              data.tasks.slice(0, 8).map((task) => (
+                <div key={task.id} className="table-row">
+                  <div className="row-main">
+                    <strong>{task.task_type}</strong>
+                    <div className="muted">
+                      {task.worker_slug ?? task.claimed_by ?? "unassigned"} · {task.priority}
+                    </div>
+                    {task.error_message ? <div className="muted">{task.error_message}</div> : null}
+                  </div>
+                  <div className="row-meta">
+                    <span className={`status-pill ${statusTone(task.status)}`}>{task.status}</span>
+                    <span className="muted">{summarizeTime(task.created_at)}</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="empty-state">No worker tasks have been processed yet.</p>
+            )}
+          </div>
+          <p className="panel-note">
+            Historical smoke-test failures stay visible until the backing rows are cleared. Treat this as
+            operational history, not only current breakage.
+          </p>
+        </article>
+      </section>
+
+      <section className="workspace-grid">
+        <article className="panel panel-span-4">
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Context</p>
+              <h2>Style Profiles</h2>
+            </div>
             <span className="count-pill">{data.styleProfiles.length}</span>
           </div>
           <div className="table-stack">
             {data.styleProfiles.length ? (
-              data.styleProfiles.slice(0, 4).map((profile) => (
+              data.styleProfiles.slice(0, 5).map((profile) => (
                 <div key={profile.id} className="table-row">
-                  <div>
+                  <div className="row-main">
                     <strong>{profile.name}</strong>
                     <div className="muted">
                       {profile.scope} · {profile.source_type}
                     </div>
+                    <div className="muted">
+                      {profile.extracted_guidance?.summary ?? "No guidance summary extracted yet."}
+                    </div>
                   </div>
                   <div className="row-meta">
                     <span className="status-pill ok">active context</span>
-                    <span className="muted">
-                      {profile.extracted_guidance?.summary ?? "No guidance summary extracted yet."}
-                    </span>
                   </div>
                 </div>
               ))
@@ -722,50 +1042,20 @@ export function App() {
             )}
           </div>
         </article>
-      </section>
 
-      <section className="content-grid">
-        <article className="panel">
+        <article className="panel panel-span-4">
           <div className="panel-header">
-            <h2>Worker Nodes</h2>
-            <span className="count-pill">{data.workers.length}</span>
-          </div>
-          <div className="table-stack">
-            {data.workers.length ? (
-              data.workers.map((worker) => (
-                <div key={worker.id} className="table-row">
-                  <div>
-                    <strong>{worker.display_name}</strong>
-                    <div className="muted">
-                      {worker.slug} · {worker.platform} · {worker.host ?? "no host"}
-                    </div>
-                  </div>
-                  <div className="row-meta">
-                    <span className={`status-pill ${statusTone(worker.status)}`}>{worker.status}</span>
-                    <span className="muted">{asArray(worker.capabilities).join(", ")}</span>
-                    <span className="muted">
-                      {worker.api_base_url ? formatUrl(worker.api_base_url).origin : "no api url"}
-                    </span>
-                    <span className="muted">seen {summarizeTime(worker.last_seen_at)}</span>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="empty-state">No worker registrations yet. Single-machine mode is still fully usable.</p>
-            )}
-          </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Prebuilt Rule Packs</h2>
+            <div>
+              <p className="section-kicker">Rules</p>
+              <h2>Rule Packs</h2>
+            </div>
             <span className="count-pill">{data.rulePacks.length}</span>
           </div>
           <div className="table-stack">
             {data.rulePacks.length ? (
               data.rulePacks.map((pack) => (
                 <div key={pack.slug} className="table-row">
-                  <div>
+                  <div className="row-main">
                     <strong>{pack.name}</strong>
                     <div className="muted">{pack.description}</div>
                   </div>
@@ -780,67 +1070,38 @@ export function App() {
             )}
           </div>
         </article>
-      </section>
 
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Starter Automations</h2>
-          <span className="count-pill">{data.playbooks.length}</span>
-        </div>
-        <div className="table-stack">
-          {data.playbooks.length ? (
-            data.playbooks.map((playbook) => (
-              <div key={playbook.slug} className="table-row">
-                <div>
-                  <strong>{playbook.name}</strong>
-                  <div className="muted">
-                    {playbook.trigger_module}.{playbook.trigger_action} &rarr; {playbook.target_module}
+        <article className="panel panel-span-4">
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Automations</p>
+              <h2>Starter Playbooks</h2>
+            </div>
+            <span className="count-pill">{data.playbooks.length}</span>
+          </div>
+          <div className="table-stack">
+            {data.playbooks.length ? (
+              data.playbooks.map((playbook) => (
+                <div key={playbook.slug} className="table-row">
+                  <div className="row-main">
+                    <strong>{playbook.name}</strong>
+                    <div className="muted">
+                      {playbook.trigger_module}.{playbook.trigger_action} → {playbook.target_module}
+                    </div>
+                    <div className="muted">{playbook.summary}</div>
                   </div>
-                  <div className="muted">{playbook.summary}</div>
-                </div>
-                <div className="row-meta">
-                  <span className="status-pill ok">prebuilt</span>
-                  <span className="muted">{playbook.n8n_workflow_slug}</span>
-                  <span className="muted">{playbook.webhook_path}</span>
-                  <span className="muted">needs {playbook.required_context.join(", ")}</span>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="empty-state">No starter automations are available yet.</p>
-          )}
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Recent Worker Tasks</h2>
-          <span className="count-pill">{data.tasks.length}</span>
-        </div>
-        <div className="table-stack">
-          {data.tasks.length ? (
-            data.tasks.slice(0, 8).map((task) => (
-              <div key={task.id} className="table-row">
-                <div>
-                  <strong>{task.task_type}</strong>
-                  <div className="muted">
-                    {task.worker_slug ?? task.claimed_by ?? "unassigned"} · {task.priority}
+                  <div className="row-meta">
+                    <span className="status-pill ok">prebuilt</span>
+                    <span className="muted">{playbook.n8n_workflow_slug}</span>
+                    <span className="muted">{playbook.webhook_path}</span>
                   </div>
                 </div>
-                <div className="row-meta">
-                  <span className={`status-pill ${statusTone(task.status)}`}>{task.status}</span>
-                  <span className="muted">{summarizeTime(task.created_at)}</span>
-                  {task.error_message ? <span className="muted">{task.error_message}</span> : null}
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="empty-state">No worker tasks have been processed yet.</p>
-          )}
-        </div>
-        <p className="panel-note">
-          Historical smoke-test failures remain visible until the backing rows are cleared. Treat this panel as runtime history, not just current failures.
-        </p>
+              ))
+            ) : (
+              <p className="empty-state">No starter automations are available yet.</p>
+            )}
+          </div>
+        </article>
       </section>
     </main>
   );
