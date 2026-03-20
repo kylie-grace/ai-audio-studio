@@ -393,6 +393,24 @@ code {
   resize: vertical;
 }
 
+.field input,
+.field textarea,
+.field select {
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease;
+}
+
+.field input:focus-visible,
+.field textarea:focus-visible,
+.field select:focus-visible,
+.action-button:focus-visible {
+  outline: none;
+  border-color: rgba(243, 203, 115, 0.46);
+  box-shadow: 0 0 0 3px rgba(243, 203, 115, 0.12);
+}
+
 .compact-field {
   margin-top: 10px;
 }
@@ -409,10 +427,47 @@ code {
 
 .onboarding-panel {
   margin-bottom: 16px;
+  overflow: hidden;
 }
 
 .onboarding-panel.needs-setup {
   border-color: rgba(236, 193, 100, 0.24);
+}
+
+.onboarding-header {
+  margin-bottom: 6px;
+}
+
+.onboarding-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.summary-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.summary-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(245, 241, 232, 0.88);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.onboarding-steps-row {
+  margin-top: 12px;
 }
 
 .onboarding-grid,
@@ -442,6 +497,15 @@ code {
 
 .toggle-chip input {
   margin: 0;
+}
+
+.onboarding-panel .mini-card {
+  padding: 18px;
+  gap: 10px;
+}
+
+.onboarding-panel .mini-card .metric-label:first-child {
+  margin-bottom: 2px;
 }
 
 .mini-inline-note {
@@ -542,6 +606,10 @@ code {
   letter-spacing: 0.08em;
   font-size: 0.72rem;
   cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    transform 140ms ease;
 }
 
 .action-button.ok {
@@ -557,6 +625,19 @@ code {
 .action-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.action-button:not(:disabled):hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.action-button.ok:not(:disabled):hover {
+  background: rgba(108, 191, 138, 0.12);
+}
+
+.action-button.bad:not(:disabled):hover {
+  background: rgba(233, 106, 106, 0.12);
 }
 
 .feedback {

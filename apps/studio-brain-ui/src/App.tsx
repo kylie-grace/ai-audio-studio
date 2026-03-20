@@ -622,7 +622,6 @@ export function App() {
   const configuredAlertCount = data.alerts.configured_channel_count;
   const activeAlertCount = data.runtimeAlerts.active_alerts.length;
   const serviceZones = groupByZone(data.services);
-  const onboardingMissingCount = data.workspace.missing_fields.length;
 
   useEffect(() => {
     const storedName = window.localStorage.getItem(OPERATOR_NAME_KEY);
@@ -1272,7 +1271,14 @@ export function App() {
           <div className="operator-grid">
             <label className="field">
               <span className="metric-label">Approval actor</span>
-              <input value={operatorName} onChange={(event) => setOperatorName(event.target.value)} />
+              <input
+                value={operatorName}
+                onChange={(event) => {
+                  const nextName = event.target.value;
+                  setOperatorName(nextName);
+                  setWorkspaceDraft((current) => ({ ...current, operator_name: nextName }));
+                }}
+              />
             </label>
             <label className="field">
               <span className="metric-label">Operator token</span>
