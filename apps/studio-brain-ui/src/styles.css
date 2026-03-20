@@ -346,12 +346,14 @@ code {
 }
 
 .link-list,
-.mini-grid {
+.mini-grid,
+.operator-grid {
   display: grid;
   gap: 12px;
 }
 
-.mini-grid {
+.mini-grid,
+.operator-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -363,6 +365,29 @@ code {
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(3, 9, 13, 0.72);
+  color: #f4f1ea;
+  padding: 11px 12px;
+  border-radius: 12px;
+  font: inherit;
+}
+
+.compact-field {
+  margin-top: 12px;
+}
+
+.compact-field input {
+  padding: 9px 11px;
 }
 
 .link-chip code {
@@ -393,6 +418,40 @@ code {
   max-width: 50%;
 }
 
+.action-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.action-button {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #f4f1ea;
+  padding: 8px 12px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.action-button.ok {
+  border-color: rgba(127, 203, 159, 0.24);
+  color: #b9f0cb;
+}
+
+.action-button.bad {
+  border-color: rgba(235, 111, 111, 0.24);
+  color: #ffb2b2;
+}
+
+.action-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .muted {
   color: rgba(244, 241, 234, 0.62);
   font-size: 0.9rem;
@@ -408,6 +467,23 @@ code {
   margin: 12px 0 0;
   color: rgba(244, 241, 234, 0.62);
   font-size: 0.9rem;
+}
+
+.feedback {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+}
+
+.feedback.ok {
+  background: rgba(127, 203, 159, 0.12);
+  color: #b9f0cb;
+}
+
+.feedback.bad {
+  background: rgba(235, 111, 111, 0.12);
+  color: #ffb2b2;
 }
 
 @media (max-width: 960px) {
