@@ -20,6 +20,11 @@ from .style_profiles import (
     extract_guidance,
     serialize_style_profile,
 )
+from .workspace_settings import (
+    default_workspace_settings,
+    serialize_workspace_settings,
+    workspace_status,
+)
 
 _pool: asyncpg.Pool | None = None
 
@@ -28,7 +33,9 @@ _pool: asyncpg.Pool | None = None
 async def lifespan(app: FastAPI):
     global _pool
     _pool = await asyncpg.create_pool(os.environ["POSTGRES_DSN"], min_size=1, max_size=5)
+    await ensure_workspace_settings_table(_pool)
     await seed_default_style_profile(_pool)
+    await seed_default_workspace_settings(_pool)
     yield
     if _pool is not None:
         await _pool.close()
@@ -76,6 +83,52 @@ class CreateStyleProfileBody(BaseModel):
     file_paths: list[str] = []
 
 
+class WorkspaceSharedPathsBody(BaseModel):
+    projects: str = ""
+    deliveries: str = ""
+    draft_queue: str = ""
+    approval_queue: str = ""
+    incoming_stems: str = ""
+
+
+class WorkspaceStyleSeedBody(BaseModel):
+    name: str = DEFAULT_STYLE_PROFILE_NAME
+    raw_text: str = DEFAULT_STYLE_PROFILE_TEXT
+    source_paths: list[str] = []
+
+
+class WorkspaceAlertDestinationsBody(BaseModel):
+    email_to: list[str] = []
+    webhook_url: str = ""
+
+
+class WorkspaceIntegrationsBody(BaseModel):
+    n8n: bool = True
+    gmail_readonly: bool = False
+    gmail_send: bool = False
+    instagram: bool = False
+    facebook: bool = False
+
+
+class WorkspaceWorkerBody(BaseModel):
+    enabled: bool = False
+    worker_slug: str = ""
+    worker_api_base_url: str = ""
+
+
+class WorkspaceBootstrapBody(BaseModel):
+    studio_name: str
+    deployment_mode: str = "single_machine"
+    public_base_url: str = ""
+    https_mode: str = "local_http"
+    operator_name: str
+    shared_paths: WorkspaceSharedPathsBody
+    style_seed: WorkspaceStyleSeedBody
+    alert_destinations: WorkspaceAlertDestinationsBody = WorkspaceAlertDestinationsBody()
+    integrations: WorkspaceIntegrationsBody = WorkspaceIntegrationsBody()
+    worker: WorkspaceWorkerBody = WorkspaceWorkerBody()
+
+
 async def seed_default_style_profile(pool: asyncpg.Pool) -> None:
     existing = await pool.fetchrow(
         "SELECT id FROM style_profiles WHERE name=$1 ORDER BY created_at ASC LIMIT 1",
@@ -91,6 +144,67 @@ async def seed_default_style_profile(pool: asyncpg.Pool) -> None:
         DEFAULT_STYLE_PROFILE_TEXT,
         json.dumps(extract_guidance(DEFAULT_STYLE_PROFILE_TEXT)),
     )
+
+
+async def ensure_workspace_settings_table(pool: asyncpg.Pool) -> None:
+    await pool.execute(
+        """CREATE TABLE IF NOT EXISTS workspace_settings (
+               singleton           BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+               studio_name         TEXT NOT NULL DEFAULT '',
+               deployment_mode     TEXT NOT NULL DEFAULT 'single_machine',
+               public_base_url     TEXT NOT NULL DEFAULT '',
+               https_mode          TEXT NOT NULL DEFAULT 'local_http',
+               operator_name       TEXT NOT NULL DEFAULT 'owner',
+               shared_paths        JSONB NOT NULL DEFAULT '{}'::jsonb,
+               style_seed          JSONB NOT NULL DEFAULT '{}'::jsonb,
+               alert_destinations  JSONB NOT NULL DEFAULT '{}'::jsonb,
+               integrations        JSONB NOT NULL DEFAULT '{}'::jsonb,
+               worker_config       JSONB NOT NULL DEFAULT '{}'::jsonb,
+               onboarding_complete BOOLEAN NOT NULL DEFAULT false,
+               created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+               updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+           )"""
+    )
+
+
+async def seed_default_workspace_settings(pool: asyncpg.Pool) -> None:
+    existing = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    if existing is not None:
+        return
+    defaults = default_workspace_settings()
+    await pool.execute(
+        """INSERT INTO workspace_settings
+           (singleton, studio_name, deployment_mode, public_base_url, https_mode, operator_name,
+            shared_paths, style_seed, alert_destinations, integrations, worker_config, onboarding_complete)
+           VALUES (TRUE,$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11)""",
+        defaults["studio_name"],
+        defaults["deployment_mode"],
+        defaults["public_base_url"],
+        defaults["https_mode"],
+        defaults["operator_name"],
+        json.dumps(defaults["shared_paths"]),
+        json.dumps(defaults["style_seed"]),
+        json.dumps(defaults["alert_destinations"]),
+        json.dumps(defaults["integrations"]),
+        json.dumps(defaults["worker"]),
+        defaults["onboarding_complete"],
+    )
+
+
+def combined_style_seed(raw_text: str, file_paths: list[str]) -> tuple[str, str]:
+    file_bodies: list[str] = []
+    for file_path in file_paths:
+        path = Path(file_path)
+        if not path.exists() or not path.is_file():
+            raise HTTPException(status_code=404, detail=f"Style source file not found: {file_path}")
+        file_bodies.append(path.read_text(encoding="utf-8", errors="ignore"))
+
+    combined = "\n\n".join(part for part in [raw_text.strip(), *file_bodies] if part).strip()
+    if not combined:
+        raise HTTPException(status_code=422, detail="Provide style seed text, style seed files, or both")
+
+    source_type = "hybrid" if raw_text.strip() and file_paths else "files" if file_paths else "pasted"
+    return combined, source_type
 
 
 @app.get("/health")
@@ -244,3 +358,97 @@ async def get_style_profile(profile_id: str):
     if row is None:
         raise HTTPException(status_code=404, detail="Style profile not found")
     return serialize_style_profile(row)
+
+
+@app.get("/workspace-settings")
+async def get_workspace_settings():
+    pool = await get_pool()
+    row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    return serialize_workspace_settings(row)
+
+
+@app.get("/workspace-settings/status")
+async def get_workspace_settings_status():
+    pool = await get_pool()
+    row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    settings = serialize_workspace_settings(row)
+    style_profile_count = await pool.fetchval("SELECT COUNT(*) FROM style_profiles WHERE scope='studio'")
+    return {
+        "settings": settings,
+        **workspace_status(settings, style_profile_count),
+    }
+
+
+@app.post("/workspace-settings/bootstrap")
+async def bootstrap_workspace_settings(body: WorkspaceBootstrapBody):
+    pool = await get_pool()
+    style_seed_text, source_type = combined_style_seed(body.style_seed.raw_text, body.style_seed.source_paths)
+
+    await pool.execute(
+        """INSERT INTO workspace_settings
+           (singleton, studio_name, deployment_mode, public_base_url, https_mode, operator_name,
+            shared_paths, style_seed, alert_destinations, integrations, worker_config, onboarding_complete, updated_at)
+           VALUES (TRUE,$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,TRUE,now())
+           ON CONFLICT (singleton) DO UPDATE SET
+             studio_name=EXCLUDED.studio_name,
+             deployment_mode=EXCLUDED.deployment_mode,
+             public_base_url=EXCLUDED.public_base_url,
+             https_mode=EXCLUDED.https_mode,
+             operator_name=EXCLUDED.operator_name,
+             shared_paths=EXCLUDED.shared_paths,
+             style_seed=EXCLUDED.style_seed,
+             alert_destinations=EXCLUDED.alert_destinations,
+             integrations=EXCLUDED.integrations,
+             worker_config=EXCLUDED.worker_config,
+             onboarding_complete=EXCLUDED.onboarding_complete,
+             updated_at=now()""",
+        body.studio_name.strip(),
+        body.deployment_mode,
+        body.public_base_url.strip(),
+        body.https_mode,
+        body.operator_name.strip(),
+        json.dumps(body.shared_paths.dict()),
+        json.dumps(body.style_seed.dict()),
+        json.dumps(body.alert_destinations.dict()),
+        json.dumps(body.integrations.dict()),
+        json.dumps(body.worker.dict()),
+    )
+
+    existing_profile = await pool.fetchrow(
+        "SELECT id FROM style_profiles WHERE name=$1 ORDER BY created_at ASC LIMIT 1",
+        body.style_seed.name,
+    )
+    if existing_profile is None:
+        await pool.execute(
+            """INSERT INTO style_profiles
+               (scope, name, source_type, raw_text, file_paths, extracted_guidance)
+               VALUES ('studio',$1,$2,$3,$4::jsonb,$5::jsonb)""",
+            body.style_seed.name,
+            source_type,
+            style_seed_text,
+            json.dumps(body.style_seed.source_paths),
+            json.dumps(extract_guidance(style_seed_text)),
+        )
+    else:
+        await pool.execute(
+            """UPDATE style_profiles
+               SET source_type=$2,
+                   raw_text=$3,
+                   file_paths=$4::jsonb,
+                   extracted_guidance=$5::jsonb,
+                   updated_at=now()
+               WHERE id=$1""",
+            existing_profile["id"],
+            source_type,
+            style_seed_text,
+            json.dumps(body.style_seed.source_paths),
+            json.dumps(extract_guidance(style_seed_text)),
+        )
+
+    row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    settings = serialize_workspace_settings(row)
+    style_profile_count = await pool.fetchval("SELECT COUNT(*) FROM style_profiles WHERE scope='studio'")
+    return {
+        "settings": settings,
+        **workspace_status(settings, style_profile_count),
+    }

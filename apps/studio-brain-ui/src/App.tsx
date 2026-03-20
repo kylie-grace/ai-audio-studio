@@ -140,6 +140,53 @@ type BootstrapStatus = {
   updated_at?: string;
 };
 
+type WorkspaceSettings = {
+  studio_name: string;
+  deployment_mode: "single_machine" | "control_plane_plus_worker";
+  public_base_url: string;
+  https_mode: "local_http" | "https_enabled" | "https_terminated_elsewhere";
+  operator_name: string;
+  shared_paths: {
+    projects: string;
+    deliveries: string;
+    draft_queue: string;
+    approval_queue: string;
+    incoming_stems: string;
+  };
+  style_seed: {
+    name: string;
+    raw_text: string;
+    source_paths: string[];
+  };
+  alert_destinations: {
+    email_to: string[];
+    webhook_url: string;
+  };
+  integrations: {
+    n8n: boolean;
+    gmail_readonly: boolean;
+    gmail_send: boolean;
+    instagram: boolean;
+    facebook: boolean;
+  };
+  worker: {
+    enabled: boolean;
+    worker_slug: string;
+    worker_api_base_url: string;
+  };
+  onboarding_complete: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type WorkspaceStatus = {
+  settings: WorkspaceSettings;
+  onboarding_required: boolean;
+  onboarding_complete: boolean;
+  missing_fields: string[];
+  style_profile_count: number;
+};
+
 type DashboardData = {
   refreshedAt: string | null;
   services: ServiceRecord[];
@@ -153,6 +200,7 @@ type DashboardData = {
   alerts: AlertConfig;
   runtimeAlerts: RuntimeAlertSummary;
   bootstrapStatus: BootstrapStatus;
+  workspace: WorkspaceStatus;
   loadState: "loading" | "ready" | "error";
   error: string | null;
 };
@@ -338,6 +386,47 @@ const supportSurface = [
   },
 ];
 
+function defaultWorkspaceSettings(): WorkspaceSettings {
+  return {
+    studio_name: "",
+    deployment_mode: "single_machine",
+    public_base_url: browserProtocol === "https:" ? frontDoorUrl : "https://localhost",
+    https_mode: browserProtocol === "https:" ? "https_enabled" : "local_http",
+    operator_name: "owner",
+    shared_paths: {
+      projects: "/Volumes/StudioShare/projects",
+      deliveries: "/Volumes/StudioShare/deliveries",
+      draft_queue: "/Volumes/StudioShare/draft-queue",
+      approval_queue: "/Volumes/StudioShare/approval-queue",
+      incoming_stems: "/Volumes/StudioShare/incoming-stems",
+    },
+    style_seed: {
+      name: "Default Studio Tone",
+      raw_text: "",
+      source_paths: [],
+    },
+    alert_destinations: {
+      email_to: [],
+      webhook_url: "",
+    },
+    integrations: {
+      n8n: true,
+      gmail_readonly: false,
+      gmail_send: false,
+      instagram: false,
+      facebook: false,
+    },
+    worker: {
+      enabled: false,
+      worker_slug: "studio-mac",
+      worker_api_base_url: "",
+    },
+    onboarding_complete: false,
+    created_at: null,
+    updated_at: null,
+  };
+}
+
 const zoneDescriptions: Record<string, string> = {
   "Control Plane": "Always-on brain services exposed to operators and automation.",
   "AI Runtime": "Local inference used by drafting, planning, and orchestration modules.",
@@ -366,6 +455,13 @@ function summarizeTime(value: string) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function parseDelimitedList(value: string) {
+  return value
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function statusTone(state: ServiceState | string) {
@@ -418,7 +514,7 @@ function groupByZone(services: ServiceRecord[]) {
 }
 
 async function loadDashboardData(): Promise<DashboardData> {
-  const [services, workers, rules, rulePacks, playbooks, tasks, approvals, styleProfiles, alerts, runtimeAlerts, bootstrapStatus] =
+  const [services, workers, rules, rulePacks, playbooks, tasks, approvals, styleProfiles, alerts, runtimeAlerts, bootstrapStatus, workspace] =
     await Promise.all([
       Promise.all(
         serviceCatalog.map(async (service) => ({
@@ -436,6 +532,7 @@ async function loadDashboardData(): Promise<DashboardData> {
       fetchJson<AlertConfig>(`${API.openclaw}/alerts/config`),
       fetchJson<RuntimeAlertSummary>(`${API.projectState}/alerts/summary`),
       fetchJson<BootstrapStatus>(`${API.openclaw}/bootstrap/status`),
+      fetchJson<WorkspaceStatus>(`${API.crm}/workspace-settings/status`),
     ]);
 
   return {
@@ -451,6 +548,7 @@ async function loadDashboardData(): Promise<DashboardData> {
     alerts,
     runtimeAlerts,
     bootstrapStatus,
+    workspace,
     loadState: "ready",
     error: null,
   };
@@ -487,6 +585,13 @@ export function App() {
       workflow_count: 0,
       detail: "Waiting for bootstrap status.",
     },
+    workspace: {
+      settings: defaultWorkspaceSettings(),
+      onboarding_required: true,
+      onboarding_complete: false,
+      missing_fields: ["studio_name", "shared_paths.projects", "style_seed.raw_text"],
+      style_profile_count: 0,
+    },
     loadState: "loading",
     error: null,
   });
@@ -496,6 +601,14 @@ export function App() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
+  const [workspaceDraft, setWorkspaceDraft] = useState<WorkspaceSettings>(defaultWorkspaceSettings());
+  const [workspaceDraftHydrated, setWorkspaceDraftHydrated] = useState(false);
+  const [operatorNameHydrated, setOperatorNameHydrated] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  const [editingWorkspaceSetup, setEditingWorkspaceSetup] = useState(false);
+  const [onboardingSaving, setOnboardingSaving] = useState(false);
+  const [onboardingMessage, setOnboardingMessage] = useState<string | null>(null);
+  const [onboardingError, setOnboardingError] = useState<string | null>(null);
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const optionalOfflineCount = data.services.filter((service) => service.optional && service.state === "offline").length;
@@ -509,11 +622,15 @@ export function App() {
   const configuredAlertCount = data.alerts.configured_channel_count;
   const activeAlertCount = data.runtimeAlerts.active_alerts.length;
   const serviceZones = groupByZone(data.services);
+  const onboardingMissingCount = data.workspace.missing_fields.length;
 
   useEffect(() => {
     const storedName = window.localStorage.getItem(OPERATOR_NAME_KEY);
     const storedToken = window.localStorage.getItem(OPERATOR_TOKEN_KEY);
-    if (storedName) setOperatorName(storedName);
+    if (storedName) {
+      setOperatorName(storedName);
+      setOperatorNameHydrated(true);
+    }
     if (storedToken) setOperatorToken(storedToken);
   }, []);
 
@@ -528,6 +645,26 @@ export function App() {
       window.localStorage.removeItem(OPERATOR_TOKEN_KEY);
     }
   }, [operatorToken]);
+
+  useEffect(() => {
+    if (!workspaceDraftHydrated) {
+      setWorkspaceDraft(data.workspace.settings);
+      setWorkspaceDraftHydrated(true);
+    }
+  }, [data.workspace.settings, workspaceDraftHydrated]);
+
+  useEffect(() => {
+    if (!operatorNameHydrated && data.workspace.settings.operator_name) {
+      setOperatorName(data.workspace.settings.operator_name);
+      setOperatorNameHydrated(true);
+    }
+  }, [data.workspace.settings.operator_name, operatorNameHydrated]);
+
+  useEffect(() => {
+    if (data.workspace.onboarding_required) {
+      setEditingWorkspaceSetup(true);
+    }
+  }, [data.workspace.onboarding_required]);
 
   useEffect(() => {
     let active = true;
@@ -596,8 +733,356 @@ export function App() {
     }
   }
 
+  async function saveWorkspaceSettings() {
+    setOnboardingSaving(true);
+    setOnboardingError(null);
+    setOnboardingMessage(null);
+    try {
+      const payload = {
+        ...workspaceDraft,
+        studio_name: workspaceDraft.studio_name.trim(),
+        deployment_mode: workspaceDraft.deployment_mode,
+        public_base_url: workspaceDraft.public_base_url.trim(),
+        https_mode: workspaceDraft.https_mode,
+        operator_name: workspaceDraft.operator_name.trim() || operatorName,
+        shared_paths: {
+          ...workspaceDraft.shared_paths,
+          projects: workspaceDraft.shared_paths.projects.trim(),
+          deliveries: workspaceDraft.shared_paths.deliveries.trim(),
+          draft_queue: workspaceDraft.shared_paths.draft_queue.trim(),
+          approval_queue: workspaceDraft.shared_paths.approval_queue.trim(),
+          incoming_stems: workspaceDraft.shared_paths.incoming_stems.trim(),
+        },
+        alert_destinations: {
+          ...workspaceDraft.alert_destinations,
+          webhook_url: workspaceDraft.alert_destinations.webhook_url.trim(),
+          email_to: workspaceDraft.alert_destinations.email_to.map((email) => email.trim()).filter(Boolean),
+        },
+        style_seed: {
+          ...workspaceDraft.style_seed,
+          name: workspaceDraft.style_seed.name.trim(),
+          raw_text: workspaceDraft.style_seed.raw_text.trim(),
+          source_paths: workspaceDraft.style_seed.source_paths.map((path) => path.trim()).filter(Boolean),
+        },
+        worker: {
+          ...workspaceDraft.worker,
+          worker_slug: workspaceDraft.worker.worker_slug.trim(),
+          worker_api_base_url: workspaceDraft.worker.worker_api_base_url.trim(),
+        },
+      };
+      const response = await fetch(`${API.crm}/workspace-settings/bootstrap`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const problem = await response.json().catch(() => null);
+        throw new Error(problem?.detail ?? `Workspace bootstrap failed with ${response.status}`);
+      }
+      setOnboardingMessage("Workspace onboarding saved.");
+      setOperatorName(payload.operator_name);
+      setWorkspaceDraft((current) => ({
+        ...current,
+        ...payload,
+      }));
+      setEditingWorkspaceSetup(false);
+      setOnboardingStep(0);
+      await refreshData();
+    } catch (error) {
+      setOnboardingError(error instanceof Error ? error.message : "Unable to save workspace settings");
+    } finally {
+      setOnboardingSaving(false);
+    }
+  }
+
+  const onboardingRequired = data.workspace.onboarding_required;
+  const onboardingMissingCount = data.workspace.missing_fields.length;
+  const onboardingStepLabels = ["Studio", "Paths", "Style", "Alerts", "Integrations"];
+  const onboardingStepCount = onboardingStepLabels.length;
+
   return (
     <main className="app-shell">
+      <section className={`panel onboarding-panel ${onboardingRequired ? "needs-setup" : "is-complete"}`}>
+        <div className="panel-header onboarding-header">
+          <div>
+            <p className="section-kicker">Bootstrap</p>
+            <h2>{editingWorkspaceSetup || onboardingRequired ? "First-run onboarding" : "Workspace ready"}</h2>
+          </div>
+          <div className="onboarding-header-actions">
+            <span className={`status-pill ${onboardingRequired ? "warn" : "ok"}`}>
+              {onboardingRequired ? `${onboardingMissingCount} items missing` : "configured"}
+            </span>
+            <button
+              className="action-button"
+              type="button"
+              onClick={() => {
+                setEditingWorkspaceSetup(true);
+                setOnboardingStep(0);
+                setWorkspaceDraft(data.workspace.settings);
+              }}
+            >
+              {onboardingRequired ? "continue setup" : "edit setup"}
+            </button>
+          </div>
+        </div>
+        <p className="panel-note">
+          This is the missing novice layer: tell the system who the studio is, how this machine is being used,
+          where files live, what tone to write in, how operators should be alerted, and whether a worker Mac is optional.
+        </p>
+        <div className="summary-pill-row onboarding-steps-row">
+          {onboardingStepLabels.map((label) => (
+            <span key={label} className="summary-pill">
+              {label}
+            </span>
+          ))}
+          <span className="summary-pill">{onboardingStepCount} steps</span>
+        </div>
+        <div className="onboarding-grid">
+          <article className="mini-card">
+            <span className="metric-label">1. Identity</span>
+            <label className="field">
+              <span className="metric-label">Studio name</span>
+              <input
+                value={workspaceDraft.studio_name}
+                onChange={(event) => setWorkspaceDraft((current) => ({ ...current, studio_name: event.target.value }))}
+              />
+            </label>
+            <label className="field">
+              <span className="metric-label">Deployment mode</span>
+              <select
+                value={workspaceDraft.deployment_mode}
+                onChange={(event) =>
+                  setWorkspaceDraft((current) => ({
+                    ...current,
+                    deployment_mode: event.target.value as WorkspaceSettings["deployment_mode"],
+                    worker: {
+                      ...current.worker,
+                      enabled: event.target.value === "control_plane_plus_worker",
+                    },
+                  }))}
+              >
+                <option value="single_machine">Single machine</option>
+                <option value="control_plane_plus_worker">Control plane + worker</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="metric-label">Primary operator</span>
+              <input
+                value={workspaceDraft.operator_name}
+                onChange={(event) => {
+                  const nextName = event.target.value;
+                  setWorkspaceDraft((current) => ({ ...current, operator_name: nextName }));
+                  setOperatorName(nextName);
+                }}
+              />
+            </label>
+          </article>
+
+          <article className="mini-card">
+            <span className="metric-label">2. Front Door</span>
+            <label className="field">
+              <span className="metric-label">Public base URL</span>
+              <input
+                value={workspaceDraft.public_base_url}
+                placeholder="https://localhost"
+                onChange={(event) => setWorkspaceDraft((current) => ({ ...current, public_base_url: event.target.value }))}
+              />
+            </label>
+            <label className="field">
+              <span className="metric-label">HTTPS mode</span>
+              <select
+                value={workspaceDraft.https_mode}
+                onChange={(event) =>
+                  setWorkspaceDraft((current) => ({
+                    ...current,
+                    https_mode: event.target.value as WorkspaceSettings["https_mode"],
+                  }))}
+              >
+                <option value="local_http">HTTP only for now</option>
+                <option value="https_enabled">Caddy HTTPS enabled</option>
+                <option value="https_terminated_elsewhere">HTTPS terminated elsewhere</option>
+              </select>
+            </label>
+            <div className="mini-inline-note">
+              <span>Current browser</span>
+              <strong>{frontDoorUrl}</strong>
+            </div>
+          </article>
+
+          <article className="mini-card">
+            <span className="metric-label">3. Shared Paths</span>
+            {(["projects", "deliveries", "draft_queue", "approval_queue", "incoming_stems"] as const).map((pathKey) => (
+              <label key={pathKey} className="field">
+                <span className="metric-label">{pathKey.replace(/_/g, " ")}</span>
+                <input
+                  value={workspaceDraft.shared_paths[pathKey]}
+                  onChange={(event) =>
+                    setWorkspaceDraft((current) => ({
+                      ...current,
+                      shared_paths: {
+                        ...current.shared_paths,
+                        [pathKey]: event.target.value,
+                      },
+                    }))}
+                />
+              </label>
+            ))}
+          </article>
+
+          <article className="mini-card">
+            <span className="metric-label">4. Studio Voice</span>
+            <label className="field">
+              <span className="metric-label">Style profile name</span>
+              <input
+                value={workspaceDraft.style_seed.name}
+                onChange={(event) =>
+                  setWorkspaceDraft((current) => ({
+                    ...current,
+                    style_seed: { ...current.style_seed, name: event.target.value },
+                  }))}
+              />
+            </label>
+            <label className="field">
+              <span className="metric-label">Tone and voice seed</span>
+              <textarea
+                value={workspaceDraft.style_seed.raw_text}
+                placeholder="How should this studio sound in email, content, and client-facing drafts?"
+                onChange={(event) =>
+                  setWorkspaceDraft((current) => ({
+                    ...current,
+                    style_seed: { ...current.style_seed, raw_text: event.target.value },
+                  }))}
+              />
+            </label>
+            <label className="field">
+              <span className="metric-label">Reference files</span>
+              <textarea
+                value={workspaceDraft.style_seed.source_paths.join("\n")}
+                placeholder="/path/to/brand-guide.txt"
+                onChange={(event) =>
+                  setWorkspaceDraft((current) => ({
+                    ...current,
+                    style_seed: { ...current.style_seed, source_paths: parseDelimitedList(event.target.value) },
+                  }))}
+              />
+            </label>
+          </article>
+
+          <article className="mini-card">
+            <span className="metric-label">5. Alerts And Integrations</span>
+            <label className="field">
+              <span className="metric-label">Alert emails</span>
+              <textarea
+                value={workspaceDraft.alert_destinations.email_to.join("\n")}
+                placeholder="ops@studio.com"
+                onChange={(event) =>
+                  setWorkspaceDraft((current) => ({
+                    ...current,
+                    alert_destinations: {
+                      ...current.alert_destinations,
+                      email_to: parseDelimitedList(event.target.value),
+                    },
+                  }))}
+              />
+            </label>
+            <label className="field">
+              <span className="metric-label">Alert webhook</span>
+              <input
+                value={workspaceDraft.alert_destinations.webhook_url}
+                onChange={(event) =>
+                  setWorkspaceDraft((current) => ({
+                    ...current,
+                    alert_destinations: {
+                      ...current.alert_destinations,
+                      webhook_url: event.target.value,
+                    },
+                  }))}
+              />
+            </label>
+            <div className="toggle-grid">
+              {([
+                ["n8n", "n8n"],
+                ["gmail_readonly", "Gmail read-only"],
+                ["gmail_send", "Gmail send"],
+                ["instagram", "Instagram"],
+                ["facebook", "Facebook"],
+              ] as const).map(([key, label]) => (
+                <label key={key} className="toggle-chip">
+                  <input
+                    type="checkbox"
+                    checked={workspaceDraft.integrations[key]}
+                    onChange={(event) =>
+                      setWorkspaceDraft((current) => ({
+                        ...current,
+                        integrations: {
+                          ...current.integrations,
+                          [key]: event.target.checked,
+                        },
+                      }))}
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+          </article>
+
+          <article className="mini-card">
+            <span className="metric-label">6. Optional Worker</span>
+            <label className="toggle-chip">
+              <input
+                type="checkbox"
+                checked={workspaceDraft.worker.enabled}
+                onChange={(event) =>
+                  setWorkspaceDraft((current) => ({
+                    ...current,
+                    worker: { ...current.worker, enabled: event.target.checked },
+                    deployment_mode: event.target.checked ? "control_plane_plus_worker" : "single_machine",
+                  }))}
+              />
+              <span>Enable worker configuration</span>
+            </label>
+            <label className="field">
+              <span className="metric-label">Worker slug</span>
+              <input
+                value={workspaceDraft.worker.worker_slug}
+                onChange={(event) =>
+                  setWorkspaceDraft((current) => ({
+                    ...current,
+                    worker: { ...current.worker, worker_slug: event.target.value },
+                  }))}
+                disabled={!workspaceDraft.worker.enabled}
+              />
+            </label>
+            <label className="field">
+              <span className="metric-label">Worker API URL</span>
+              <input
+                value={workspaceDraft.worker.worker_api_base_url}
+                onChange={(event) =>
+                  setWorkspaceDraft((current) => ({
+                    ...current,
+                    worker: { ...current.worker, worker_api_base_url: event.target.value },
+                  }))}
+                disabled={!workspaceDraft.worker.enabled}
+              />
+            </label>
+          </article>
+        </div>
+        <div className="onboarding-footer">
+          <div className="missing-list">
+            <span className="metric-label">Still missing</span>
+            <strong>{data.workspace.missing_fields.length ? data.workspace.missing_fields.join(", ") : "Nothing required is missing."}</strong>
+          </div>
+          <button className="action-button ok" disabled={onboardingSaving} onClick={saveWorkspaceSettings}>
+            {onboardingSaving ? "saving" : "save onboarding"}
+          </button>
+        </div>
+        {onboardingMessage ? <p className="feedback ok">{onboardingMessage}</p> : null}
+        {onboardingError ? <p className="feedback bad">{onboardingError}</p> : null}
+      </section>
+
       <section className="hero">
         <div className="hero-copy">
           <p className="eyebrow">AI Audio Studio</p>

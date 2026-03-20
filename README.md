@@ -1,6 +1,6 @@
 # AI Audio Studio Platform
 
-> **Active build, not production-ready.** The repository now contains a working control-plane baseline with DB-backed services, worker registration, and remote-task plumbing, but it is still under construction. Treat it as an MVP foundation for a single powerful Mac or a Mac mini plus optional studio Mac worker, not a finished production system.
+> **Active build, not production-ready.** The repository now contains a strong control-plane MVP: Dockerized services, a live dashboard, DB-backed state, seeded orchestration rules, optional worker execution, and LAN/HTTPS access. It is still under construction as a product. Treat it as an operator-facing MVP foundation for a single powerful Mac or a Mac mini plus optional studio Mac worker, not a finished turnkey system.
 
 Automated studio operations platform for independent recording studios. Reduces admin overhead by 80-90% while maintaining human control over all creative, financial, and client-facing decisions.
 
@@ -12,6 +12,28 @@ Single-machine first, split-worker optional:
 - **Shared volume** — `/Volumes/StudioShare/` or equivalent shared mount visible to any machine executing file tasks.
 - **LAN access** — set `BIND_HOST=0.0.0.0` to expose the dashboard and APIs to the local network.
 - **HTTPS edge** — add `infra/docker-compose.edge.yml` when you want a single TLS front door for dashboard access on the LAN.
+
+## Product Status
+
+What is solid today:
+- the control plane starts cleanly under Docker Compose
+- the dashboard is live and surfaces health, approvals, workers, rules, alerts, and bootstrap state
+- `project-state` persists jobs, approvals, audit records, worker nodes, and worker tasks
+- `crm-api` persists projects, leads, and style profiles
+- `openclaw` seeds default orchestration rules, starter packs, and playbooks
+- starter n8n workflows can be imported with a one-shot helper
+- single-machine mode is the default path, with optional local or remote worker execution
+
+What is still being added:
+- deeper operator-safe settings coverage across every major service
+- deeper novice-friendly control-room actions so operators do not need to edit env files for normal product setup
+- richer end-to-end email/content automations beyond the current MVP pathways
+- full DAW execution validation on a real production worker machine
+
+What this means in practice:
+- this repo is past the scaffold stage
+- it is not yet a novice-ready finished product
+- the next phase is productization: onboarding, settings, safer defaults, and broader automation coverage
 
 ## Quick Start
 
@@ -51,6 +73,15 @@ docker compose --env-file infra/.env -f infra/docker-compose.worker.yml up -d
 # 8. Verify all services healthy
 docker compose --env-file infra/.env -f infra/docker-compose.yml ps
 ```
+
+Then open the control room and complete the first-run workspace questionnaire. It now persists:
+- studio identity
+- deployment mode
+- shared paths
+- operator identity
+- style/tone seed
+- alert destinations
+- optional worker settings
 
 ### Verify health
 
@@ -101,6 +132,7 @@ Current validation is headless and MVP-oriented:
 - Docker Compose config resolution
 - control-plane health checks
 - Studio Brain UI source completeness checks
+- targeted runtime smoke checks for bootstrap, dashboard, and control-plane services
 
 ## Service Map
 
@@ -138,12 +170,16 @@ Implemented or partially implemented:
 - studio worker service for optional remote file-task execution
 - `local-worker` Docker profile for single-Mac execution
 - operator dashboard with live health, approvals, style profiles, worker state, and rule-pack visibility
+- persisted `workspace-settings` and first-run questionnaire for studio identity, paths, tone, alerts, and worker posture
+- LAN and HTTPS operator access paths
+- idempotent n8n bootstrap status surfaced through OpenClaw and the dashboard
 
 Still incomplete:
-- full single-machine execution parity across the stack
-- full OpenClaw execution against all email/content modules
+- complete operator-safe settings coverage for every service/module
+- full novice-friendly first-run flow without `.env` editing beyond secrets and machine-local wiring
+- full OpenClaw execution depth against all email/content modules
 - richer style-profile extraction and per-client/per-project context layering
-- audio QC remote execution and DAW automation hooks
+- audio QC remote execution and DAW automation hooks validated against a real worker machine
 - end-to-end inbound automations beyond the seeded workflow templates
 - outbound alerts and escalation connectors
 
@@ -158,6 +194,7 @@ Still incomplete:
 ## New Control-Plane Primitives
 
 - **Style Profiles**: paste tone guidance, point at reference files, or combine both through `crm-api /style-profiles`
+- **Workspace Settings**: the first-run questionnaire now persists studio identity, path defaults, tone seed, alerts, and optional worker posture through `crm-api /workspace-settings`
 - **Orchestration Rules**: curated defaults auto-seed on startup and grouped rule packs list at `openclaw /rule-packs`
 - **Starter Automations**: inspect prebuilt routing surfaces through `openclaw /playbooks`
 - **Studio Worker Queue**: enqueue bounded remote tasks in `project-state /workers/tasks`
@@ -217,6 +254,7 @@ For novice-friendly operations:
 - Use `https://$CONTROL_PLANE_HOST` as the main dashboard entrypoint.
 - Keep Docker Desktop filtered by the `ai-audio-studio` project name.
 - Use the seeded rule packs and supplied n8n workflow templates before creating custom automation.
+- Expect a dedicated onboarding/settings flow to replace part of the current env-driven setup over the next milestones.
 
 ## Task Files
 

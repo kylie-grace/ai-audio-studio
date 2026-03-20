@@ -2,344 +2,118 @@
 
 Date: 2026-03-20
 Auditor: Codex
-Scope: repository ingest, stated-behavior review, automated test execution, structural validation, gap analysis against `README.md`, `tasks/`, and `legacy/`
-
-## Current Checkpoint Update
-
-This audit started against a much thinner scaffold. The repo has since been materially advanced and the runtime picture is different now.
-
-What is validated now:
-- the full `ai-audio-studio` control plane is up in Docker on the local network
-- the dashboard is live over both HTTP and HTTPS
-- OpenClaw now exposes seeded rule packs and the dashboard proxy can reach them
-- `project-state` enforces token-gated operator and worker write paths
-- optional worker mode remains available, but single-machine operation is now the default documented path
-- importable n8n starter workflows exist under `infra/n8n/workflows/`
-
-Latest automated validation:
-- `pytest -q tests/unit tests/approval-boundary`: `58 passed`
-- `python3 -m compileall services/project-state services/studio-worker services/openclaw-orchestrator`: passed
-- `docker compose --env-file infra/env.example -f infra/docker-compose.yml -f infra/docker-compose.edge.yml config`: passed
-- live HTTPS front door check: `curl -k --resolve studio-brain.local:443:127.0.0.1 -I https://studio-brain.local` returned `HTTP/2 200`
-
-Latest runtime status:
-- control plane project name: `ai-audio-studio`
-- optional worker still running as separate node: `infra-studio-worker-1`
-- live control-plane endpoints:
-  - dashboard: `http://<host>:3000`
-  - dashboard HTTPS: `https://studio-brain.local`
-  - project-state: `http://<host>:8080`
-  - crm-api: `http://<host>:8090`
-  - openclaw: `http://<host>:8100`
-  - n8n: `http://<host>:5678`
-
-Highest-signal remaining gaps:
-- most domain workers still need deeper business logic beyond current bounded MVP behavior
-- the dashboard is now operational, but still does not provide full approval mutation workflows
-- n8n templates are supplied, but credentialed production automations still need environment-specific hookup
-- DAW-side integration remains dry-run friendly and structure-complete, not yet fully validated against a real second machine
+Scope: current repository state, runtime posture, test posture, documentation contract, and product-completeness gaps
 
 ## Executive Summary
 
-This repository is not fully validated and does not currently deliver most of the behavior claimed in the README, task specs, and legacy brief.
+This repository is no longer just a scaffold. It now represents a strong control-plane MVP for `ai-audio-studio`:
+- the Dockerized control plane runs on a single Mac
+- the dashboard is live on the LAN and through the optional HTTPS edge
+- `project-state`, `crm-api`, and `openclaw` are DB-backed and integrated enough to support approvals, rules, style profiles, bootstrap state, and worker task plumbing
+- optional worker execution exists for local or split-machine operation
 
-What is real today:
-- A partial `project-state` service with DB-backed routers for jobs, projects, approval, and audit
-- Safety helper modules for FSM transitions, policy blocklists, effort-level gating, and audio-QC threshold presets
-- Docker/requirements skeletons for the service graph
-- A narrow automated test suite covering only pure logic helpers
+It is still not a novice-ready finished product.
 
-What is not real today:
-- Lead intake, inbox triage, session prep, revision parsing, delivery packaging, social drafting, CRM API, content pipeline, and OpenClaw orchestration are mostly stubs
-- Audio QC does not implement `/qc/run` or report endpoints
-- Studio Brain UI source is missing, so the advertised dashboard cannot be built from this repo
-- There are no integration tests, API tests, DB migration tests, Docker bring-up tests, or end-to-end approval-path tests
+The biggest remaining gap is no longer “nothing exists.” The biggest remaining gap is productization:
+- onboarding/settings now have a real persisted home, but coverage is still partial and many modules still read directly from env
+- the dashboard is useful, but not yet the complete operator control room
+- several domain workflows still need deeper execution depth and more real-world connector coverage
+- broader end-to-end runtime validation is still needed
 
-Conclusion: this repo is a strong scaffold/specification, not a fully working platform.
+Conclusion: the repo is now a usable operator-facing MVP foundation, but not yet a turnkey studio product.
 
-## Validation Performed
+## Current State
 
-Commands run:
-- `pytest`
-- `pytest --collect-only -q`
-- `python3 -m compileall services workers`
-- `docker compose -f infra/docker-compose.yml config`
+What is working now:
+- full control-plane Docker stack with a named Compose project
+- live dashboard plus LAN/HTTPS access
+- DB-backed `project-state` for jobs, approvals, audit, workers, alerts, and worker tasks
+- DB-backed `crm-api` for projects, leads, and style profiles
+- DB-backed workspace settings bootstrap for first-run studio identity, shared paths, style seed, and worker posture
+- DB-backed `openclaw` rule seeding, starter packs, playbooks, alert config, and bootstrap status
+- optional `studio-worker` path for local-worker or split-worker execution
+- idempotent one-shot n8n workflow bootstrap against the running `n8n` service
 
-Results:
-- `pytest`: 45/45 passed
-- `pytest --collect-only -q`: only 45 tests exist, all unit-level
-- `python3 -m compileall services workers`: passed, no syntax errors
-- `docker compose ... config`: compose file resolves, but warns that required secrets fall back to blank values when `infra/.env` is absent
+What is still incomplete:
+- complete operator-safe settings coverage for every major service
+- novice-friendly first-run setup that avoids env editing for normal product configuration beyond secrets and host wiring
+- complete end-to-end automation depth for all email/content flows
+- fully validated DAW execution on a real remote studio machine
+- broader integration and end-to-end test coverage
 
-## Findings
+## Validation Snapshot
 
-### Critical
+Latest known validation in this repo state:
+- `pytest -q tests/unit tests/approval-boundary`
+- `python3 -m compileall services/project-state services/studio-worker services/openclaw-orchestrator`
+- `docker compose --env-file infra/env.example -f infra/docker-compose.yml config`
+- runtime smoke checks for dashboard, control-plane health, and n8n bootstrap helper
 
-1. Most claimed product functionality is unimplemented.
-Evidence:
-- [workers/lead-intake/main.py](/Users/kpsnyder/ai-audio-studio/workers/lead-intake/main.py#L1)
-- [workers/inbox-triage/main.py](/Users/kpsnyder/ai-audio-studio/workers/inbox-triage/main.py#L1)
-- [workers/session-prep/main.py](/Users/kpsnyder/ai-audio-studio/workers/session-prep/main.py#L1)
-- [workers/revision-parser/main.py](/Users/kpsnyder/ai-audio-studio/workers/revision-parser/main.py#L1)
-- [workers/delivery-packager/main.py](/Users/kpsnyder/ai-audio-studio/workers/delivery-packager/main.py#L1)
-- [workers/mix-planner/main.py](/Users/kpsnyder/ai-audio-studio/workers/mix-planner/main.py#L1)
-- [workers/social-drafting/main.py](/Users/kpsnyder/ai-audio-studio/workers/social-drafting/main.py#L1)
-- [services/content-pipeline/src/main.py](/Users/kpsnyder/ai-audio-studio/services/content-pipeline/src/main.py#L1)
-- [services/audio-qc/src/main.py](/Users/kpsnyder/ai-audio-studio/services/audio-qc/src/main.py#L1)
-- [services/crm-api/src/main.py](/Users/kpsnyder/ai-audio-studio/services/crm-api/src/main.py#L1)
-- [services/openclaw-orchestrator/src/main.py](/Users/kpsnyder/ai-audio-studio/services/openclaw-orchestrator/src/main.py#L1)
+This validation is meaningful for the MVP, but it is not yet comprehensive enough to claim production readiness.
 
-Impact:
-- The README’s “five core modules,” service map, and health/behavior claims substantially overstate actual capability.
+## Highest-Signal Remaining Gaps
 
-2. The advertised UI/dashboard cannot be built from the repository as checked in.
-Evidence:
-- [apps/studio-brain-ui/package.json](/Users/kpsnyder/ai-audio-studio/apps/studio-brain-ui/package.json#L1) expects a Vite/TypeScript app
-- `find apps/studio-brain-ui -maxdepth 3 -type f` returns only `Dockerfile`, `nginx.conf`, and `package.json`
-- [apps/studio-brain-ui/Dockerfile](/Users/kpsnyder/ai-audio-studio/apps/studio-brain-ui/Dockerfile#L1) runs `npm ci` and `npm run build`, but there is no `src/`, `index.html`, `tsconfig.json`, or `vite.config.*`
+1. Onboarding/settings have started, but are not yet broad enough.
+   Current state:
+   - there is now a persisted workspace-settings surface and first-run questionnaire
+   - many module-level settings still live primarily in `infra/.env`
+   Impact:
+   - the product is meaningfully easier to start, but still too operator-technical to call turnkey
+   - configuration ownership is still split across env, DB records, seeds, and runtime reads
 
-Impact:
-- `studio-brain-ui` is unlikely to build successfully, so `docker compose up -d` cannot be trusted to satisfy README acceptance criteria.
+2. The control plane is strong, but the control room is not yet complete.
+   Current state:
+   - the dashboard surfaces health, approvals, workers, rules, alerts, and bootstrap state
+   - it still needs deeper mutation flows, more guided operator actions, and a clearer first-run path
+   Impact:
+   - operators can see much more than before, but still cannot complete every normal setup and operations task from one UI
 
-3. There is no end-to-end validation of the approval boundary, despite the repo claiming hard safety guarantees.
-Evidence:
-- Only test files present are:
-  - [tests/approval-boundary/test_approval_gates.py](/Users/kpsnyder/ai-audio-studio/tests/approval-boundary/test_approval_gates.py#L1)
-  - [tests/unit/test_audio_qc_thresholds.py](/Users/kpsnyder/ai-audio-studio/tests/unit/test_audio_qc_thresholds.py#L1)
-  - [tests/unit/test_lead_scorer.py](/Users/kpsnyder/ai-audio-studio/tests/unit/test_lead_scorer.py#L1)
-  - [tests/unit/test_pipeline_policy.py](/Users/kpsnyder/ai-audio-studio/tests/unit/test_pipeline_policy.py#L1)
-- Missing promised tests from Task 080: `tests/integration/test_lead_to_send.py`, `tests/integration/test_inbox_triage_flow.py`, `tests/approval-boundary/test_no_bypass.py`
+3. Several business flows are still MVP-depth rather than production-depth.
+   Current state:
+   - the rule layer, queueing, approval routing, and bounded execution plumbing are present
+   - deeper connector behavior, richer drafting flows, more complete escalation handoff, and more polished domain logic still need implementation
+   Impact:
+   - the system demonstrates the architecture correctly, but does not yet deliver every promised workflow at full operational depth
 
-Impact:
-- The “fails closed” claim is not validated across service boundaries.
+4. DAW-side execution remains structured but not fully field-validated.
+   Current state:
+   - local and optional worker execution paths exist
+   - dry-run-friendly DAW task handling exists
+   - a real second-machine validation pass with production DAW tooling is still pending
+   Impact:
+   - the platform is architecturally ready for the worker model, but not yet fully proven against a live studio workstation
 
-### High
+5. Test coverage still trails the runtime ambition.
+   Current state:
+   - unit and approval-boundary tests are in good shape for the current codebase
+   - broader integration coverage is still needed for Dockerized service interactions, workflow execution, remote worker behavior, and operator flows
+   Impact:
+   - regressions in cross-service behavior can still slip through even while local tests remain green
 
-4. One of the passing tests does not exercise production code.
-Evidence:
-- [tests/unit/test_lead_scorer.py](/Users/kpsnyder/ai-audio-studio/tests/unit/test_lead_scorer.py#L1) defines an inline `score_fit()` and comments “Keep in sync with `workers/lead-intake/scorer.py`”
-- `workers/lead-intake/scorer.py` does not exist
+## Documentation Contract
 
-Impact:
-- The suite reports confidence in behavior that is not implemented anywhere in the application.
+The docs should now describe the product this way:
+- strong control-plane MVP
+- single-machine-first deployment
+- optional worker execution
+- onboarding/settings still being added
+- not yet novice-complete
 
-5. Compose resolves with blank credentials when `.env` is missing.
-Evidence:
-- `docker compose -f infra/docker-compose.yml config` warned that `POSTGRES_PASSWORD` and `N8N_PASSWORD` were unset and defaulted to empty strings
-- [infra/docker-compose.yml](/Users/kpsnyder/ai-audio-studio/infra/docker-compose.yml#L1) uses `${...}` interpolation without hard failure guards
+Anything stronger than that would overstate current product completeness.
 
-Impact:
-- Local startup can appear “configured” while running with unsafe defaults or broken auth assumptions.
+## Next Milestones
 
-6. The README quick-start and health verification overstate runnable status.
-Evidence:
-- [README.md](/Users/kpsnyder/ai-audio-studio/README.md#L1) says the full stack can be started and verified healthy
-- Health endpoints exist for many services, but most services only expose `/health` and do not implement the business endpoints claimed in the same document
-
-Impact:
-- A user can get green health checks on stub services and incorrectly conclude the platform is functional.
-
-### Medium
-
-7. `project-state` is the only meaningful service implementation, but its behavior is only lightly validated.
-Evidence:
-- Implemented routers:
-  - [services/project-state/src/routers/jobs.py](/Users/kpsnyder/ai-audio-studio/services/project-state/src/routers/jobs.py#L1)
-  - [services/project-state/src/routers/projects.py](/Users/kpsnyder/ai-audio-studio/services/project-state/src/routers/projects.py#L1)
-  - [services/project-state/src/routers/approval.py](/Users/kpsnyder/ai-audio-studio/services/project-state/src/routers/approval.py#L1)
-  - [services/project-state/src/routers/audit.py](/Users/kpsnyder/ai-audio-studio/services/project-state/src/routers/audit.py#L1)
-- No tests currently hit these HTTP routes, the middleware, or the database schema end to end
-
-Impact:
-- Important behavior may fail in real execution even though helper-level tests pass.
-
-8. Some documented assets and workflows are missing entirely.
-Evidence:
-- `services/n8n/workflows/` is absent, despite multiple task files referencing workflow JSONs
-- `workers/approved-send/` is absent
-- `apps/dashboard/` is absent
-- `docs/runbooks/incident-response.md` is absent
-
-Impact:
-- Several claimed operational and safety workflows do not exist in-repo.
-
-## Stated Behavior vs Actual Status
-
-| Area | Claimed | Actual |
-|---|---|---|
-| Lead intake | Normalize, score, draft, CRM write, queue | Stub health app only |
-| Inbox triage | Gmail readonly classification and drafting | Stub health app only |
-| Social/content pipeline | `/draft-social`, multi-platform drafts | Health app only, endpoint missing |
-| Session prep | File validation, organization, prep report | Stub health app only |
-| Audio QC | `/qc/run`, report generation, delivery blocking | Health app only, thresholds module exists |
-| Revision parser | Parse notes, generate scripts, queue | Stub health app only |
-| Delivery packager | QC-gated delivery assembly | Stub health app only |
-| CRM API | Leads and projects endpoints | Health app only |
-| OpenClaw | Worker dispatch with policy enforcement | Health app plus pure policy helper only |
-| Studio Brain UI | Internal approval queue dashboard | Source missing, likely non-buildable |
-| Safety testing | Boundary + end-to-end enforcement | Helper unit tests only |
-
-## Proposed Changes
-
-### 1. Correct the repo contract immediately
-
-Update [README.md](/Users/kpsnyder/ai-audio-studio/README.md#L1) to state clearly that this is a scaffold/prototype. Remove or qualify claims that the full stack is operational until:
-- the UI builds
-- worker endpoints exist
-- integration tests pass
-- compose startup is verified in CI
-
-Also add a capability matrix:
-- `implemented`
-- `partial`
-- `stub`
-
-### 2. Make tests reflect reality
-
-Replace spec-only or inline-copy tests with production-import tests.
-
-Required changes:
-- Create `workers/lead-intake/scorer.py` and import it in tests
-- Add API tests for `project-state` routes using a real temporary Postgres instance
-- Add negative tests for approval/rejection auth and audit restrictions
-- Add route tests for all non-stub services as they are implemented
-
-Minimum new test layers:
-- Unit
-- API/integration
-- Compose/stack smoke
-
-### 3. Implement CI-grade stack validation
-
-Add an automated validation target that runs:
-1. `pytest`
-2. service import/syntax checks
-3. `docker compose config`
-4. docker build for every image
-5. ephemeral stack smoke test with health checks
-6. API smoke tests for required endpoints
-
-This should become a single command, for example:
-```bash
-make audit
-```
-or
-```bash
-./scripts/validate_stack.sh
-```
-
-### 4. Finish the UI or remove it from compose for now
-
-Choose one:
-- Implement the missing Vite app files in `apps/studio-brain-ui`
-- Or remove `studio-brain-ui` from the documented “working stack” until the source exists
-
-At minimum, add:
-- `index.html`
-- `src/main.tsx`
-- `src/App.tsx`
-- `tsconfig.json`
-- `vite.config.ts`
-
-### 5. Prioritize implementation by safety chokepoints
-
-Recommended order:
-1. `project-state` route and DB integration tests
-2. `crm-api` real endpoints
-3. `lead-intake` real webhook + deterministic scorer
-4. `approved-send` worker with independent approval re-checks
-5. `inbox-triage`
-6. `audio-qc`
-7. `session-prep`
-8. `revision-parser`
-9. `content-pipeline`
-10. `openclaw` orchestration
-11. UI/dashboard
-
-Reason:
-- This order validates the core “human approval before action” guarantee before building more automation around it.
-
-### 6. Harden configuration
-
-Change compose/env handling so missing secrets fail early instead of defaulting to empty strings.
-
-Examples:
-- `${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}`
-- `${N8N_PASSWORD:?N8N_PASSWORD is required}`
-
-Also add a preflight script that checks:
-- required env vars
-- Docker availability
-- shared volume mount presence
-- port collisions
-
-### 7. Add missing operational assets referenced by docs/tasks
-
-Create or remove references to:
-- `services/n8n/workflows/*.json`
-- `workers/approved-send/*`
-- `apps/dashboard/*`
-- `docs/runbooks/incident-response.md`
-
-Right now the task files function more like a roadmap than an implemented repository contract.
-
-## Recommended Definition of “Validated”
-
-Do not treat this project as validated until all of the following are true:
-- Full compose stack builds from a clean clone
-- Every documented service endpoint exists and is exercised by tests
-- Approval boundary is tested across actual services, not only helper functions
-- UI/dashboard builds and displays live queue/state
-- No placeholder/stub modules remain in the main service graph
-- CI reproduces the validation on every change
-
-## Remediation Progress Since Initial Audit
-
-Implemented after the initial audit:
-- DB-backed worker registry and remote task queue in `project-state`
-- Mac mini to studio Mac execution model via `infra/docker-compose.worker.yml`
-- `crm-api` style-profile ingestion for pasted text and file-backed references
-- `openclaw` rule registry and trigger-based dispatch contracts
-- configurable LAN exposure via `BIND_HOST`
-
-Still outstanding before this can be called production-ready:
-- a full live dashboard rather than a thin shell
-- end-to-end tests for style profiles, orchestration rules, and worker claims
-- richer OpenClaw execution paths for email/content modules
-- studio-worker coverage for DAW automation and audio QC
-
-Recent additions:
-- `crm-api` now seeds a default studio tone profile at startup
-- `openclaw` now seeds practical email/content orchestration rules at startup
-- pure helper modules exist for seed definitions so rule coverage can be tested without the Docker stack
-- unit coverage now asserts the default email/content rule set and style profile helpers
+1. Extend workspace settings from onboarding into a broader persisted settings layer that more services actually consume.
+2. Extend the dashboard into a fuller control room with richer settings management and deeper mutation paths.
+3. Deepen OpenClaw-driven email/content automations and finish the operator-safe handoff loops.
+4. Validate SoundFlow/ReaScript-style execution against a real worker machine.
+5. Add broader end-to-end tests that exercise the Dockerized runtime, not just helper logic.
 
 ## Bottom Line
 
-The repository is well-structured and the safety intent is strong, but the implementation is substantially incomplete. The current test suite proves only that a few helper modules behave as expected. It does not prove that the platform, as described in the README and legacy brief, actually works.
+The repository has crossed the line from scaffold to usable MVP.
 
-## Remediation Executed In This Pass
-
-Implemented:
-- Added a real production scorer module at [workers/lead-intake/scorer.py](/Users/kpsnyder/ai-audio-studio/workers/lead-intake/scorer.py)
-- Replaced the inline-copy scorer test so [tests/unit/test_lead_scorer.py](/Users/kpsnyder/ai-audio-studio/tests/unit/test_lead_scorer.py) imports production logic
-- Added API-level `project-state` tests at [tests/api/test_project_state_api.py](/Users/kpsnyder/ai-audio-studio/tests/api/test_project_state_api.py)
-- Added headless validation scripts:
-  - [scripts/validate_stack.sh](/Users/kpsnyder/ai-audio-studio/scripts/validate_stack.sh)
-  - [scripts/preflight_env.sh](/Users/kpsnyder/ai-audio-studio/scripts/preflight_env.sh)
-- Hardened compose credentials in [infra/docker-compose.yml](/Users/kpsnyder/ai-audio-studio/infra/docker-compose.yml) so required passwords no longer silently default to blank values
-- Made `apps/studio-brain-ui` source-complete enough for a real Vite build path:
-  - [index.html](/Users/kpsnyder/ai-audio-studio/apps/studio-brain-ui/index.html)
-  - [App.tsx](/Users/kpsnyder/ai-audio-studio/apps/studio-brain-ui/src/App.tsx)
-  - [main.tsx](/Users/kpsnyder/ai-audio-studio/apps/studio-brain-ui/src/main.tsx)
-  - [styles.css](/Users/kpsnyder/ai-audio-studio/apps/studio-brain-ui/src/styles.css)
-  - [tsconfig.json](/Users/kpsnyder/ai-audio-studio/apps/studio-brain-ui/tsconfig.json)
-  - [vite.config.ts](/Users/kpsnyder/ai-audio-studio/apps/studio-brain-ui/vite.config.ts)
-- Updated [README.md](/Users/kpsnyder/ai-audio-studio/README.md) to describe the scaffold honestly and document headless validation
-
-Executed after remediation:
-- `pytest` → 45 passed, 1 skipped
-- `bash scripts/validate_stack.sh infra/env.example` → passed
-
-Current limitation:
-- The new API tests are dependency-aware and skip on hosts that do not have `fastapi` and `asyncpg` installed in the active Python environment. They will run in a proper service/dev environment, but the host used for this audit only supported the pure-logic test subset.
+The remaining work is mostly about making it easier, safer, and more complete:
+- easier for a studio owner to configure
+- safer to operate without env-level footguns
+- more complete across onboarding, automation depth, and DAW validation

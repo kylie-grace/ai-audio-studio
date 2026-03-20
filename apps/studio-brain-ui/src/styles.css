@@ -377,6 +377,22 @@ code {
   font: inherit;
 }
 
+.field textarea,
+.field select {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(3, 8, 12, 0.8);
+  color: #f5f1e8;
+  padding: 12px 13px;
+  border-radius: 14px;
+  font: inherit;
+}
+
+.field textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
 .compact-field {
   margin-top: 10px;
 }
@@ -389,6 +405,65 @@ code {
   height: 1px;
   margin: 18px 0;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+}
+
+.onboarding-panel {
+  margin-bottom: 16px;
+}
+
+.onboarding-panel.needs-setup {
+  border-color: rgba(236, 193, 100, 0.24);
+}
+
+.onboarding-grid,
+.toggle-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.onboarding-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.toggle-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.toggle-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.toggle-chip input {
+  margin: 0;
+}
+
+.mini-inline-note {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.onboarding-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.missing-list {
+  display: grid;
+  gap: 6px;
 }
 
 .zone-stack {
@@ -508,7 +583,8 @@ code {
 @media (max-width: 1220px) {
   .command-grid,
   .alert-summary-grid,
-  .stat-strip {
+  .stat-strip,
+  .onboarding-grid {
     grid-template-columns: 1fr;
   }
 
@@ -555,6 +631,10 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .toggle-grid {
+    grid-template-columns: 1fr;
+  }
+
   .table-row {
     flex-direction: column;
   }
@@ -567,6 +647,11 @@ code {
 
   .action-row {
     justify-content: flex-start;
+  }
+
+  .onboarding-footer {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 
