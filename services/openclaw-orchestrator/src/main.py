@@ -10,6 +10,7 @@ import asyncpg
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from .alerts import alert_config
 from .policy import BLOCKLIST, check_permission
 from .playbooks import default_playbooks
 from .rules import (
@@ -188,6 +189,11 @@ async def list_playbooks():
     return default_playbooks()
 
 
+@app.get("/alerts/config")
+async def get_alert_config():
+    return alert_config()
+
+
 @app.post("/bootstrap/defaults")
 async def bootstrap_defaults():
     pool = await get_pool()
@@ -198,6 +204,7 @@ async def bootstrap_defaults():
         "rule_pack_count": len(default_rule_packs(None)),
         "starter_pack_count": len(starter_packs(None)),
         "playbook_count": len(default_playbooks()),
+        "configured_alert_channel_count": alert_config()["configured_channel_count"],
     }
 
 

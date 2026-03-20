@@ -91,6 +91,26 @@ type StyleProfile = {
   } | null;
 };
 
+type AlertChannel = {
+  slug: string;
+  name: string;
+  configured: boolean;
+  detail: string;
+};
+
+type AlertThreshold = {
+  slug: string;
+  name: string;
+  condition: string;
+  severity: string;
+};
+
+type AlertConfig = {
+  configured_channel_count: number;
+  channels: AlertChannel[];
+  thresholds: AlertThreshold[];
+};
+
 type DashboardData = {
   refreshedAt: string | null;
   services: ServiceCard[];
@@ -101,6 +121,7 @@ type DashboardData = {
   tasks: WorkerTask[];
   approvals: ApprovalItem[];
   styleProfiles: StyleProfile[];
+  alerts: AlertConfig;
   loadState: "loading" | "ready" | "error";
   error: string | null;
 };
@@ -127,6 +148,9 @@ const API = {
   openclaw: "/api/openclaw",
   n8n: "/api/n8n",
 };
+
+const OPERATOR_NAME_KEY = "studioBrain.operatorName";
+const OPERATOR_TOKEN_KEY = "studioBrain.operatorToken";
 
 const serviceConfig = [
   {
@@ -222,6 +246,43 @@ function primaryMode(workers: WorkerNode[]) {
   return workers.length ? "control plane + worker" : "single-machine";
 }
 
+async function loadDashboardData(): Promise<DashboardData> {
+  const [projectState, crm, openclaw, n8n, workers, rules, rulePacks, playbooks, tasks, approvals, styleProfiles, alerts] =
+    await Promise.all([
+      fetchServiceState(`${API.projectState}/health`),
+      fetchServiceState(`${API.crm}/health`),
+      fetchServiceState(`${API.openclaw}/health`),
+      fetchServiceState(`${API.n8n}/healthz`),
+      fetchJson<WorkerNode[]>(`${API.projectState}/workers/`),
+      fetchJson<OrchestrationRule[]>(`${API.openclaw}/rules`),
+      fetchJson<RulePack[]>(`${API.openclaw}/rule-packs`),
+      fetchJson<Playbook[]>(`${API.openclaw}/playbooks`),
+      fetchJson<WorkerTask[]>(`${API.projectState}/workers/tasks/list`),
+      fetchJson<ApprovalItem[]>(`${API.projectState}/approval-queue/`),
+      fetchJson<StyleProfile[]>(`${API.crm}/style-profiles?scope=studio`),
+      fetchJson<AlertConfig>(`${API.openclaw}/alerts/config`),
+    ]);
+
+  return {
+    refreshedAt: new Date().toLocaleTimeString(),
+    services: [projectState, crm, openclaw, n8n].map((entry, index) => ({
+      ...serviceConfig[index],
+      state: entry.state,
+      detail: entry.detail,
+    })),
+    workers,
+    rules,
+    rulePacks,
+    playbooks,
+    tasks,
+    approvals,
+    styleProfiles,
+    alerts,
+    loadState: "ready",
+    error: null,
+  };
+}
+
 export function App() {
   const [data, setData] = useState<DashboardData>({
     refreshedAt: null,
@@ -237,9 +298,20 @@ export function App() {
     tasks: [],
     approvals: [],
     styleProfiles: [],
+    alerts: {
+      configured_channel_count: 0,
+      channels: [],
+      thresholds: [],
+    },
     loadState: "loading",
     error: null,
   });
+  const [operatorName, setOperatorName] = useState("owner");
+  const [operatorToken, setOperatorToken] = useState("");
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const workerCount = data.workers.length;
@@ -250,6 +322,26 @@ export function App() {
   const n8nUrl = frontDoorServiceUrl("n8n");
   const openclawUrl = frontDoorServiceUrl("openclaw");
   const secureHint = browserProtocol === "https:" ? "TLS active" : "HTTP only";
+  const configuredAlertCount = data.alerts.configured_channel_count;
+
+  useEffect(() => {
+    const storedName = window.localStorage.getItem(OPERATOR_NAME_KEY);
+    const storedToken = window.localStorage.getItem(OPERATOR_TOKEN_KEY);
+    if (storedName) setOperatorName(storedName);
+    if (storedToken) setOperatorToken(storedToken);
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(OPERATOR_NAME_KEY, operatorName);
+  }, [operatorName]);
+
+  useEffect(() => {
+    if (operatorToken) {
+      window.localStorage.setItem(OPERATOR_TOKEN_KEY, operatorToken);
+    } else {
+      window.localStorage.removeItem(OPERATOR_TOKEN_KEY);
+    }
+  }, [operatorToken]);
 
   useEffect(() => {
     let active = true;
@@ -257,40 +349,9 @@ export function App() {
 
     const load = async () => {
       try {
-        const [projectState, crm, openclaw, n8n, workers, rules, rulePacks, playbooks, tasks, approvals, styleProfiles] =
-          await Promise.all([
-            fetchServiceState(`${API.projectState}/health`),
-            fetchServiceState(`${API.crm}/health`),
-            fetchServiceState(`${API.openclaw}/health`),
-            fetchServiceState(`${API.n8n}/healthz`),
-            fetchJson<WorkerNode[]>(`${API.projectState}/workers/`),
-            fetchJson<OrchestrationRule[]>(`${API.openclaw}/rules`),
-            fetchJson<RulePack[]>(`${API.openclaw}/rule-packs`),
-            fetchJson<Playbook[]>(`${API.openclaw}/playbooks`),
-            fetchJson<WorkerTask[]>(`${API.projectState}/workers/tasks/list`),
-            fetchJson<ApprovalItem[]>(`${API.projectState}/approval-queue/`),
-            fetchJson<StyleProfile[]>(`${API.crm}/style-profiles?scope=studio`),
-          ]);
-
+        const nextData = await loadDashboardData();
         if (!active) return;
-
-        setData({
-          refreshedAt: new Date().toLocaleTimeString(),
-          services: [projectState, crm, openclaw, n8n].map((entry, index) => ({
-            ...serviceConfig[index],
-            state: entry.state,
-            detail: entry.detail,
-          })),
-          workers,
-          rules,
-          rulePacks,
-          playbooks,
-          tasks,
-          approvals,
-          styleProfiles,
-          loadState: "ready",
-          error: null,
-        });
+        setData(nextData);
       } catch (error) {
         if (!active) return;
         setData((current) => ({
@@ -309,6 +370,44 @@ export function App() {
       if (timer) window.clearInterval(timer);
     };
   }, []);
+
+  async function refreshData() {
+    const nextData = await loadDashboardData();
+    setData(nextData);
+  }
+
+  async function handleApproval(jobId: string, decision: "approve" | "reject") {
+    setPendingJobId(jobId);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-Actor": operatorName,
+      };
+      if (operatorToken) headers["X-Operator-Token"] = operatorToken;
+      const response = await fetch(`${API.projectState}/approval-queue/${jobId}/${decision}`, {
+        method: "POST",
+        headers,
+        body: decision === "reject"
+          ? JSON.stringify({ reason: rejectReasons[jobId]?.trim() || "Rejected from Studio Brain UI" })
+          : undefined,
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? `${decision} failed with ${response.status}`);
+      }
+      setActionMessage(decision === "approve" ? `Approved ${jobId}` : `Rejected ${jobId}`);
+      if (decision === "reject") {
+        setRejectReasons((current) => ({ ...current, [jobId]: "" }));
+      }
+      await refreshData();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : `Unable to ${decision} job`);
+    } finally {
+      setPendingJobId(null);
+    }
+  }
 
   return (
     <main className="app-shell">
@@ -419,6 +518,60 @@ export function App() {
         </article>
       </section>
 
+      <section className="content-grid">
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Operator Controls</h2>
+            <span className="count-pill">{operatorName}</span>
+          </div>
+          <div className="operator-grid">
+            <label className="field">
+              <span className="metric-label">Approval actor</span>
+              <input value={operatorName} onChange={(event) => setOperatorName(event.target.value)} />
+            </label>
+            <label className="field">
+              <span className="metric-label">Operator token</span>
+              <input
+                type="password"
+                value={operatorToken}
+                placeholder="Required when OPERATOR_API_TOKEN is set"
+                onChange={(event) => setOperatorToken(event.target.value)}
+              />
+            </label>
+          </div>
+          <p className="panel-note">
+            Approval actions below use these values as `X-Actor` and `X-Operator-Token`.
+          </p>
+          {actionMessage ? <p className="feedback ok">{actionMessage}</p> : null}
+          {actionError ? <p className="feedback bad">{actionError}</p> : null}
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Alerts And Escalations</h2>
+            <span className="count-pill">{configuredAlertCount}</span>
+          </div>
+          <div className="table-stack">
+            {data.alerts.channels.map((channel) => (
+              <div key={channel.slug} className="table-row">
+                <div>
+                  <strong>{channel.name}</strong>
+                  <div className="muted">{channel.detail}</div>
+                </div>
+                <div className="row-meta">
+                  <span className={`status-pill ${channel.configured ? "ok" : "warn"}`}>
+                    {channel.configured ? "configured" : "needs setup"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="panel-note">
+            Default thresholds cover approval backlog, failed worker tasks, and stale workers. External fan-out becomes active when `ALERT_WEBHOOK_URL` or `ALERT_EMAIL_TO` is set.
+          </p>
+        </article>
+      </section>
+
       <section className="card-grid">
         {data.services.map((service) => {
           const formatted = formatUrl(service.url);
@@ -452,11 +605,35 @@ export function App() {
                   <div>
                     <strong>{job.module}</strong>
                     <div className="muted">{job.action}</div>
+                    <label className="field compact-field">
+                      <span className="metric-label">Reject reason</span>
+                      <input
+                        value={rejectReasons[job.id] ?? ""}
+                        placeholder="Optional rejection note"
+                        onChange={(event) => setRejectReasons((current) => ({ ...current, [job.id]: event.target.value }))}
+                      />
+                    </label>
                   </div>
                   <div className="row-meta">
                     <span className="status-pill warn">awaiting approval</span>
                     <span className="muted">{job.requested_by ?? "system"}</span>
                     <span className="muted">{summarizeTime(job.created_at)}</span>
+                    <div className="action-row">
+                      <button
+                        className="action-button ok"
+                        disabled={!operatorName || pendingJobId === job.id}
+                        onClick={() => handleApproval(job.id, "approve")}
+                      >
+                        {pendingJobId === job.id ? "working" : "approve"}
+                      </button>
+                      <button
+                        className="action-button bad"
+                        disabled={!operatorName || pendingJobId === job.id}
+                        onClick={() => handleApproval(job.id, "reject")}
+                      >
+                        reject
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))

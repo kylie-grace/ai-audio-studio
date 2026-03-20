@@ -91,7 +91,8 @@ services:
       DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - ./n8n/workflows:/workflows:ro
-    command: ["import:workflow", "--separate", "--input=/workflows"]
+      - ./n8n/import-workflows.mjs:/bootstrap/import-workflows.mjs:ro
+    entrypoint: ["node", "/bootstrap/import-workflows.mjs"]
     networks: [studio-net]
     depends_on:
       n8n:
