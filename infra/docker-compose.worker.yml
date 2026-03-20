@@ -1,0 +1,26 @@
+services:
+  studio-worker:
+    build:
+      context: ../services/studio-worker
+      dockerfile: Dockerfile
+    environment:
+      PROJECT_STATE_URL: "${MAC_MINI_BASE_URL:-http://192.168.1.10}:8080"
+      WORKER_SLUG: "${WORKER_SLUG:-studio-mac}"
+      WORKER_DISPLAY_NAME: "${WORKER_DISPLAY_NAME:-Studio Mac}"
+      WORKER_PLATFORM: "${WORKER_PLATFORM:-macos}"
+      WORKER_API_BASE_URL: "${WORKER_API_BASE_URL:-http://127.0.0.1:8190}"
+      WORKER_CAPABILITIES: "${WORKER_CAPABILITIES:-session-prep,revision-parser,delivery-packager}"
+      POLL_INTERVAL_SECONDS: "${POLL_INTERVAL_SECONDS:-5}"
+      SHARED_PROJECTS_PATH: "${SHARED_PROJECTS_PATH:-/Volumes/StudioShare/projects}"
+      DELIVERY_PATH: "${DELIVERY_PATH:-/Volumes/StudioShare/deliveries}"
+      PATH_TRANSLATION_JSON: '${PATH_TRANSLATION_JSON:-{}}'
+    volumes:
+      - ${SHARED_PROJECTS_PATH:-/Volumes/StudioShare/projects}:${SHARED_PROJECTS_PATH:-/Volumes/StudioShare/projects}
+      - ${DELIVERY_PATH:-/Volumes/StudioShare/deliveries}:${DELIVERY_PATH:-/Volumes/StudioShare/deliveries}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8190/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:8190:8190"

@@ -1,15 +1,16 @@
 # AI Audio Studio Platform
 
-> **Experimental — work in progress.** This is a personal project I've been building and am making available early. It needs thorough testing before use in a real studio environment. **Pull requests and bug reports are deeply wanted** — please open an issue or PR if you find something broken or have ideas to improve it.
+> **Active build, not production-ready.** The repository now contains a working control-plane baseline with DB-backed services, worker registration, and remote-task plumbing, but it is still under construction. Treat it as an MVP foundation for a Mac mini control plane plus studio Mac worker, not a finished production system.
 
 Automated studio operations platform for independent recording studios. Reduces admin overhead by 80-90% while maintaining human control over all creative, financial, and client-facing decisions.
 
 ## Architecture
 
-Two-machine system:
-- **Mac mini (Studio Brain)** — always-on Docker stack: n8n, Ollama, OpenClaw, all services
-- **Mac Pro (Production Workstation)** — Pro Tools, REAPER, SoundFlow for actual audio work
-- **Shared volume** — `/Volumes/StudioShare/` connects both machines
+Mac mini control plane plus studio worker:
+- **Mac mini (Studio Brain)** — always-on Docker stack: UI, n8n, Ollama, Postgres, APIs, orchestration
+- **Studio Mac worker** — separate macOS node for DAW-adjacent tasks, file prep, revision script generation, delivery packaging
+- **Shared volume** — `/Volumes/StudioShare/` or equivalent shared mount visible to both machines
+- **LAN access** — set `BIND_HOST=0.0.0.0` to expose the dashboard and APIs to the local network
 
 ## Quick Start
 
@@ -17,6 +18,7 @@ Two-machine system:
 - Docker Desktop installed and running
 - Minimum 16 GB RAM on Mac mini (Ollama needs ~10 GB for the planner model)
 - Shared volume mounted at `/Volumes/StudioShare/`
+- If you want LAN access, set `BIND_HOST=0.0.0.0` in `infra/.env`
 
 ### First-time setup
 
@@ -32,11 +34,14 @@ cp infra/env.example infra/.env
 # 3. Pull Ollama models (takes 10-30 min depending on connection)
 bash services/ollama/pull_models.sh
 
-# 4. Start the full stack
-docker compose -f infra/docker-compose.yml up -d
+# 4. Start the Mac mini control plane
+docker compose --env-file infra/.env -f infra/docker-compose.yml up -d
 
-# 5. Verify all services healthy
-docker compose -f infra/docker-compose.yml ps
+# 5. Optional: start the studio worker on the studio Mac
+docker compose --env-file infra/.env -f infra/docker-compose.worker.yml up -d
+
+# 6. Verify all services healthy
+docker compose --env-file infra/.env -f infra/docker-compose.yml ps
 ```
 
 ### Verify health
@@ -49,13 +54,30 @@ curl http://localhost:8100/health           # openclaw
 curl http://localhost:11434/api/tags        # ollama (lists loaded models)
 open http://localhost:3000                  # studio-brain-ui
 open http://localhost:5678                  # n8n workflow editor
+
+# If BIND_HOST=0.0.0.0, access from another machine with:
+# http://<mac-mini-lan-ip>:3000
 ```
+
+### Headless Validation
+
+```bash
+bash scripts/preflight_env.sh infra/.env
+bash scripts/validate_stack.sh infra/env.example
+```
+
+Current validation is headless and MVP-oriented:
+- unit and API tests
+- Python syntax compilation
+- Docker Compose config resolution
+- control-plane health checks
+- Studio Brain UI source completeness checks
 
 ## Service Map
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| `studio-brain-ui` | 3000 | Internal approval queue dashboard |
+| `studio-brain-ui` | 3000 | Placeholder UI shell for the future approval queue/dashboard |
 | `n8n` | 5678 | Workflow automation and webhooks |
 | `project-state` | 8080 | Job state, approval queue, audit log |
 | `crm-api` | 8090 | Lead and project records |
@@ -67,8 +89,28 @@ open http://localhost:5678                  # n8n workflow editor
 | `session-prep` | 8150 | Stem validation and session organization |
 | `revision-parser` | 8160 | Natural language → DAW change objects |
 | `delivery-packager` | 8170 | QC-gated delivery bundle assembly |
+| `studio-worker` | 8190 | Remote studio Mac task agent |
 | `ollama` | 11434 | Local LLM serving |
 | `postgres` | 5432 | Shared database (internal only) |
+
+## Implementation Status
+
+Implemented or partially implemented:
+- `project-state` API, schema, FSM, approval routes, audit restrictions
+- `project-state` worker registry and remote task queue
+- `crm-api` style-profile ingestion for pasted text and file-backed references
+- `openclaw` policy helper plus DB-backed orchestration rules
+- effort-level gating helper
+- audio QC threshold presets
+- Docker service graph and prompt/task scaffolding
+- studio worker service for remote file-task execution
+
+Still incomplete:
+- live approval queue UI and worker health widgets
+- full OpenClaw execution against all email/content modules
+- richer style-profile extraction and per-client/per-project context layering
+- audio QC remote execution and DAW automation hooks
+- n8n workflow JSONs and end-to-end inbound automations
 
 ## Five Core Modules
 
@@ -77,6 +119,14 @@ open http://localhost:5678                  # n8n workflow editor
 3. **Social/Content Pipeline** — Brief → draft captions → asset packaging → approval queue
 4. **Session Prep & Audio QC** — Stems → validate → organize → LUFS/peak/phase report
 5. **Mix Planner & Revision Parser** — Notes → parameterized changes → SoundFlow/ReaScript
+
+## New Control-Plane Primitives
+
+- **Style Profiles**: paste tone guidance, point at reference files, or combine both through `crm-api /style-profiles`
+- **Orchestration Rules**: configure OpenClaw routing contracts through `openclaw /rules`
+- **Studio Worker Queue**: enqueue bounded remote tasks in `project-state /workers/tasks`
+- **Studio Worker Agent**: run `infra/docker-compose.worker.yml` on the studio Mac to claim and execute tasks
+- **Auto-seeded defaults**: CRM seeds a baseline studio tone profile and OpenClaw seeds email/content routing rules on startup
 
 ## Safety Model
 
@@ -97,6 +147,9 @@ All AI actions require explicit human approval before anything is sent or execut
 # Run tests
 docker compose -f infra/docker-compose.yml run --rm project-state pytest
 docker compose -f infra/docker-compose.yml run --rm audio-qc pytest
+
+# Headless repo validation from the host
+bash scripts/validate_stack.sh infra/env.example
 
 # View logs
 docker compose -f infra/docker-compose.yml logs -f openclaw

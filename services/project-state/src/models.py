@@ -36,3 +36,18 @@ class Project(BaseModel):
     notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+
+class WorkerNode(BaseModel):
+    id: UUID4
+    slug: str
+    display_name: str
+    platform: str
+    host: Optional[str] = None
+    api_base_url: Optional[str] = None
+    status: str
+    capabilities: list[str]
+    watched_paths: dict[str, str]
+    last_seen_at: datetime
+    created_at: datetime
+    updated_at: datetime

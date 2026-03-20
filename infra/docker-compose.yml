@@ -1,5 +1,3 @@
-version: "3.9"
-
 networks:
   studio-net:
     driver: bridge
@@ -20,7 +18,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-studiodb}
       POSTGRES_USER: ${POSTGRES_USER:-studio}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./db/00-create-databases.sql:/docker-entrypoint-initdb.d/00-create-databases.sql
@@ -32,7 +30,7 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:5432:5432"
+      - "${BIND_HOST:-127.0.0.1}:5432:5432"
 
   # ── Ollama (local LLM serving — no cloud calls) ────────────────────────
   ollama:
@@ -43,12 +41,12 @@ services:
     environment:
       OLLAMA_HOST: 0.0.0.0
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD", "ollama", "list"]
       interval: 15s
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:11434:11434"
+      - "${BIND_HOST:-127.0.0.1}:11434:11434"
 
   # ── n8n (workflow automation and webhooks) ─────────────────────────────
   n8n:
@@ -58,10 +56,10 @@ services:
       DB_POSTGRESDB_HOST: postgres
       DB_POSTGRESDB_DATABASE: ${N8N_DB:-n8ndb}
       DB_POSTGRESDB_USER: ${POSTGRES_USER:-studio}
-      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       N8N_BASIC_AUTH_ACTIVE: "true"
       N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
-      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:?N8N_PASSWORD is required}
       WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:5678}
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
       EXECUTIONS_DATA_PRUNE: "true"
@@ -78,7 +76,7 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:5678:5678"
+      - "${BIND_HOST:-127.0.0.1}:5678:5678"
 
   # ── Project State Service ──────────────────────────────────────────────
   project-state:
@@ -86,7 +84,7 @@ services:
       context: ../services/project-state
       dockerfile: Dockerfile
     environment:
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       APPROVAL_QUEUE_PATH: /data/approval-queue
       PORT: "8080"
     volumes:
@@ -97,12 +95,12 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:8080:8080"
+      - "${BIND_HOST:-127.0.0.1}:8080:8080"
 
   # ── CRM API ───────────────────────────────────────────────────────────
   crm-api:
@@ -110,19 +108,19 @@ services:
       context: ../services/crm-api
       dockerfile: Dockerfile
     environment:
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       PORT: "8090"
     networks: [studio-net]
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:8090:8090"
+      - "${BIND_HOST:-127.0.0.1}:8090:8090"
 
   # ── OpenClaw Orchestrator ──────────────────────────────────────────────
   openclaw:
@@ -135,7 +133,7 @@ services:
       CRM_API_URL: http://crm-api:8090
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
       CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-qwen2.5:3b}
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       POLICY_ENFORCEMENT: ${POLICY_ENFORCEMENT:-strict}
       PORT: "8100"
     volumes:
@@ -152,12 +150,12 @@ services:
       project-state:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health')"]
       interval: 15s
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:8100:8100"
+      - "${BIND_HOST:-127.0.0.1}:8100:8100"
 
   # ── Content Pipeline (social drafting) ────────────────────────────────
   content-pipeline:
@@ -167,7 +165,7 @@ services:
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       PROJECT_STATE_URL: http://project-state:8080
       DRAFT_QUEUE_PATH: /data/draft-queue
       PORT: "8110"
@@ -183,12 +181,12 @@ services:
       project-state:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8110/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8110/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:8110:8110"
+      - "${BIND_HOST:-127.0.0.1}:8110:8110"
 
   # ── Audio QC Service ───────────────────────────────────────────────────
   audio-qc:
@@ -196,7 +194,7 @@ services:
       context: ../services/audio-qc
       dockerfile: Dockerfile
     environment:
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       PROJECT_STATE_URL: http://project-state:8080
       SHARED_PROJECTS_PATH: /data/projects
       PORT: "8120"
@@ -209,12 +207,12 @@ services:
       project-state:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8120/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8120/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:8120:8120"
+      - "${BIND_HOST:-127.0.0.1}:8120:8120"
 
   # ── Workers (HTTP-triggered via n8n webhooks) ─────────────────────────
 
@@ -228,7 +226,7 @@ services:
       CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-qwen2.5:3b}
       PROJECT_STATE_URL: http://project-state:8080
       CRM_API_URL: http://crm-api:8090
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       ENGINEER_NAME: ${ENGINEER_NAME:-Engineer}
       ENGINEER_VOICE: ${ENGINEER_VOICE:-Warm, direct, and professional.}
       PORT: "8130"
@@ -243,12 +241,12 @@ services:
       project-state:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8130/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8130/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:8130:8130"
+      - "${BIND_HOST:-127.0.0.1}:8130:8130"
 
   inbox-triage:
     build:
@@ -259,7 +257,7 @@ services:
       CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-qwen2.5:3b}
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
       PROJECT_STATE_URL: http://project-state:8080
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       ENGINEER_NAME: ${ENGINEER_NAME:-Engineer}
       ENGINEER_VOICE: ${ENGINEER_VOICE:-Warm, direct, and professional.}
       ALLOWED_INBOX_LABELS: ${ALLOWED_INBOX_LABELS:-NeedsReply}
@@ -275,12 +273,12 @@ services:
       project-state:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8140/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8140/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:8140:8140"
+      - "${BIND_HOST:-127.0.0.1}:8140:8140"
 
   session-prep:
     build:
@@ -288,7 +286,7 @@ services:
       dockerfile: Dockerfile
     environment:
       PROJECT_STATE_URL: http://project-state:8080
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       WATCHED_STEMS_PATH: /data/incoming-stems
       SHARED_PROJECTS_PATH: /data/projects
       PORT: "8150"
@@ -301,12 +299,12 @@ services:
       project-state:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8150/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8150/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:8150:8150"
+      - "${BIND_HOST:-127.0.0.1}:8150:8150"
 
   revision-parser:
     build:
@@ -316,7 +314,7 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
       PROJECT_STATE_URL: http://project-state:8080
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       SHARED_PROJECTS_PATH: /data/projects
       PORT: "8160"
     volumes:
@@ -331,12 +329,12 @@ services:
       project-state:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8160/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8160/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:8160:8160"
+      - "${BIND_HOST:-127.0.0.1}:8160:8160"
 
   delivery-packager:
     build:
@@ -345,7 +343,7 @@ services:
     environment:
       PROJECT_STATE_URL: http://project-state:8080
       AUDIO_QC_URL: http://audio-qc:8120
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       SHARED_PROJECTS_PATH: /data/projects
       DELIVERY_PATH: /data/deliveries
       PORT: "8170"
@@ -360,31 +358,51 @@ services:
       audio-qc:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8170/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8170/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:8170:8170"
+      - "${BIND_HOST:-127.0.0.1}:8170:8170"
 
   # ── Studio Brain UI ────────────────────────────────────────────────────
   studio-brain-ui:
     build:
       context: ../apps/studio-brain-ui
       dockerfile: Dockerfile
-      args:
-        # VITE_* vars are baked into the JS bundle at build time — must be passed as build args
-        VITE_PROJECT_STATE_URL: ${VITE_PROJECT_STATE_URL:-http://localhost:8080}
-        VITE_CRM_API_URL: ${VITE_CRM_API_URL:-http://localhost:8090}
-        VITE_OPENCLAW_URL: ${VITE_OPENCLAW_URL:-http://localhost:8100}
     networks: [studio-net]
     depends_on:
       - project-state
       - crm-api
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000"]
       interval: 15s
       timeout: 5s
       retries: 5
     ports:
-      - "127.0.0.1:3000:3000"
+      - "${BIND_HOST:-127.0.0.1}:3000:3000"
+
+  mix-planner:
+    build:
+      context: ../workers/mix-planner
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      PROJECT_STATE_URL: http://project-state:8080
+      SHARED_PROJECTS_PATH: /data/projects
+      PORT: "8180"
+    volumes:
+      - shared-projects:/data/projects
+    networks: [studio-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      project-state:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8180/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:8180:8180"

@@ -1,8 +1,116 @@
-"""delivery-packager worker — stub. See tasks/ for implementation spec."""
-from fastapi import FastAPI
+"""delivery-packager worker."""
 
-app = FastAPI(title="delivery-packager")
+from __future__ import annotations
+
+import json
+import os
+import shutil
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import asyncpg
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+
+_pool: asyncpg.Pool | None = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _pool
+    _pool = await asyncpg.create_pool(os.environ["POSTGRES_DSN"], min_size=1, max_size=5)
+    yield
+    if _pool is not None:
+        await _pool.close()
+
+
+app = FastAPI(title="delivery-packager", lifespan=lifespan)
+
+
+async def get_pool() -> asyncpg.Pool:
+    if _pool is None:
+        raise RuntimeError("DB pool not initialized")
+    return _pool
+
+
+class PackageDeliveryBody(BaseModel):
+    project_id: str
+    file_paths: list[str] = Field(min_length=1)
+    package_name: str = "delivery-package"
+    execution_mode: str = "local"
+    worker_slug: str | None = None
+
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.post("/package-delivery", status_code=201)
+async def package_delivery(body: PackageDeliveryBody):
+    pool = await get_pool()
+    project = await pool.fetchrow("SELECT * FROM projects WHERE id=$1", body.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    qc = await pool.fetchrow(
+        "SELECT * FROM qc_reports WHERE project_id=$1 ORDER BY created_at DESC LIMIT 1",
+        body.project_id,
+    )
+    if qc is None or not qc["overall_pass"]:
+        raise HTTPException(status_code=409, detail="Latest QC report does not permit delivery packaging")
+
+    if body.execution_mode == "remote":
+        job = await pool.fetchrow(
+            """INSERT INTO jobs
+               (project_id, module, action, trigger_type, trigger_payload, status, approval_required, requested_by)
+               VALUES ($1,'delivery-packager','package-delivery','operator',$2::jsonb,'pending',false,'worker:delivery-packager')
+               RETURNING *""",
+            body.project_id,
+            json.dumps({"file_paths": body.file_paths, "package_name": body.package_name, "worker_slug": body.worker_slug}),
+        )
+        task = await pool.fetchrow(
+            """INSERT INTO worker_tasks
+               (job_id, project_id, worker_slug, task_type, required_capability, payload, priority)
+               VALUES ($1,$2,$3,'package-delivery','delivery-packager',$4::jsonb,'normal')
+               RETURNING *""",
+            job["id"],
+            body.project_id,
+            body.worker_slug,
+            json.dumps(
+                {
+                    "project_id": body.project_id,
+                    "project_slug": project["slug"],
+                    "file_paths": body.file_paths,
+                    "package_name": body.package_name,
+                    "delivery_path": os.environ.get("DELIVERY_PATH", "/data/deliveries"),
+                }
+            ),
+        )
+        return {"job_id": str(job["id"]), "task_id": str(task["id"]), "status": "queued-for-worker"}
+
+    delivery_root = Path(os.environ.get("DELIVERY_PATH", "/data/deliveries")) / project["slug"] / body.package_name
+    delivery_root.mkdir(parents=True, exist_ok=True)
+    copied = []
+    for file_path in body.file_paths:
+        path = Path(file_path)
+        if not path.exists():
+            raise HTTPException(status_code=404, detail=f"Missing delivery file: {file_path}")
+        target = delivery_root / path.name
+        shutil.copy2(path, target)
+        copied.append(str(target))
+    manifest_path = delivery_root / "manifest.json"
+    manifest_path.write_text(json.dumps({"project_id": body.project_id, "files": copied}, indent=2))
+    job = await pool.fetchrow(
+        """INSERT INTO jobs
+           (project_id, module, action, trigger_type, trigger_payload, status, approval_required, requested_by)
+           VALUES ($1,'delivery-packager','package-delivery','operator',$2::jsonb,'awaiting-approval',true,'worker:delivery-packager')
+           RETURNING *""",
+        body.project_id,
+        json.dumps({"files": body.file_paths}),
+    )
+    await pool.execute(
+        "UPDATE jobs SET artifacts = artifacts || $1::jsonb WHERE id=$2",
+        json.dumps([{"path": str(manifest_path), "type": "delivery-manifest"}]),
+        job["id"],
+    )
+    return {"job_id": str(job["id"]), "delivery_path": str(delivery_root), "manifest_path": str(manifest_path)}

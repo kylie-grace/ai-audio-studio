@@ -1,19 +1,16 @@
 """Unit tests for lead intake scorer — deterministic, no LLM, no DB."""
-import pytest
+import importlib.util
+import os
 
+ROOT = os.path.join(os.path.dirname(__file__), "../..")
+_mod = importlib.util.spec_from_file_location(
+    "lead_scorer",
+    os.path.join(ROOT, "workers/lead-intake/scorer.py"),
+)
+lead_scorer = importlib.util.module_from_spec(_mod)
+_mod.loader.exec_module(lead_scorer)
 
-def score_fit(normalized: dict) -> int:
-    """Inline copy of scorer for testing isolation. Keep in sync with workers/lead-intake/scorer.py."""
-    score = 50
-    if normalized.get("service_requested") in ("mix", "master", "mix+master"):
-        score += 20
-    if normalized.get("budget_signal") in ("medium", "high"):
-        score += 15
-    if normalized.get("timeline"):
-        score += 10
-    if normalized.get("references"):
-        score += 5
-    return min(score, 100)
+score_fit = lead_scorer.score_fit
 
 
 class TestFitScoring:

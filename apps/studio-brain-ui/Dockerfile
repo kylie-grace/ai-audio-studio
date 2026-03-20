@@ -2,17 +2,8 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Declare build args — Vite bakes these into the bundle at build time
-ARG VITE_PROJECT_STATE_URL=http://localhost:8080
-ARG VITE_CRM_API_URL=http://localhost:8090
-ARG VITE_OPENCLAW_URL=http://localhost:8100
-
-ENV VITE_PROJECT_STATE_URL=$VITE_PROJECT_STATE_URL
-ENV VITE_CRM_API_URL=$VITE_CRM_API_URL
-ENV VITE_OPENCLAW_URL=$VITE_OPENCLAW_URL
-
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 COPY . .
 RUN npm run build
 

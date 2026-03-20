@@ -196,6 +196,78 @@ CREATE TABLE IF NOT EXISTS revisions (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- ── Worker Nodes (remote studio machines) ────────────────────────────
+CREATE TABLE IF NOT EXISTS worker_nodes (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug           TEXT UNIQUE NOT NULL,
+    display_name   TEXT NOT NULL,
+    platform       TEXT NOT NULL DEFAULT 'macos',
+    host           TEXT,
+    api_base_url   TEXT,
+    status         TEXT NOT NULL DEFAULT 'idle',
+    -- offline | idle | busy | error
+    capabilities   JSONB NOT NULL DEFAULT '[]',
+    watched_paths  JSONB NOT NULL DEFAULT '{}',
+    last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ── Worker Tasks (bounded remote execution queue) ────────────────────
+CREATE TABLE IF NOT EXISTS worker_tasks (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id              UUID REFERENCES jobs(id),
+    project_id          UUID REFERENCES projects(id),
+    worker_slug         TEXT REFERENCES worker_nodes(slug),
+    task_type           TEXT NOT NULL,
+    required_capability TEXT,
+    payload             JSONB NOT NULL DEFAULT '{}',
+    status              TEXT NOT NULL DEFAULT 'queued',
+    -- queued | claimed | complete | failed
+    priority            TEXT NOT NULL DEFAULT 'normal',
+    claimed_by          TEXT,
+    claimed_at          TIMESTAMPTZ,
+    lease_expires_at    TIMESTAMPTZ,
+    result              JSONB NOT NULL DEFAULT '{}',
+    error_message       TEXT,
+    completed_at        TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ── Style Profiles (tone, voice, reference context) ───────────────────
+CREATE TABLE IF NOT EXISTS style_profiles (
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    scope              TEXT NOT NULL DEFAULT 'studio',
+    -- studio | engineer | client | project
+    project_id         UUID REFERENCES projects(id),
+    name               TEXT NOT NULL,
+    source_type        TEXT NOT NULL,
+    -- pasted | files | hybrid
+    raw_text           TEXT NOT NULL DEFAULT '',
+    file_paths         JSONB NOT NULL DEFAULT '[]',
+    extracted_guidance JSONB NOT NULL DEFAULT '{}',
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ── Orchestration Rules (OpenClaw routing contracts) ──────────────────
+CREATE TABLE IF NOT EXISTS orchestration_rules (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug              TEXT UNIQUE NOT NULL,
+    name              TEXT NOT NULL,
+    trigger_module    TEXT NOT NULL,
+    trigger_action    TEXT NOT NULL,
+    target_module     TEXT NOT NULL,
+    required_tier     INTEGER NOT NULL DEFAULT 3 CHECK (required_tier BETWEEN 1 AND 4),
+    approval_required BOOLEAN NOT NULL DEFAULT true,
+    enabled           BOOLEAN NOT NULL DEFAULT true,
+    style_profile_id  UUID REFERENCES style_profiles(id),
+    conditions        JSONB NOT NULL DEFAULT '{}',
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ── Indexes ───────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_jobs_project    ON jobs(project_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status     ON jobs(status);
@@ -207,6 +279,12 @@ CREATE INDEX IF NOT EXISTS idx_leads_project   ON leads(project_id);
 CREATE INDEX IF NOT EXISTS idx_inbox_status    ON inbox_drafts(status);
 CREATE INDEX IF NOT EXISTS idx_social_status   ON social_drafts(status);
 CREATE INDEX IF NOT EXISTS idx_qc_project      ON qc_reports(project_id);
+CREATE INDEX IF NOT EXISTS idx_workers_slug    ON worker_nodes(slug);
+CREATE INDEX IF NOT EXISTS idx_workers_seen    ON worker_nodes(last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_worker_tasks_status ON worker_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_worker_tasks_worker ON worker_tasks(worker_slug);
+CREATE INDEX IF NOT EXISTS idx_style_profiles_scope ON style_profiles(scope);
+CREATE INDEX IF NOT EXISTS idx_rules_trigger ON orchestration_rules(trigger_module, trigger_action);
 
 -- ── Auto-update updated_at ────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION set_updated_at()
@@ -235,5 +313,29 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
     CREATE TRIGGER trg_manifests_updated
         BEFORE UPDATE ON session_manifests
+        FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TRIGGER trg_worker_nodes_updated
+        BEFORE UPDATE ON worker_nodes
+        FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TRIGGER trg_worker_tasks_updated
+        BEFORE UPDATE ON worker_tasks
+        FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TRIGGER trg_style_profiles_updated
+        BEFORE UPDATE ON style_profiles
+        FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TRIGGER trg_orchestration_rules_updated
+        BEFORE UPDATE ON orchestration_rules
         FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
