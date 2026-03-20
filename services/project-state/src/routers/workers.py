@@ -14,6 +14,9 @@ from ..fsm import validate_transition
 
 router = APIRouter()
 WORKER_API_TOKEN = __import__("os").environ.get("WORKER_API_TOKEN", "")
+_RAW = __import__("os").environ.get("AUTHORIZED_ACTORS", "owner")
+AUTHORIZED_ACTORS: set[str] = {a.strip() for a in _RAW.split(",") if a.strip()}
+OPERATOR_API_TOKEN = __import__("os").environ.get("OPERATOR_API_TOKEN", "")
 
 
 def decode_jsonb(value):
@@ -42,6 +45,19 @@ def serialize_worker_task(row) -> dict:
 def require_worker_token(token: str | None) -> None:
     if WORKER_API_TOKEN and token != WORKER_API_TOKEN:
         raise HTTPException(status_code=403, detail="Missing or invalid worker token.")
+
+
+def require_authorized_actor(actor: str) -> None:
+    if actor not in AUTHORIZED_ACTORS:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Actor '{actor}' is not in the authorized actors list. Update AUTHORIZED_ACTORS in your .env to add them.",
+        )
+
+
+def require_operator_token(token: str | None) -> None:
+    if OPERATOR_API_TOKEN and token != OPERATOR_API_TOKEN:
+        raise HTTPException(status_code=403, detail="Missing or invalid operator token.")
 
 
 class RegisterWorkerBody(BaseModel):
@@ -88,6 +104,18 @@ class FailWorkerTaskBody(BaseModel):
     worker_slug: str
     error_message: str
     result: dict = Field(default_factory=dict)
+
+
+async def _append_audit(pool, task, actor: str, action: str, payload: dict | None = None) -> None:
+    await pool.execute(
+        """INSERT INTO audit_log (job_id, project_id, actor, action, tier, payload)
+           VALUES ($1, $2, $3, $4, 3, $5::jsonb)""",
+        task.get("job_id"),
+        task.get("project_id"),
+        actor,
+        action,
+        json.dumps(payload or {}),
+    )
 
 
 @router.get("/")
@@ -350,3 +378,116 @@ async def fail_worker_task(task_id: str, body: FailWorkerTaskBody, x_worker_toke
         )
     failed = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
     return serialize_worker_task(failed)
+
+
+@router.post("/tasks/{task_id}/release")
+async def release_worker_task(
+    task_id: str,
+    x_actor: str = Header(...),
+    x_operator_token: str | None = Header(default=None),
+):
+    require_authorized_actor(x_actor)
+    require_operator_token(x_operator_token)
+    pool = await get_pool()
+    task = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Worker task not found")
+    if task["status"] != "claimed":
+        raise HTTPException(status_code=409, detail="Only claimed tasks can be released")
+
+    claimed_by = task.get("claimed_by")
+    await pool.execute(
+        """UPDATE worker_tasks
+           SET status='queued',
+               claimed_by=NULL,
+               claimed_at=NULL,
+               lease_expires_at=NULL,
+               updated_at=now()
+           WHERE id=$1""",
+        task_id,
+    )
+    if claimed_by:
+        await pool.execute(
+            "UPDATE worker_nodes SET status='idle', last_seen_at=$1, updated_at=now() WHERE slug=$2",
+            datetime.now(timezone.utc),
+            claimed_by,
+        )
+    await _append_audit(
+        pool,
+        task,
+        f"human:{x_actor}",
+        "release-worker-task",
+        {"task_id": task_id, "claimed_by": claimed_by},
+    )
+    released = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
+    return serialize_worker_task(released)
+
+
+@router.post("/tasks/{task_id}/requeue")
+async def requeue_worker_task(
+    task_id: str,
+    x_actor: str = Header(...),
+    x_operator_token: str | None = Header(default=None),
+):
+    require_authorized_actor(x_actor)
+    require_operator_token(x_operator_token)
+    pool = await get_pool()
+    task = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Worker task not found")
+    if task["status"] != "failed":
+        raise HTTPException(status_code=409, detail="Only failed tasks can be requeued")
+
+    await pool.execute(
+        """UPDATE worker_tasks
+           SET status='queued',
+               claimed_by=NULL,
+               claimed_at=NULL,
+               lease_expires_at=NULL,
+               completed_at=NULL,
+               error_message=NULL,
+               updated_at=now()
+           WHERE id=$1""",
+        task_id,
+    )
+
+    if task["job_id"] is not None:
+        job = await pool.fetchrow("SELECT * FROM jobs WHERE id=$1", task["job_id"])
+        if job is not None and job["status"] == "failed":
+            validate_transition(
+                job["status"],
+                "pending",
+                job["approval_required"],
+                job.get("approved_at"),
+                retry_count=job.get("retry_count", 0),
+                max_retries=job.get("max_retries", 3),
+            )
+            await pool.execute(
+                """UPDATE jobs
+                   SET status='pending',
+                       error_message=NULL,
+                       retry_count=retry_count + 1,
+                       updated_at=now()
+                   WHERE id=$1""",
+                task["job_id"],
+            )
+
+    payload = decode_jsonb(task["payload"]) or {}
+    revision_id = payload.get("revision_id")
+    if revision_id:
+        await pool.execute(
+            """UPDATE revisions
+               SET status='approved'
+               WHERE id=$1""",
+            revision_id,
+        )
+
+    await _append_audit(
+        pool,
+        task,
+        f"human:{x_actor}",
+        "requeue-worker-task",
+        {"task_id": task_id},
+    )
+    requeued = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
+    return serialize_worker_task(requeued)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 import os
 import sys
 from typing import Any
@@ -152,6 +153,8 @@ class FakePool:
             return self.jobs.get(args[0])
         if "SELECT * FROM revisions WHERE job_id=$1" in query:
             return next((row for row in self.revisions.values() if row["job_id"] == args[0]), None)
+        if "SELECT * FROM worker_tasks WHERE id=$1" in query:
+            return next((row for row in self.worker_tasks if row.get("id") == args[0]), None)
         if "INSERT INTO audit_log" in query and "RETURNING id, created_at" in query:
             entry = FakeRow(id=len(self.audit_log) + 1, created_at=now)
             self.audit_log.append(entry)
@@ -194,15 +197,49 @@ class FakePool:
         if "INSERT INTO worker_tasks" in query:
             self.worker_tasks.append(
                 FakeRow(
+                    id=f"task-{len(self.worker_tasks) + 1}",
                     job_id=args[0],
                     project_id=args[1],
                     worker_slug=args[2],
                     task_type=args[3],
                     required_capability=args[4],
                     payload=args[5],
+                    status="queued",
+                    claimed_by=None,
+                    claimed_at=None,
+                    lease_expires_at=None,
+                    completed_at=None,
+                    error_message=None,
+                    result={},
                 )
             )
             return "INSERT 0 1"
+        if "UPDATE worker_tasks" in query and "SET status='queued'" in query and "claimed_by=NULL" in query:
+            task = next(row for row in self.worker_tasks if row["id"] == args[0])
+            task["status"] = "queued"
+            task["claimed_by"] = None
+            task["claimed_at"] = None
+            task["lease_expires_at"] = None
+            if "completed_at=NULL" in query:
+                task["completed_at"] = None
+                task["error_message"] = None
+            return "UPDATE 1"
+        if "UPDATE worker_nodes SET status='idle'" in query:
+            worker = next((row for row in self.worker_nodes if row["slug"] == args[1]), None)
+            if worker:
+                worker["status"] = "idle"
+                worker["last_seen_at"] = args[0]
+            return "UPDATE 1"
+        if "UPDATE jobs" in query and "SET status='pending'" in query:
+            job = self.jobs[args[0]]
+            job["status"] = "pending"
+            job["error_message"] = None
+            job["retry_count"] += 1
+            return "UPDATE 1"
+        if "UPDATE revisions" in query and "SET status='approved'" in query:
+            revision = self.revisions[args[0]]
+            revision["status"] = "approved"
+            return "UPDATE 1"
         if "INSERT INTO audit_log" in query:
             self.audit_log.append(
                 FakeRow(
@@ -333,6 +370,88 @@ def test_worker_register_requires_worker_token_when_configured():
 
     assert response.status_code == 403
     assert "worker token" in response.json()["detail"]
+
+
+def test_release_worker_task_requires_operator_token_when_configured():
+    pool = FakePool()
+    pool.worker_tasks.append(FakeRow(id="task-claimed", status="claimed", claimed_by="fresh-worker", job_id=None, project_id=None, payload={}))
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+    original = workers.OPERATOR_API_TOKEN
+    workers.OPERATOR_API_TOKEN = "operator-secret"
+    try:
+        response = client.post(
+            "/workers/tasks/task-claimed/release",
+            headers={"X-Actor": "owner"},
+        )
+    finally:
+        workers.OPERATOR_API_TOKEN = original
+
+    assert response.status_code == 403
+    assert "operator token" in response.json()["detail"]
+
+
+def test_release_claimed_worker_task_resets_task_and_worker():
+    pool = FakePool()
+    claimed_at = datetime.now(timezone.utc)
+    pool.worker_tasks.append(
+        FakeRow(
+            id="task-claimed",
+            status="claimed",
+            claimed_by="fresh-worker",
+            claimed_at=claimed_at,
+            lease_expires_at=claimed_at,
+            job_id=None,
+            project_id=None,
+            payload={},
+        )
+    )
+    pool.worker_nodes[0]["status"] = "busy"
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.post(
+        "/workers/tasks/task-claimed/release",
+        headers={"X-Actor": "owner"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
+    assert pool.worker_tasks[0]["claimed_by"] is None
+    assert pool.worker_nodes[0]["status"] == "idle"
+
+
+def test_requeue_failed_worker_task_resets_task_job_and_revision():
+    pool = FakePool()
+    pool.worker_tasks.append(
+        FakeRow(
+            id="task-failed",
+            status="failed",
+            claimed_by="fresh-worker",
+            completed_at=datetime.now(timezone.utc),
+            error_message="boom",
+            job_id="job-revision",
+            project_id="project-1",
+            payload=json.dumps({"revision_id": "revision-1"}),
+        )
+    )
+    pool.jobs["job-revision"]["status"] = "failed"
+    pool.jobs["job-revision"]["error_message"] = "boom"
+    pool.revisions["revision-1"]["status"] = "failed"
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.post(
+        "/workers/tasks/task-failed/requeue",
+        headers={"X-Actor": "owner"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
+    assert pool.worker_tasks[0]["error_message"] is None
+    assert pool.jobs["job-revision"]["status"] == "pending"
+    assert pool.jobs["job-revision"]["retry_count"] == 1
+    assert pool.revisions["revision-1"]["status"] == "approved"
 
 
 def test_alert_summary_reports_waiting_jobs_and_stale_workers():

@@ -629,6 +629,7 @@ export function App() {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  const [pendingTaskActionId, setPendingTaskActionId] = useState<string | null>(null);
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
   const [workspaceDraft, setWorkspaceDraft] = useState<WorkspaceSettings>(defaultWorkspaceSettings());
   const [workspaceDraftHydrated, setWorkspaceDraftHydrated] = useState(false);
@@ -647,6 +648,8 @@ export function App() {
   const [maintenancePending, setMaintenancePending] = useState<"reseed" | null>(null);
   const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
   const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
+  const [taskActionMessage, setTaskActionMessage] = useState<string | null>(null);
+  const [taskActionError, setTaskActionError] = useState<string | null>(null);
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const optionalOfflineCount = data.services.filter((service) => service.optional && service.state === "offline").length;
@@ -948,6 +951,33 @@ export function App() {
       setMaintenanceError(error instanceof Error ? error.message : "Unable to reseed automation defaults");
     } finally {
       setMaintenancePending(null);
+    }
+  }
+
+  async function handleTaskRecovery(taskId: string, action: "release" | "requeue") {
+    setPendingTaskActionId(taskId);
+    setTaskActionMessage(null);
+    setTaskActionError(null);
+    try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "X-Actor": operatorName,
+      };
+      if (operatorToken) headers["X-Operator-Token"] = operatorToken;
+      const response = await fetch(`${API.projectState}/workers/tasks/${taskId}/${action}`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? `${action} failed with ${response.status}`);
+      }
+      setTaskActionMessage(`${action === "release" ? "Released" : "Requeued"} worker task ${taskId}.`);
+      await refreshData();
+    } catch (error) {
+      setTaskActionError(error instanceof Error ? error.message : `Unable to ${action} task`);
+    } finally {
+      setPendingTaskActionId(null);
     }
   }
 
@@ -1757,6 +1787,28 @@ export function App() {
                   <div className="row-meta">
                     <span className={`status-pill ${statusTone(task.status)}`}>{task.status}</span>
                     <span className="muted">{summarizeTime(task.created_at)}</span>
+                    {task.status === "claimed" || task.status === "failed" ? (
+                      <div className="action-row">
+                        {task.status === "claimed" ? (
+                          <button
+                            className="action-button"
+                            disabled={!operatorName || pendingTaskActionId === task.id}
+                            onClick={() => handleTaskRecovery(task.id, "release")}
+                          >
+                            {pendingTaskActionId === task.id ? "working" : "release"}
+                          </button>
+                        ) : null}
+                        {task.status === "failed" ? (
+                          <button
+                            className="action-button ok"
+                            disabled={!operatorName || pendingTaskActionId === task.id}
+                            onClick={() => handleTaskRecovery(task.id, "requeue")}
+                          >
+                            {pendingTaskActionId === task.id ? "working" : "requeue"}
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ))
@@ -1764,6 +1816,8 @@ export function App() {
               <p className="empty-state">No worker tasks have been processed yet.</p>
             )}
           </div>
+          {taskActionMessage ? <p className="feedback ok">{taskActionMessage}</p> : null}
+          {taskActionError ? <p className="feedback bad">{taskActionError}</p> : null}
           <p className="panel-note">
             Historical smoke-test failures stay visible until the backing rows are cleared. Treat this as
             operational history, not only current breakage.
