@@ -6,11 +6,14 @@ from datetime import datetime, timedelta, timezone
 import json
 
 from fastapi import APIRouter, HTTPException
+from fastapi import Header
 from pydantic import BaseModel, Field
 
 from ..db import get_pool
+from ..fsm import validate_transition
 
 router = APIRouter()
+WORKER_API_TOKEN = __import__("os").environ.get("WORKER_API_TOKEN", "")
 
 
 def decode_jsonb(value):
@@ -34,6 +37,11 @@ def serialize_worker_task(row) -> dict:
     data["payload"] = decode_jsonb(data.get("payload"))
     data["result"] = decode_jsonb(data.get("result"))
     return data
+
+
+def require_worker_token(token: str | None) -> None:
+    if WORKER_API_TOKEN and token != WORKER_API_TOKEN:
+        raise HTTPException(status_code=403, detail="Missing or invalid worker token.")
 
 
 class RegisterWorkerBody(BaseModel):
@@ -99,7 +107,8 @@ async def get_worker(slug: str):
 
 
 @router.post("/register", status_code=201)
-async def register_worker(body: RegisterWorkerBody):
+async def register_worker(body: RegisterWorkerBody, x_worker_token: str | None = Header(default=None)):
+    require_worker_token(x_worker_token)
     pool = await get_pool()
     row = await pool.fetchrow(
         """INSERT INTO worker_nodes
@@ -129,7 +138,8 @@ async def register_worker(body: RegisterWorkerBody):
 
 
 @router.post("/{slug}/heartbeat")
-async def heartbeat(slug: str, body: HeartbeatBody):
+async def heartbeat(slug: str, body: HeartbeatBody, x_worker_token: str | None = Header(default=None)):
+    require_worker_token(x_worker_token)
     pool = await get_pool()
     row = await pool.fetchrow("SELECT * FROM worker_nodes WHERE slug=$1", slug)
     if row is None:
@@ -191,7 +201,8 @@ async def enqueue_worker_task(body: EnqueueWorkerTaskBody):
 
 
 @router.post("/tasks/claim")
-async def claim_worker_task(body: ClaimWorkerTaskBody):
+async def claim_worker_task(body: ClaimWorkerTaskBody, x_worker_token: str | None = Header(default=None)):
+    require_worker_token(x_worker_token)
     pool = await get_pool()
     worker = await pool.fetchrow("SELECT * FROM worker_nodes WHERE slug=$1", body.worker_slug)
     if worker is None:
@@ -241,8 +252,11 @@ async def claim_worker_task(body: ClaimWorkerTaskBody):
         body.worker_slug,
     )
     if row["job_id"] is not None:
+        job = await pool.fetchrow("SELECT * FROM jobs WHERE id=$1", row["job_id"])
+        if job is not None and job["status"] in {"pending", "approved"}:
+            validate_transition(job["status"], "in-progress", job["approval_required"], job.get("approved_at"))
         await pool.execute(
-            "UPDATE jobs SET status='in-progress', updated_at=now() WHERE id=$1 AND status='pending'",
+            "UPDATE jobs SET status='in-progress', updated_at=now() WHERE id=$1 AND status IN ('pending','approved')",
             row["job_id"],
         )
     claimed = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", row["id"])
@@ -250,7 +264,8 @@ async def claim_worker_task(body: ClaimWorkerTaskBody):
 
 
 @router.post("/tasks/{task_id}/complete")
-async def complete_worker_task(task_id: str, body: CompleteWorkerTaskBody):
+async def complete_worker_task(task_id: str, body: CompleteWorkerTaskBody, x_worker_token: str | None = Header(default=None)):
+    require_worker_token(x_worker_token)
     pool = await get_pool()
     task = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
     if task is None:
@@ -271,17 +286,30 @@ async def complete_worker_task(task_id: str, body: CompleteWorkerTaskBody):
         body.worker_slug,
     )
     if task["job_id"] is not None:
+        job = await pool.fetchrow("SELECT * FROM jobs WHERE id=$1", task["job_id"])
+        if job is not None:
+            validate_transition(job["status"], "complete", job["approval_required"], job.get("approved_at"))
         await pool.execute(
             "UPDATE jobs SET status='complete', artifacts = artifacts || $1::jsonb, updated_at=now() WHERE id=$2",
             json.dumps([{"type": "worker-result", "worker_task_id": task_id, "result": body.result}]),
             task["job_id"],
+        )
+    payload = decode_jsonb(task["payload"]) or {}
+    revision_id = payload.get("revision_id")
+    if revision_id:
+        await pool.execute(
+            """UPDATE revisions
+               SET status='complete'
+               WHERE id=$1""",
+            revision_id,
         )
     completed = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
     return serialize_worker_task(completed)
 
 
 @router.post("/tasks/{task_id}/fail")
-async def fail_worker_task(task_id: str, body: FailWorkerTaskBody):
+async def fail_worker_task(task_id: str, body: FailWorkerTaskBody, x_worker_token: str | None = Header(default=None)):
+    require_worker_token(x_worker_token)
     pool = await get_pool()
     task = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
     if task is None:
@@ -303,10 +331,22 @@ async def fail_worker_task(task_id: str, body: FailWorkerTaskBody):
         body.worker_slug,
     )
     if task["job_id"] is not None:
+        job = await pool.fetchrow("SELECT * FROM jobs WHERE id=$1", task["job_id"])
+        if job is not None:
+            validate_transition(job["status"], "failed", job["approval_required"], job.get("approved_at"))
         await pool.execute(
             "UPDATE jobs SET status='failed', error_message=$1, updated_at=now() WHERE id=$2",
             body.error_message,
             task["job_id"],
+        )
+    payload = decode_jsonb(task["payload"]) or {}
+    revision_id = payload.get("revision_id")
+    if revision_id:
+        await pool.execute(
+            """UPDATE revisions
+               SET status='failed'
+               WHERE id=$1""",
+            revision_id,
         )
     failed = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
     return serialize_worker_task(failed)

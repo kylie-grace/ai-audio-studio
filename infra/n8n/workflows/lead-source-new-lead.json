@@ -1,0 +1,89 @@
+{
+  "name": "Lead Source New Lead",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "studio/lead-source/new-lead",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook_LeadSourceNewLead",
+      "name": "Inbound Lead Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        280
+      ],
+      "webhookId": "studio-lead-source-new-lead"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://openclaw:8100/dispatch/by-trigger",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"trigger_module\":\"lead-source\",\"trigger_action\":\"new-lead\",\"project_id\":$json.body.project_id ?? null,\"context\":$json.body}",
+        "options": {}
+      },
+      "id": "Http_LeadSourceNewLead",
+      "name": "Dispatch Lead Trigger",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "Respond_LeadSourceNewLead",
+      "name": "Respond Lead Trigger",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "Inbound Lead Trigger": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Lead Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch Lead Trigger": {
+      "main": [
+        [
+          {
+            "node": "Respond Lead Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "versionId": "starter-lead-source-new-lead",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

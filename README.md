@@ -11,6 +11,7 @@ Single-machine first, split-worker optional:
 - **Split mode** — the Mac mini runs the control plane and a second Mac runs `studio-worker` for filesystem-heavy or DAW-adjacent tasks.
 - **Shared volume** — `/Volumes/StudioShare/` or equivalent shared mount visible to any machine executing file tasks.
 - **LAN access** — set `BIND_HOST=0.0.0.0` to expose the dashboard and APIs to the local network.
+- **HTTPS edge** — add `infra/docker-compose.edge.yml` when you want a single TLS front door for dashboard access on the LAN.
 
 ## Quick Start
 
@@ -37,10 +38,13 @@ bash services/ollama/pull_models.sh
 # 4. Start the control plane on the local Mac
 docker compose --env-file infra/.env -f infra/docker-compose.yml up -d
 
-# 5. Optional: start the studio worker on a second Mac
+# 5. Optional: add the HTTPS dashboard front door
+docker compose --env-file infra/.env -f infra/docker-compose.yml -f infra/docker-compose.edge.yml up -d
+
+# 6. Optional: start the studio worker on a second Mac
 docker compose --env-file infra/.env -f infra/docker-compose.worker.yml up -d
 
-# 6. Verify all services healthy
+# 7. Verify all services healthy
 docker compose --env-file infra/.env -f infra/docker-compose.yml ps
 ```
 
@@ -61,6 +65,25 @@ open http://localhost:5678                  # n8n workflow editor
 
 Single-machine mode does not require `docker-compose.worker.yml`; the worker file is only for split deployments.
 
+Optional HTTPS front door:
+```bash
+docker compose --env-file infra/.env \
+  -f infra/docker-compose.yml \
+  -f infra/docker-compose.edge.yml \
+  up -d
+```
+This serves the dashboard at `https://$CONTROL_PLANE_HOST` through Caddy with an internal LAN certificate.
+Export the Caddy root certificate with `bash scripts/export_caddy_root_cert.sh infra/.env` and trust it on operator devices for clean HTTPS access.
+The edge stack also exposes `https://n8n.$CONTROL_PLANE_HOST` and `https://openclaw.$CONTROL_PLANE_HOST`.
+
+Optional local worker on the same Mac:
+```bash
+docker compose --profile local-worker --env-file infra/.env -f infra/docker-compose.yml up -d
+```
+Use this when one Mac should also execute bounded worker tasks locally. Keep `infra/docker-compose.worker.yml` for the separate studio-Mac deployment.
+
+The Compose project is intentionally named `ai-audio-studio` so Docker Desktop shows the product name instead of the `infra/` folder.
+
 ### Headless Validation
 
 ```bash
@@ -79,7 +102,7 @@ Current validation is headless and MVP-oriented:
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| `studio-brain-ui` | 3000 | Placeholder UI shell for the future approval queue/dashboard |
+| `studio-brain-ui` | 3000 | Operator dashboard and API proxy |
 | `n8n` | 5678 | Workflow automation and webhooks |
 | `project-state` | 8080 | Job state, approval queue, audit log |
 | `crm-api` | 8090 | Lead and project records |
@@ -101,19 +124,23 @@ Implemented or partially implemented:
 - `project-state` API, schema, FSM, approval routes, audit restrictions
 - `project-state` worker registry and remote task queue
 - `crm-api` style-profile ingestion for pasted text and file-backed references
-- `openclaw` policy helper plus DB-backed orchestration rules
+- `openclaw` policy helper plus DB-backed orchestration rules and rule packs
+- `openclaw` starter playbooks for prebuilt operator automations
+- seeded n8n workflow templates under `infra/n8n/workflows/`
 - effort-level gating helper
 - audio QC threshold presets
 - Docker service graph and prompt/task scaffolding
 - studio worker service for optional remote file-task execution
+- `local-worker` Docker profile for single-Mac execution
+- operator dashboard with live health, approvals, style profiles, worker state, and rule-pack visibility
 
 Still incomplete:
-- live approval queue UI and worker health widgets
 - full single-machine execution parity across the stack
 - full OpenClaw execution against all email/content modules
 - richer style-profile extraction and per-client/per-project context layering
 - audio QC remote execution and DAW automation hooks
-- n8n workflow JSONs and end-to-end inbound automations
+- end-to-end inbound automations beyond the seeded workflow templates
+- outbound alerts and escalation connectors
 
 ## Five Core Modules
 
@@ -126,10 +153,12 @@ Still incomplete:
 ## New Control-Plane Primitives
 
 - **Style Profiles**: paste tone guidance, point at reference files, or combine both through `crm-api /style-profiles`
-- **Orchestration Rules**: configure OpenClaw routing contracts through `openclaw /rules`
+- **Orchestration Rules**: curated defaults auto-seed on startup and grouped rule packs list at `openclaw /rule-packs`
+- **Starter Automations**: inspect prebuilt routing surfaces through `openclaw /playbooks`
 - **Studio Worker Queue**: enqueue bounded remote tasks in `project-state /workers/tasks`
-- **Studio Worker Agent**: run `infra/docker-compose.worker.yml` only when you want a second Mac to claim and execute tasks
+- **Studio Worker Agent**: run `infra/docker-compose.worker.yml` for a second Mac or `--profile local-worker` when one Mac should execute locally
 - **Auto-seeded defaults**: CRM seeds a baseline studio tone profile and OpenClaw seeds email/content routing rules on startup
+- **n8n Workflow Pack**: import the supplied webhook templates from `infra/n8n/workflows/` instead of building first-pass flows from scratch
 
 ## Safety Model
 
@@ -169,13 +198,20 @@ docker compose -f infra/docker-compose.yml exec postgres \
 
 Use single-machine mode when one Mac should do everything locally:
 - Start `infra/docker-compose.yml`
-- Leave `infra/docker-compose.worker.yml` stopped
+- Add `--profile local-worker` if you want bounded DAW-adjacent tasks to execute on the same machine
 - Keep all tasks on the local machine unless you explicitly need a second node
 
 Use split mode when you want a dedicated worker Mac:
 - Start `infra/docker-compose.yml` on the control-plane machine
 - Start `infra/docker-compose.worker.yml` on the worker machine
 - Point `MAC_MINI_BASE_URL` at the control-plane host and share the same project paths
+
+Use `infra/docker-compose.edge.yml` when you want HTTPS on a single front door for the dashboard.
+
+For novice-friendly operations:
+- Use `https://$CONTROL_PLANE_HOST` as the main dashboard entrypoint.
+- Keep Docker Desktop filtered by the `ai-audio-studio` project name.
+- Use the seeded rule packs and supplied n8n workflow templates before creating custom automation.
 
 ## Task Files
 
@@ -199,3 +235,5 @@ Each task file contains: purpose, dependencies, file list, input/output contract
 
 - `docs/architecture/` — ADRs, system diagrams, prompt contracts
 - `docs/runbooks/` — Operator procedures and safety checklists
+- [docs/runbooks/local-network.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/local-network.md) — LAN and HTTPS setup
+- [docs/runbooks/n8n-bootstrap.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/n8n-bootstrap.md) — importable workflow templates

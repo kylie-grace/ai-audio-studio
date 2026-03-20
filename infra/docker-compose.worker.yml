@@ -1,3 +1,5 @@
+name: ai-audio-studio-worker
+
 #
 # Optional split-mode worker stack.
 # Run this only on a second Mac when you want the control plane and worker separated.
@@ -16,6 +18,7 @@ services:
       WORKER_CAPABILITIES: "${WORKER_CAPABILITIES:-session-prep,revision-parser,delivery-packager}"
       POLL_INTERVAL_SECONDS: "${POLL_INTERVAL_SECONDS:-5}"
       STUDIO_WORKER_DRY_RUN_DAW: "${STUDIO_WORKER_DRY_RUN_DAW:-true}"
+      WORKER_API_TOKEN: "${WORKER_API_TOKEN:-change-me-worker-token}"
       SHARED_PROJECTS_PATH: "${SHARED_PROJECTS_PATH:-/Volumes/StudioShare/projects}"
       DELIVERY_PATH: "${DELIVERY_PATH:-/Volumes/StudioShare/deliveries}"
       PATH_TRANSLATION_JSON: '${PATH_TRANSLATION_JSON:-{}}'

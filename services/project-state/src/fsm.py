@@ -23,6 +23,7 @@ def validate_transition(
     current: str,
     next_status: str,
     approval_required: bool = True,
+    approved_at=None,
     retry_count: int = 0,
     max_retries: int = 3,
 ) -> None:
@@ -41,7 +42,7 @@ def validate_transition(
             f"Illegal status transition: {current!r} → {next_status!r}. "
             f"Allowed next states: {sorted(allowed) or 'none (terminal)'}"
         )
-    if approval_required and current == "in-progress" and next_status == "complete":
+    if approval_required and current == "in-progress" and next_status == "complete" and approved_at is None:
         raise ValueError(
             "Job has approval_required=True. Cannot move from 'in-progress' "
             "directly to 'complete'. Must pass through 'awaiting-approval' → 'approved'."

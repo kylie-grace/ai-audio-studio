@@ -1,0 +1,89 @@
+{
+  "name": "Session Source Import Stems",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "studio/session-source/import-stems",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook_SessionSourceImportStems",
+      "name": "Inbound Session Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        280
+      ],
+      "webhookId": "studio-session-source-import-stems"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://openclaw:8100/dispatch/by-trigger",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"trigger_module\":\"session-source\",\"trigger_action\":\"import-stems\",\"project_id\":$json.body.project_id ?? null,\"context\":$json.body}",
+        "options": {}
+      },
+      "id": "Http_SessionSourceImportStems",
+      "name": "Dispatch Session Trigger",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "Respond_SessionSourceImportStems",
+      "name": "Respond Session Trigger",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "Inbound Session Trigger": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Session Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch Session Trigger": {
+      "main": [
+        [
+          {
+            "node": "Respond Session Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "versionId": "starter-session-source-import-stems",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

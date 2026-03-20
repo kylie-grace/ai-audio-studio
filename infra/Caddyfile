@@ -1,0 +1,44 @@
+https://{$CONTROL_PLANE_HOST:studio-brain.local} {
+    encode zstd gzip
+    reverse_proxy studio-brain-ui:3000
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+    tls internal
+}
+
+https://n8n.{$CONTROL_PLANE_HOST:studio-brain.local} {
+    encode zstd gzip
+    reverse_proxy n8n:5678
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+    tls internal
+}
+
+https://openclaw.{$CONTROL_PLANE_HOST:studio-brain.local} {
+    encode zstd gzip
+    reverse_proxy openclaw:8100
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+    tls internal
+}
+
+n8n.{$CONTROL_PLANE_HOST:studio-brain.local} {
+    encode zstd gzip
+    reverse_proxy n8n:5678
+    tls internal
+}
+
+openclaw.{$CONTROL_PLANE_HOST:studio-brain.local} {
+    encode zstd gzip
+    reverse_proxy openclaw:8100
+    tls internal
+}

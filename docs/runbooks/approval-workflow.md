@@ -9,7 +9,7 @@ Nothing sends without a human "yes".
 ## Where to find items awaiting review
 
 1. Open **Studio Brain UI**: http://localhost:3000
-2. The **Approval Queue** tab shows all pending items grouped by type
+2. The **Approval Queue** panel shows all pending items grouped by type
 
 > Set `STUDIO_OWNER_NAME` in your `.env` to display your name in the UI.
 
@@ -42,6 +42,10 @@ Nothing sends without a human "yes".
 Click **Approve** next to any item. Your name is recorded in the audit log.
 Approved email drafts go to the `approved-send` queue — a separate step
 sends them (visible in n8n).
+
+If you are approving over the API, include both:
+- `X-Actor: <authorized actor>`
+- `X-Operator-Token: <OPERATOR_API_TOKEN>`
 
 ## Rejecting
 

@@ -1,0 +1,89 @@
+{
+  "name": "QC Source QC Pass",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "studio/qc-source/qc-pass",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook_QcSourceQcPass",
+      "name": "Inbound QC Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        280
+      ],
+      "webhookId": "studio-qc-source-qc-pass"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://openclaw:8100/dispatch/by-trigger",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"trigger_module\":\"qc-source\",\"trigger_action\":\"qc-pass\",\"project_id\":$json.body.project_id ?? null,\"context\":$json.body}",
+        "options": {}
+      },
+      "id": "Http_QcSourceQcPass",
+      "name": "Dispatch QC Trigger",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "Respond_QcSourceQcPass",
+      "name": "Respond QC Trigger",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "Inbound QC Trigger": {
+      "main": [
+        [
+          {
+            "node": "Dispatch QC Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch QC Trigger": {
+      "main": [
+        [
+          {
+            "node": "Respond QC Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "versionId": "starter-qc-source-qc-pass",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

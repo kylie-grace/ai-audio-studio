@@ -38,6 +38,25 @@ type OrchestrationRule = {
   conditions?: Record<string, unknown> | string;
 };
 
+type RulePack = {
+  slug: string;
+  name: string;
+  description: string;
+  rule_count: number;
+};
+
+type Playbook = {
+  slug: string;
+  name: string;
+  summary: string;
+  n8n_workflow_slug: string;
+  trigger_module: string;
+  trigger_action: string;
+  target_module: string;
+  webhook_path: string;
+  required_context: string[];
+};
+
 type WorkerTask = {
   id: string;
   worker_slug?: string | null;
@@ -52,18 +71,55 @@ type WorkerTask = {
   result?: Record<string, unknown> | string;
 };
 
+type ApprovalItem = {
+  id: string;
+  module: string;
+  action: string;
+  created_at: string;
+  requested_by?: string | null;
+  project_id?: string | null;
+};
+
+type StyleProfile = {
+  id: string;
+  name: string;
+  scope: string;
+  source_type: string;
+  extracted_guidance?: {
+    summary?: string;
+    tone_markers?: string[];
+  } | null;
+};
+
 type DashboardData = {
   refreshedAt: string | null;
   services: ServiceCard[];
   workers: WorkerNode[];
   rules: OrchestrationRule[];
+  rulePacks: RulePack[];
+  playbooks: Playbook[];
   tasks: WorkerTask[];
+  approvals: ApprovalItem[];
+  styleProfiles: StyleProfile[];
   loadState: "loading" | "ready" | "error";
   error: string | null;
 };
 
 const browserHost = window.location.hostname || "localhost";
+const browserProtocol = window.location.protocol || "http:";
+const frontDoorUrl = `${browserProtocol}//${window.location.host}`;
 const serviceUrl = (port: number) => `http://${browserHost}:${port}`;
+
+function isIpv4Address(value: string) {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(value);
+}
+
+function frontDoorServiceUrl(service: "n8n" | "openclaw") {
+  if (browserProtocol === "https:" && browserHost.includes(".") && !isIpv4Address(browserHost)) {
+    return `https://${service}.${browserHost}`;
+  }
+  return service === "n8n" ? serviceUrl(5678) : serviceUrl(8100);
+}
 
 const API = {
   projectState: "/api/project-state",
@@ -87,7 +143,7 @@ const serviceConfig = [
   },
   {
     name: "OpenClaw",
-    note: "Policy-enforced orchestration rules",
+    note: "Policy-enforced orchestration and prebuilt rule packs",
     url: serviceUrl(8100),
     healthUrl: `${API.openclaw}/health`,
   },
@@ -162,6 +218,10 @@ async function fetchServiceState(path: string): Promise<{ state: ServiceState; d
   }
 }
 
+function primaryMode(workers: WorkerNode[]) {
+  return workers.length ? "control plane + worker" : "single-machine";
+}
+
 export function App() {
   const [data, setData] = useState<DashboardData>({
     refreshedAt: null,
@@ -172,7 +232,11 @@ export function App() {
     })),
     workers: [],
     rules: [],
+    rulePacks: [],
+    playbooks: [],
     tasks: [],
+    approvals: [],
+    styleProfiles: [],
     loadState: "loading",
     error: null,
   });
@@ -181,6 +245,11 @@ export function App() {
   const workerCount = data.workers.length;
   const activeTaskCount = data.tasks.filter((task) => task.status === "queued" || task.status === "claimed").length;
   const enabledRuleCount = data.rules.filter((rule) => rule.enabled).length;
+  const playbookCount = data.playbooks.length;
+  const primaryDashboardUrl = frontDoorUrl;
+  const n8nUrl = frontDoorServiceUrl("n8n");
+  const openclawUrl = frontDoorServiceUrl("openclaw");
+  const secureHint = browserProtocol === "https:" ? "TLS active" : "HTTP only";
 
   useEffect(() => {
     let active = true;
@@ -188,15 +257,20 @@ export function App() {
 
     const load = async () => {
       try {
-        const [projectState, crm, openclaw, n8n, workers, rules, tasks] = await Promise.all([
-          fetchServiceState(`${API.projectState}/health`),
-          fetchServiceState(`${API.crm}/health`),
-          fetchServiceState(`${API.openclaw}/health`),
-          fetchServiceState(`${API.n8n}/healthz`),
-          fetchJson<WorkerNode[]>(`${API.projectState}/workers/`),
-          fetchJson<OrchestrationRule[]>(`${API.openclaw}/rules`),
-          fetchJson<WorkerTask[]>(`${API.projectState}/workers/tasks/list`),
-        ]);
+        const [projectState, crm, openclaw, n8n, workers, rules, rulePacks, playbooks, tasks, approvals, styleProfiles] =
+          await Promise.all([
+            fetchServiceState(`${API.projectState}/health`),
+            fetchServiceState(`${API.crm}/health`),
+            fetchServiceState(`${API.openclaw}/health`),
+            fetchServiceState(`${API.n8n}/healthz`),
+            fetchJson<WorkerNode[]>(`${API.projectState}/workers/`),
+            fetchJson<OrchestrationRule[]>(`${API.openclaw}/rules`),
+            fetchJson<RulePack[]>(`${API.openclaw}/rule-packs`),
+            fetchJson<Playbook[]>(`${API.openclaw}/playbooks`),
+            fetchJson<WorkerTask[]>(`${API.projectState}/workers/tasks/list`),
+            fetchJson<ApprovalItem[]>(`${API.projectState}/approval-queue/`),
+            fetchJson<StyleProfile[]>(`${API.crm}/style-profiles?scope=studio`),
+          ]);
 
         if (!active) return;
 
@@ -209,7 +283,11 @@ export function App() {
           })),
           workers,
           rules,
+          rulePacks,
+          playbooks,
           tasks,
+          approvals,
+          styleProfiles,
           loadState: "ready",
           error: null,
         });
@@ -237,17 +315,17 @@ export function App() {
       <section className="hero">
         <div className="hero-copy">
           <p className="eyebrow">AI Audio Studio</p>
-          <h1>Studio Brain UI</h1>
+          <h1>Studio Brain</h1>
           <p className="lede">
-            Production control surface for the Mac mini and optional worker node. Live
-            service health, approvals, orchestration rules, and task execution all flow
-            through the same LAN-safe proxy path.
+            Operator console for a single production Mac or a Mac mini control plane with an
+            optional studio worker. Rules, approvals, style context, and worker execution stay
+            visible in one place.
           </p>
           <div className="hero-tags">
-            <span className="tag">LAN ready</span>
-            <span className="tag">approval-gated</span>
-            <span className="tag">live polling</span>
-            <span className="tag">worker optional</span>
+            <span className="tag">{primaryMode(data.workers)}</span>
+            <span className="tag">{secureHint}</span>
+            <span className="tag">approval gated</span>
+            <span className="tag">prebuilt rule packs</span>
           </div>
         </div>
         <div className="hero-meta">
@@ -274,11 +352,71 @@ export function App() {
               <strong>{enabledRuleCount}</strong>
             </div>
             <div>
-              <span className="metric-label">Active Tasks</span>
-              <strong>{activeTaskCount}</strong>
+              <span className="metric-label">Playbooks</span>
+              <strong>{playbookCount}</strong>
+            </div>
+            <div>
+              <span className="metric-label">Approvals</span>
+              <strong>{data.approvals.length}</strong>
             </div>
           </div>
         </div>
+      </section>
+
+      <section className="content-grid top-grid">
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Access Surface</h2>
+            <span className="count-pill">{browserProtocol === "https:" ? "secure" : "live"}</span>
+          </div>
+          <div className="link-list">
+            <a className="link-chip" href={primaryDashboardUrl}>
+              <span>Dashboard</span>
+              <code>{primaryDashboardUrl}</code>
+            </a>
+            <a className="link-chip" href={n8nUrl}>
+              <span>n8n Editor</span>
+              <code>{n8nUrl}</code>
+            </a>
+            <a className="link-chip" href={serviceUrl(8080)}>
+              <span>Project State API</span>
+              <code>{serviceUrl(8080)}</code>
+            </a>
+            <a className="link-chip" href={openclawUrl}>
+              <span>OpenClaw API</span>
+              <code>{openclawUrl}</code>
+            </a>
+          </div>
+          <p className="panel-note">
+            Use the dashboard as the operator front door. Direct service ports remain available for
+            engineering, automation, and worker registration.
+          </p>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Operating Mode</h2>
+            <span className={`status-pill ${workerCount ? "warn" : "ok"}`}>{primaryMode(data.workers)}</span>
+          </div>
+          <div className="mini-grid">
+            <div className="mini-card">
+              <span className="metric-label">Recommended</span>
+              <strong>One powerful Mac first</strong>
+              <span className="metric-subtle">
+                Keep the worker optional unless you need filesystem isolation or a dedicated studio workstation.
+              </span>
+            </div>
+            <div className="mini-card">
+              <span className="metric-label">Current</span>
+              <strong>{workerCount ? "Remote execution enabled" : "All local execution"}</strong>
+              <span className="metric-subtle">
+                {workerCount
+                  ? "A registered worker can claim bounded DAW and packaging tasks."
+                  : "The control plane can operate alone until a second Mac is available."}
+              </span>
+            </div>
+          </div>
+        </article>
       </section>
 
       <section className="card-grid">
@@ -299,6 +437,63 @@ export function App() {
             </article>
           );
         })}
+      </section>
+
+      <section className="content-grid">
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Approval Queue</h2>
+            <span className="count-pill">{data.approvals.length}</span>
+          </div>
+          <div className="table-stack">
+            {data.approvals.length ? (
+              data.approvals.slice(0, 5).map((job) => (
+                <div key={job.id} className="table-row">
+                  <div>
+                    <strong>{job.module}</strong>
+                    <div className="muted">{job.action}</div>
+                  </div>
+                  <div className="row-meta">
+                    <span className="status-pill warn">awaiting approval</span>
+                    <span className="muted">{job.requested_by ?? "system"}</span>
+                    <span className="muted">{summarizeTime(job.created_at)}</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="empty-state">No items are waiting for approval.</p>
+            )}
+          </div>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Style Profiles</h2>
+            <span className="count-pill">{data.styleProfiles.length}</span>
+          </div>
+          <div className="table-stack">
+            {data.styleProfiles.length ? (
+              data.styleProfiles.slice(0, 4).map((profile) => (
+                <div key={profile.id} className="table-row">
+                  <div>
+                    <strong>{profile.name}</strong>
+                    <div className="muted">
+                      {profile.scope} · {profile.source_type}
+                    </div>
+                  </div>
+                  <div className="row-meta">
+                    <span className="status-pill ok">active context</span>
+                    <span className="muted">
+                      {profile.extracted_guidance?.summary ?? "No guidance summary extracted yet."}
+                    </span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="empty-state">No style profiles have been ingested yet.</p>
+            )}
+          </div>
+        </article>
       </section>
 
       <section className="content-grid">
@@ -328,43 +523,65 @@ export function App() {
                 </div>
               ))
             ) : (
-              <p className="empty-state">No worker registrations yet.</p>
+              <p className="empty-state">No worker registrations yet. Single-machine mode is still fully usable.</p>
             )}
           </div>
         </article>
 
         <article className="panel">
           <div className="panel-header">
-            <h2>Orchestration Rules</h2>
-            <span className="count-pill">{data.rules.length}</span>
+            <h2>Prebuilt Rule Packs</h2>
+            <span className="count-pill">{data.rulePacks.length}</span>
           </div>
           <div className="table-stack">
-            {data.rules.length ? (
-              data.rules.slice(0, 6).map((rule) => (
-                <div key={rule.id} className="table-row">
+            {data.rulePacks.length ? (
+              data.rulePacks.map((pack) => (
+                <div key={pack.slug} className="table-row">
                   <div>
-                    <strong>{rule.name}</strong>
-                    <div className="muted">
-                      {rule.trigger_module}.{rule.trigger_action} &rarr; {rule.target_module}
-                    </div>
+                    <strong>{pack.name}</strong>
+                    <div className="muted">{pack.description}</div>
                   </div>
                   <div className="row-meta">
-                    <span className={`status-pill ${rule.enabled ? "ok" : "bad"}`}>
-                      {rule.enabled ? "enabled" : "disabled"}
-                    </span>
-                    <span className="muted">tier {rule.required_tier}</span>
-                    <span className="muted">{rule.style_profile_name ?? "no style profile"}</span>
-                    <span className="muted">
-                      {rule.approval_required ? "approval required" : "no approval"}
-                    </span>
+                    <span className="status-pill ok">seeded</span>
+                    <span className="muted">{pack.rule_count} rules</span>
                   </div>
                 </div>
               ))
             ) : (
-              <p className="empty-state">No orchestration rules configured yet.</p>
+              <p className="empty-state">No default rule packs available.</p>
             )}
           </div>
         </article>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h2>Starter Automations</h2>
+          <span className="count-pill">{data.playbooks.length}</span>
+        </div>
+        <div className="table-stack">
+          {data.playbooks.length ? (
+            data.playbooks.map((playbook) => (
+              <div key={playbook.slug} className="table-row">
+                <div>
+                  <strong>{playbook.name}</strong>
+                  <div className="muted">
+                    {playbook.trigger_module}.{playbook.trigger_action} &rarr; {playbook.target_module}
+                  </div>
+                  <div className="muted">{playbook.summary}</div>
+                </div>
+                <div className="row-meta">
+                  <span className="status-pill ok">prebuilt</span>
+                  <span className="muted">{playbook.n8n_workflow_slug}</span>
+                  <span className="muted">{playbook.webhook_path}</span>
+                  <span className="muted">needs {playbook.required_context.join(", ")}</span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="empty-state">No starter automations are available yet.</p>
+          )}
+        </div>
       </section>
 
       <section className="panel">
@@ -375,11 +592,11 @@ export function App() {
         <div className="table-stack">
           {data.tasks.length ? (
             data.tasks.slice(0, 8).map((task) => (
-                <div key={task.id} className="table-row">
-                  <div>
-                    <strong>{task.task_type}</strong>
-                    <div className="muted">
-                      {task.worker_slug ?? task.claimed_by ?? "unassigned"} · {task.priority}
+              <div key={task.id} className="table-row">
+                <div>
+                  <strong>{task.task_type}</strong>
+                  <div className="muted">
+                    {task.worker_slug ?? task.claimed_by ?? "unassigned"} · {task.priority}
                   </div>
                 </div>
                 <div className="row-meta">
@@ -393,6 +610,9 @@ export function App() {
             <p className="empty-state">No worker tasks have been processed yet.</p>
           )}
         </div>
+        <p className="panel-note">
+          Historical smoke-test failures remain visible until the backing rows are cleared. Treat this panel as runtime history, not just current failures.
+        </p>
       </section>
     </main>
   );

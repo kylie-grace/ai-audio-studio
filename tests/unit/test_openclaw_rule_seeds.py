@@ -14,9 +14,12 @@ assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
-DEFAULT_ORCHESTRATION_RULES = MODULE.DEFAULT_ORCHESTRATION_RULES
+RULE_PACKS = MODULE.RULE_PACKS
+STARTER_PACKS = MODULE.STARTER_PACKS
+default_rule_packs = MODULE.default_rule_packs
 default_orchestration_rules = MODULE.default_orchestration_rules
 matches_conditions = MODULE.matches_conditions
+starter_packs = MODULE.starter_packs
 
 
 def test_default_rules_cover_email_and_content_workflows():
@@ -25,20 +28,39 @@ def test_default_rules_cover_email_and_content_workflows():
 
     assert {
         "lead-intake-email",
-        "inbox-triage-email",
-        "content-social-draft",
+        "lead-intake-form",
+        "inbox-triage-client",
+        "content-social-instagram",
     }.issubset(slugs)
 
-    content_rule = next(rule for rule in rules if rule["slug"] == "content-social-draft")
+    content_rule = next(rule for rule in rules if rule["slug"] == "content-social-instagram")
     assert content_rule["target_module"] == "social-drafting"
     assert content_rule["style_profile_id"] == "profile-1"
 
 
 def test_default_rule_conditions_are_matchable():
-    content_rule = next(rule for rule in DEFAULT_ORCHESTRATION_RULES if rule["slug"] == "content-social-draft")
+    flattened_rules = tuple(rule for pack in RULE_PACKS for rule in pack["rules"])
+
+    content_rule = next(rule for rule in flattened_rules if rule["slug"] == "content-social-instagram")
     assert matches_conditions(content_rule["conditions"], {"platform": "instagram"})
     assert not matches_conditions(content_rule["conditions"], {"platform": "facebook"})
 
-    inbox_rule = next(rule for rule in DEFAULT_ORCHESTRATION_RULES if rule["slug"] == "inbox-triage-email")
+    inbox_rule = next(rule for rule in flattened_rules if rule["slug"] == "inbox-triage-client")
     assert matches_conditions(inbox_rule["conditions"], {"label": "NeedsReply"})
     assert not matches_conditions(inbox_rule["conditions"], {"label": "Archive"})
+
+
+def test_starter_packs_cover_full_default_surface():
+    default_packs = default_rule_packs("profile-1")
+    starter = starter_packs("profile-1")
+    flattened_rules = tuple(rule for pack in RULE_PACKS for rule in pack["rules"])
+
+    assert len(default_packs) == len(RULE_PACKS)
+    assert len(starter) == len(STARTER_PACKS)
+
+    full_pack = next(pack for pack in starter if pack["slug"] == "full-studio-brain")
+    assert len(full_pack["rules"]) == len(flattened_rules)
+    assert "email" in full_pack["alert_channels"]
+
+    baseline = next(pack for pack in starter if pack["slug"] == "operator-baseline")
+    assert any(rule["slug"] == "revision-parse-protools" for rule in baseline["rules"])

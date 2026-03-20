@@ -1,0 +1,89 @@
+{
+  "name": "Inbox Source New Message",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "studio/inbox-source/new-message",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook_InboxSourceNewMessage",
+      "name": "Inbound Inbox Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        280
+      ],
+      "webhookId": "studio-inbox-source-new-message"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://openclaw:8100/dispatch/by-trigger",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"trigger_module\":\"inbox-source\",\"trigger_action\":\"new-message\",\"context\":$json.body}",
+        "options": {}
+      },
+      "id": "Http_InboxSourceNewMessage",
+      "name": "Dispatch Inbox Trigger",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "Respond_InboxSourceNewMessage",
+      "name": "Respond Inbox Trigger",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "Inbound Inbox Trigger": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Inbox Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch Inbox Trigger": {
+      "main": [
+        [
+          {
+            "node": "Respond Inbox Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "versionId": "starter-inbox-source-new-message",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

@@ -11,11 +11,14 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from .policy import BLOCKLIST, check_permission
+from .playbooks import default_playbooks
 from .rules import (
+    default_rule_packs,
     default_orchestration_rules,
     decode_jsonb,
     matches_conditions,
     serialize_rule,
+    starter_packs,
 )
 
 WORKER_URLS = {
@@ -27,75 +30,6 @@ WORKER_URLS = {
     "delivery-packager": "http://delivery-packager:8170/package-delivery",
     "mix-planner": "http://mix-planner:8180/mix-plan",
 }
-
-DEFAULT_ORCHESTRATION_RULES = (
-    {
-        "slug": "lead-intake-email",
-        "name": "Lead Intake From Email",
-        "trigger_module": "lead-source",
-        "trigger_action": "new-lead",
-        "target_module": "lead-intake",
-        "required_tier": 3,
-        "approval_required": True,
-        "enabled": True,
-        "conditions": {"channel": ["form", "email", "dm"]},
-    },
-    {
-        "slug": "inbox-triage-email",
-        "name": "Inbox Triage From Email",
-        "trigger_module": "inbox-source",
-        "trigger_action": "new-message",
-        "target_module": "inbox-triage",
-        "required_tier": 3,
-        "approval_required": True,
-        "enabled": True,
-        "conditions": {"label": ["NeedsReply", "Clients", "Leads"]},
-    },
-    {
-        "slug": "content-social-draft",
-        "name": "Content Brief To Social Draft",
-        "trigger_module": "content-source",
-        "trigger_action": "new-brief",
-        "target_module": "social-drafting",
-        "required_tier": 2,
-        "approval_required": True,
-        "enabled": True,
-        "conditions": {"platform": ["instagram", "threads", "linkedin"]},
-    },
-    {
-        "slug": "session-prep-import",
-        "name": "Session Prep From Stem Import",
-        "trigger_module": "session-source",
-        "trigger_action": "import-stems",
-        "target_module": "session-prep",
-        "required_tier": 4,
-        "approval_required": True,
-        "enabled": True,
-        "conditions": {},
-    },
-    {
-        "slug": "revision-parse-notes",
-        "name": "Revision Notes To Parse Job",
-        "trigger_module": "revision-source",
-        "trigger_action": "notes-received",
-        "target_module": "revision-parser",
-        "required_tier": 3,
-        "approval_required": True,
-        "enabled": True,
-        "conditions": {"daw": ["protools", "reaper"]},
-    },
-    {
-        "slug": "delivery-package-qc-pass",
-        "name": "QC Pass To Delivery Packaging",
-        "trigger_module": "qc-source",
-        "trigger_action": "qc-pass",
-        "target_module": "delivery-packager",
-        "required_tier": 3,
-        "approval_required": True,
-        "enabled": True,
-        "conditions": {"overall_pass": [True]},
-    },
-)
 
 _pool: asyncpg.Pool | None = None
 
@@ -227,6 +161,44 @@ async def list_rules(enabled_only: bool = True):
                ORDER BY r.trigger_module, r.trigger_action"""
         )
     return [serialize_rule(row) for row in rows]
+
+
+@app.get("/rule-packs")
+async def list_rule_packs():
+    pool = await get_pool()
+    style_profile = await pool.fetchrow(
+        "SELECT id FROM style_profiles WHERE name=$1 ORDER BY created_at ASC LIMIT 1",
+        "Default Studio Tone",
+    )
+    return default_rule_packs(str(style_profile["id"]) if style_profile else None)
+
+
+@app.get("/starter-packs")
+async def list_starter_packs():
+    pool = await get_pool()
+    style_profile = await pool.fetchrow(
+        "SELECT id FROM style_profiles WHERE name=$1 ORDER BY created_at ASC LIMIT 1",
+        "Default Studio Tone",
+    )
+    return starter_packs(str(style_profile["id"]) if style_profile else None)
+
+
+@app.get("/playbooks")
+async def list_playbooks():
+    return default_playbooks()
+
+
+@app.post("/bootstrap/defaults")
+async def bootstrap_defaults():
+    pool = await get_pool()
+    await seed_default_orchestration_rules(pool)
+    return {
+        "status": "ok",
+        "seeded_rule_count": len(default_orchestration_rules(None)),
+        "rule_pack_count": len(default_rule_packs(None)),
+        "starter_pack_count": len(starter_packs(None)),
+        "playbook_count": len(default_playbooks()),
+    }
 
 
 @app.post("/rules", status_code=201)

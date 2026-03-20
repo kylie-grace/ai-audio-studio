@@ -16,6 +16,7 @@ router = APIRouter()
 # If env var is unset, defaults to ["owner"] to prevent open access.
 _RAW = os.environ.get("AUTHORIZED_ACTORS", "owner")
 AUTHORIZED_ACTORS: set[str] = {a.strip() for a in _RAW.split(",") if a.strip()}
+OPERATOR_API_TOKEN = os.environ.get("OPERATOR_API_TOKEN", "")
 
 
 def _decode_jsonb(value):
@@ -34,6 +35,11 @@ def _require_authorized(actor: str) -> None:
             detail=f"Actor '{actor}' is not in the authorized actors list. "
                    f"Update AUTHORIZED_ACTORS in your .env to add them.",
         )
+
+
+def _require_operator_token(token: str | None) -> None:
+    if OPERATOR_API_TOKEN and token != OPERATOR_API_TOKEN:
+        raise HTTPException(status_code=403, detail="Missing or invalid operator token.")
 
 
 class RejectBody(BaseModel):
@@ -116,8 +122,9 @@ async def list_approval_queue():
 
 
 @router.post("/{job_id}/approve")
-async def approve_job(job_id: str, x_actor: str = Header(...)):
+async def approve_job(job_id: str, x_actor: str = Header(...), x_operator_token: str | None = Header(default=None)):
     _require_authorized(x_actor)
+    _require_operator_token(x_operator_token)
 
     pool = await get_pool()
     job = await pool.fetchrow("SELECT * FROM jobs WHERE id = $1", job_id)
@@ -144,8 +151,9 @@ async def approve_job(job_id: str, x_actor: str = Header(...)):
 
 
 @router.post("/{job_id}/reject")
-async def reject_job(job_id: str, body: RejectBody, x_actor: str = Header(...)):
+async def reject_job(job_id: str, body: RejectBody, x_actor: str = Header(...), x_operator_token: str | None = Header(default=None)):
     _require_authorized(x_actor)
+    _require_operator_token(x_operator_token)
 
     pool = await get_pool()
     job = await pool.fetchrow("SELECT * FROM jobs WHERE id = $1", job_id)

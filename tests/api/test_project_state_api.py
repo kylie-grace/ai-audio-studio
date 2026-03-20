@@ -19,7 +19,7 @@ SERVICE_ROOT = os.path.join(ROOT, "services/project-state")
 sys.path.insert(0, SERVICE_ROOT)
 
 from src import main  # type: ignore  # noqa: E402
-from src.routers import approval, audit, jobs, projects  # type: ignore  # noqa: E402
+from src.routers import approval, audit, jobs, projects, workers  # type: ignore  # noqa: E402
 
 
 class FakeRow(dict):
@@ -205,6 +205,7 @@ def _install_fake_pool(pool: FakePool) -> None:
     approval.get_pool = get_pool
     audit.get_pool = get_pool
     jobs.get_pool = get_pool
+    workers.get_pool = get_pool
 
 
 def test_mutating_requests_require_actor_header():
@@ -246,6 +247,24 @@ def test_approval_requires_authorized_actor():
     assert "authorized actors list" in response.json()["detail"]
 
 
+def test_approval_requires_operator_token_when_configured():
+    pool = FakePool()
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+    original = approval.OPERATOR_API_TOKEN
+    approval.OPERATOR_API_TOKEN = "secret-token"
+    try:
+        response = client.post(
+            "/approval-queue/job-awaiting/approve",
+            headers={"X-Actor": "owner"},
+        )
+    finally:
+        approval.OPERATOR_API_TOKEN = original
+
+    assert response.status_code == 403
+    assert "operator token" in response.json()["detail"]
+
+
 def test_approval_succeeds_for_authorized_actor_and_updates_job():
     pool = FakePool()
     _install_fake_pool(pool)
@@ -273,6 +292,24 @@ def test_revision_approval_queues_daw_execution_task():
     assert pool.revisions["revision-1"]["status"] == "approved"
     assert len(pool.worker_tasks) == 1
     assert pool.worker_tasks[0]["task_type"] == "execute-soundflow"
+
+
+def test_worker_register_requires_worker_token_when_configured():
+    pool = FakePool()
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+    original = workers.WORKER_API_TOKEN
+    workers.WORKER_API_TOKEN = "worker-secret"
+    try:
+        response = client.post(
+            "/workers/register",
+            json={"slug": "studio-mac", "display_name": "Studio Mac", "capabilities": []},
+        )
+    finally:
+        workers.WORKER_API_TOKEN = original
+
+    assert response.status_code == 403
+    assert "worker token" in response.json()["detail"]
 
 
 def test_direct_audit_write_requires_internal_caller():

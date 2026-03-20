@@ -63,7 +63,7 @@ async def update_status(job_id: str, body: UpdateStatusBody):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     try:
-        validate_transition(job["status"], body.status, job["approval_required"])
+        validate_transition(job["status"], body.status, job["approval_required"], job.get("approved_at"))
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     await pool.execute(

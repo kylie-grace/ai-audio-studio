@@ -1,0 +1,89 @@
+{
+  "name": "Revision Source Notes Received",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "studio/revision-source/notes-received",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook_RevisionSourceNotesReceived",
+      "name": "Inbound Revision Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        280
+      ],
+      "webhookId": "studio-revision-source-notes-received"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://openclaw:8100/dispatch/by-trigger",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"trigger_module\":\"revision-source\",\"trigger_action\":\"notes-received\",\"project_id\":$json.body.project_id ?? null,\"context\":$json.body}",
+        "options": {}
+      },
+      "id": "Http_RevisionSourceNotesReceived",
+      "name": "Dispatch Revision Trigger",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "Respond_RevisionSourceNotesReceived",
+      "name": "Respond Revision Trigger",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "Inbound Revision Trigger": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Revision Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch Revision Trigger": {
+      "main": [
+        [
+          {
+            "node": "Respond Revision Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "versionId": "starter-revision-source-notes-received",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

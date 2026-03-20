@@ -1,3 +1,5 @@
+name: ai-audio-studio
+
 networks:
   studio-net:
     driver: bridge
@@ -7,6 +9,7 @@ volumes:
   postgres-data:
   n8n-data:
   shared-projects:
+  local-deliveries:
   draft-queue:
   approval-queue:
 
@@ -78,6 +81,22 @@ services:
     ports:
       - "${BIND_HOST:-127.0.0.1}:5678:5678"
 
+  n8n-import:
+    image: n8nio/n8n:latest
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: ${N8N_DB:-n8ndb}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-studio}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - ./n8n/workflows:/workflows:ro
+    command: ["import:workflow", "--separate", "--input=/workflows"]
+    networks: [studio-net]
+    depends_on:
+      n8n:
+        condition: service_healthy
+
   # ── Project State Service ──────────────────────────────────────────────
   project-state:
     build:
@@ -86,6 +105,8 @@ services:
     environment:
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       APPROVAL_QUEUE_PATH: /data/approval-queue
+      OPERATOR_API_TOKEN: ${OPERATOR_API_TOKEN:-change-me-operator-token}
+      WORKER_API_TOKEN: ${WORKER_API_TOKEN:-change-me-worker-token}
       PORT: "8080"
     volumes:
       - shared-projects:/data/projects
@@ -406,3 +427,37 @@ services:
       retries: 5
     ports:
       - "${BIND_HOST:-127.0.0.1}:8180:8180"
+
+  studio-worker:
+    profiles: ["local-worker"]
+    build:
+      context: ../services/studio-worker
+      dockerfile: Dockerfile
+    environment:
+      PROJECT_STATE_URL: http://project-state:8080
+      WORKER_SLUG: ${LOCAL_WORKER_SLUG:-local-studio-worker}
+      WORKER_DISPLAY_NAME: ${LOCAL_WORKER_DISPLAY_NAME:-Local Studio Worker}
+      WORKER_PLATFORM: macos
+      WORKER_API_BASE_URL: http://studio-worker:8190
+      WORKER_CAPABILITIES: ${LOCAL_WORKER_CAPABILITIES:-session-prep,revision-parser,delivery-packager,execute-soundflow,execute-reascript}
+      SHARED_PROJECTS_PATH: /data/projects
+      DELIVERY_PATH: /data/deliveries
+      PATH_TRANSLATION_JSON: "{}"
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-5}
+      STUDIO_WORKER_DRY_RUN_DAW: ${STUDIO_WORKER_DRY_RUN_DAW:-true}
+      WORKER_API_TOKEN: ${WORKER_API_TOKEN:-change-me-worker-token}
+      PORT: "8190"
+    volumes:
+      - shared-projects:/data/projects
+      - local-deliveries:/data/deliveries
+    networks: [studio-net]
+    depends_on:
+      project-state:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8190/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:8190:8190"

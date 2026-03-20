@@ -19,7 +19,10 @@ TASK_TYPES = ["prepare-session", "parse-revisions", "package-delivery", "execute
 
 
 def headers(settings: Settings) -> dict[str, str]:
-    return {"X-Actor": f"studio-worker:{settings.worker_slug}"}
+    hdrs = {"X-Actor": f"studio-worker:{settings.worker_slug}"}
+    if settings.worker_api_token:
+        hdrs["X-Worker-Token"] = settings.worker_api_token
+    return hdrs
 
 
 class StudioWorkerRunner:

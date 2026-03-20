@@ -1,0 +1,89 @@
+{
+  "name": "Content Source New Brief",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "studio/content-source/new-brief",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook_ContentSourceNewBrief",
+      "name": "Inbound Content Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        280
+      ],
+      "webhookId": "studio-content-source-new-brief"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://openclaw:8100/dispatch/by-trigger",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"trigger_module\":\"content-source\",\"trigger_action\":\"new-brief\",\"project_id\":$json.body.project_id ?? null,\"context\":$json.body}",
+        "options": {}
+      },
+      "id": "Http_ContentSourceNewBrief",
+      "name": "Dispatch Content Trigger",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "Respond_ContentSourceNewBrief",
+      "name": "Respond Content Trigger",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "Inbound Content Trigger": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Content Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch Content Trigger": {
+      "main": [
+        [
+          {
+            "node": "Respond Content Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "versionId": "starter-content-source-new-brief",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

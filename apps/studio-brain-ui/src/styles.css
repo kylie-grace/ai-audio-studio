@@ -246,6 +246,10 @@ code {
   margin-top: 16px;
 }
 
+.top-grid {
+  margin-top: 18px;
+}
+
 .panel {
   margin-top: 16px;
 }
@@ -341,6 +345,36 @@ code {
   gap: 10px;
 }
 
+.link-list,
+.mini-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.mini-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.link-chip,
+.mini-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.link-chip code {
+  color: #f6d788;
+  overflow-wrap: anywhere;
+}
+
+.link-chip span:first-child,
+.mini-card strong {
+  font-size: 0.95rem;
+}
+
 .table-row {
   display: flex;
   justify-content: space-between;
@@ -370,9 +404,19 @@ code {
   color: rgba(244, 241, 234, 0.62);
 }
 
+.panel-note {
+  margin: 12px 0 0;
+  color: rgba(244, 241, 234, 0.62);
+  font-size: 0.9rem;
+}
+
 @media (max-width: 960px) {
   .hero,
   .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mini-grid {
     grid-template-columns: 1fr;
   }
 
