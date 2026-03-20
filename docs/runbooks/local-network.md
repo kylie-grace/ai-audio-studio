@@ -35,6 +35,7 @@ This writes `infra/caddy-root.crt`. Import that certificate into the login keych
 ## Access Pattern
 
 - Primary operator URL: `https://$CONTROL_PLANE_HOST`
+- Same-Mac HTTPS fallback: `https://localhost`
 - n8n over HTTPS: `https://n8n.$CONTROL_PLANE_HOST`
 - OpenClaw over HTTPS: `https://openclaw.$CONTROL_PLANE_HOST`
 - Dashboard fallback: `http://<mac-ip>:3000`
@@ -45,6 +46,7 @@ This writes `infra/caddy-root.crt`. Import that certificate into the login keych
 
 - The dashboard is the main front door. It proxies the control-plane APIs and internal service health so novice operators do not need to memorize raw ports.
 - HTTPS is real, but it uses a private LAN CA from Caddy. Until `infra/caddy-root.crt` is imported and trusted on the operator Mac, browsers will warn.
+- `https://localhost` now works on the control-plane Mac without custom hostname mapping. `https://$CONTROL_PLANE_HOST` still needs local DNS or a hosts entry that points at the Mac running Docker.
 - Dedicated `n8n` and `openclaw` HTTPS subdomains remain available for deeper administration. Direct API and worker ports remain plain HTTP on the LAN.
 - Keep `OPERATOR_API_TOKEN` and `WORKER_API_TOKEN` set before exposing the stack beyond localhost.
 - Single-machine mode is valid. A second worker Mac is optional.

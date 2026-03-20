@@ -27,6 +27,7 @@ apps/studio-brain-ui/.vite/
 
 # Docker volumes (local data)
 infra/volumes/
+infra/caddy-root.crt
 
 # Ollama model weights (pulled at runtime, not committed)
 services/ollama/models/
