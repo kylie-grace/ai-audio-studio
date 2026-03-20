@@ -149,6 +149,8 @@ type RuntimeAlert = {
 type RuntimeAlertSummary = {
   approvals_waiting: number;
   failed_worker_tasks: number;
+  claimed_worker_tasks: number;
+  expired_worker_leases: number;
   stale_workers: Array<{
     slug: string;
     display_name: string;
@@ -606,6 +608,8 @@ export function App() {
     runtimeAlerts: {
       approvals_waiting: 0,
       failed_worker_tasks: 0,
+      claimed_worker_tasks: 0,
+      expired_worker_leases: 0,
       stale_workers: [],
       active_alerts: [],
     },
@@ -1685,6 +1689,14 @@ export function App() {
             <div className="mini-card">
               <span className="metric-label">Failed tasks</span>
               <strong>{data.runtimeAlerts.failed_worker_tasks}</strong>
+            </div>
+            <div className="mini-card">
+              <span className="metric-label">Claimed tasks</span>
+              <strong>{data.runtimeAlerts.claimed_worker_tasks}</strong>
+            </div>
+            <div className="mini-card">
+              <span className="metric-label">Expired leases</span>
+              <strong>{data.runtimeAlerts.expired_worker_leases}</strong>
             </div>
             <div className="mini-card">
               <span className="metric-label">Stale workers</span>

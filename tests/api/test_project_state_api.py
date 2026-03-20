@@ -113,14 +113,26 @@ class FakePool:
             ),
         ]
 
-    async def fetchval(self, query: str, value: str) -> int:
+    async def fetchval(self, query: str, *args: Any) -> int:
         if "SELECT COUNT(*) FROM projects" in query:
+            value = args[0]
             prefix = value.rstrip("%")
             return sum(1 for row in self.projects.values() if str(row["slug"]).startswith(prefix))
         if "SELECT COUNT(*) FROM jobs WHERE status = 'awaiting-approval'" in query:
             return sum(1 for row in self.jobs.values() if row["status"] == "awaiting-approval")
         if "SELECT COUNT(*) FROM worker_tasks WHERE status = 'failed'" in query:
             return sum(1 for row in self.worker_tasks if row.get("status") == "failed")
+        if "SELECT COUNT(*) FROM worker_tasks WHERE status = 'claimed'" in query and "lease_expires_at" not in query:
+            return sum(1 for row in self.worker_tasks if row.get("status") == "claimed")
+        if "SELECT COUNT(*) FROM worker_tasks WHERE status = 'claimed' AND lease_expires_at IS NOT NULL" in query:
+            cutoff = args[0]
+            return sum(
+                1
+                for row in self.worker_tasks
+                if row.get("status") == "claimed"
+                and row.get("lease_expires_at") is not None
+                and row.get("lease_expires_at") < cutoff
+            )
         raise AssertionError(f"Unhandled fetchval query: {query}")
 
     async def fetchrow(self, query: str, *args: Any) -> FakeRow | None:
@@ -456,7 +468,10 @@ def test_requeue_failed_worker_task_resets_task_job_and_revision():
 
 def test_alert_summary_reports_waiting_jobs_and_stale_workers():
     pool = FakePool()
+    now = datetime.now(timezone.utc)
     pool.worker_tasks.append(FakeRow(id="failed-task", status="failed"))
+    pool.worker_tasks.append(FakeRow(id="claimed-task", status="claimed", lease_expires_at=now))
+    pool.worker_tasks.append(FakeRow(id="expired-task", status="claimed", lease_expires_at=now.replace(year=now.year - 1)))
     _install_fake_pool(pool)
     client = TestClient(main.app)
 
@@ -466,8 +481,14 @@ def test_alert_summary_reports_waiting_jobs_and_stale_workers():
     payload = response.json()
     assert payload["approvals_waiting"] == 2
     assert payload["failed_worker_tasks"] == 1
+    assert payload["claimed_worker_tasks"] == 2
+    assert payload["expired_worker_leases"] == 1
     assert len(payload["stale_workers"]) == 1
-    assert {alert["slug"] for alert in payload["active_alerts"]} == {"worker-failure", "stale-worker"}
+    assert {alert["slug"] for alert in payload["active_alerts"]} == {
+        "worker-failure",
+        "stale-worker",
+        "expired-worker-lease",
+    }
 
 
 def test_direct_audit_write_requires_internal_caller():
