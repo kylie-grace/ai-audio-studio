@@ -18,6 +18,15 @@ _RAW = os.environ.get("AUTHORIZED_ACTORS", "owner")
 AUTHORIZED_ACTORS: set[str] = {a.strip() for a in _RAW.split(",") if a.strip()}
 
 
+def _decode_jsonb(value):
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value
+
+
 def _require_authorized(actor: str) -> None:
     if actor not in AUTHORIZED_ACTORS:
         raise HTTPException(
@@ -29,6 +38,72 @@ def _require_authorized(actor: str) -> None:
 
 class RejectBody(BaseModel):
     reason: str
+
+
+async def _queue_revision_execution_if_applicable(pool, job, approver: str, approved_at: datetime) -> None:
+    if job["module"] != "revision-parser":
+        return
+    trigger_payload = _decode_jsonb(job["trigger_payload"]) or {}
+    worker_slug = trigger_payload.get("worker_slug")
+    if not worker_slug:
+        return
+    revision = await pool.fetchrow(
+        "SELECT * FROM revisions WHERE job_id=$1 ORDER BY created_at DESC LIMIT 1",
+        job["id"],
+    )
+    if revision is None:
+        return
+    daw = trigger_payload.get("daw")
+    if daw == "protools":
+        task_type = "execute-soundflow"
+        script_path = revision["soundflow_script"]
+        required_capability = "execute-soundflow"
+    elif daw == "reaper":
+        task_type = "execute-reascript"
+        script_path = revision["reascript_path"]
+        required_capability = "execute-reascript"
+    else:
+        return
+    if not script_path:
+        return
+    payload = {
+        "revision_id": str(revision["id"]),
+        "project_id": str(job["project_id"]) if job["project_id"] else None,
+        "daw": daw,
+        "session_path": trigger_payload.get("session_path"),
+        "script_path": script_path,
+        "script_kind": "soundflow" if daw == "protools" else "reascript",
+        "approval_job_id": str(job["id"]),
+        "approved_by": approver,
+        "approved_at": approved_at.isoformat(),
+    }
+    await pool.execute(
+        """UPDATE revisions
+           SET status='approved', approved_by=$1, approved_at=$2
+           WHERE id=$3""",
+        approver,
+        approved_at,
+        revision["id"],
+    )
+    await pool.execute(
+        """INSERT INTO worker_tasks
+           (job_id, project_id, worker_slug, task_type, required_capability, payload, priority)
+           VALUES ($1,$2,$3,$4,$5,$6::jsonb,'normal')""",
+        job["id"],
+        job["project_id"],
+        worker_slug,
+        task_type,
+        required_capability,
+        json.dumps(payload),
+    )
+    await pool.execute(
+        """INSERT INTO audit_log (job_id, project_id, actor, action, tier, payload)
+           VALUES ($1, $2, $3, 'queue-execution', 3, $4::jsonb)""",
+        job["id"],
+        job["project_id"],
+        f"human:{approver}",
+        json.dumps({"worker_slug": worker_slug, "task_type": task_type, "revision_id": str(revision["id"])}),
+    )
 
 
 @router.get("/")
@@ -64,6 +139,7 @@ async def approve_job(job_id: str, x_actor: str = Header(...)):
            VALUES ($1, $2, $3, 'approve', 3)""",
         job_id, job["project_id"], f"human:{x_actor}",
     )
+    await _queue_revision_execution_if_applicable(pool, job, x_actor, now)
     return {"job_id": job_id, "status": "approved", "approved_by": x_actor}
 
 

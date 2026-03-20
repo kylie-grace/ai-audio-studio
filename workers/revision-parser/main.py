@@ -133,7 +133,7 @@ async def parse_revisions(body: ParseRevisionsBody):
            VALUES ($1,'revision-parser','parse-revisions','operator',$2::jsonb,'awaiting-approval',true,'worker:revision-parser')
            RETURNING *""",
         body.project_id,
-        json.dumps({"daw": body.daw, "session_path": body.session_path}),
+        json.dumps({"daw": body.daw, "session_path": body.session_path, "worker_slug": body.worker_slug}),
     )
     revision = await pool.fetchrow(
         """INSERT INTO revisions

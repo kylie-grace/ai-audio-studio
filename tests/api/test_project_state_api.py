@@ -50,8 +50,50 @@ class FakePool:
                 requested_by="system",
                 created_at=now,
                 updated_at=now,
+            ),
+            "job-revision": FakeRow(
+                id="job-revision",
+                project_id="project-1",
+                module="revision-parser",
+                action="parse-revisions",
+                trigger_type="operator",
+                trigger_payload=json.dumps(
+                    {
+                        "daw": "protools",
+                        "session_path": "/Volumes/StudioShare/projects/demo/session/demo.ptx",
+                        "worker_slug": "studio-mac",
+                    }
+                ),
+                status="awaiting-approval",
+                priority="normal",
+                approval_required=True,
+                approved_by=None,
+                approved_at=None,
+                artifacts=[],
+                error_message=None,
+                retry_count=0,
+                max_retries=3,
+                requested_by="system",
+                created_at=now,
+                updated_at=now,
+            ),
+        }
+        self.revisions: dict[str, FakeRow] = {
+            "revision-1": FakeRow(
+                id="revision-1",
+                project_id="project-1",
+                job_id="job-revision",
+                raw_notes="Vocal up 2 dB",
+                parsed_changes=[],
+                soundflow_script="/Volumes/StudioShare/projects/demo/session/protools_revision_script.txt",
+                reascript_path=None,
+                status="parsed",
+                approved_by=None,
+                approved_at=None,
+                created_at=now,
             )
         }
+        self.worker_tasks: list[FakeRow] = []
         self.audit_log: list[FakeRow] = []
 
     async def fetchval(self, query: str, value: str) -> int:
@@ -88,6 +130,8 @@ class FakePool:
             )
         if "SELECT * FROM jobs WHERE id = $1" in query or "SELECT * FROM jobs WHERE id=$1" in query:
             return self.jobs.get(args[0])
+        if "SELECT * FROM revisions WHERE job_id=$1" in query:
+            return next((row for row in self.revisions.values() if row["job_id"] == args[0]), None)
         if "INSERT INTO audit_log" in query and "RETURNING id, created_at" in query:
             entry = FakeRow(id=len(self.audit_log) + 1, created_at=now)
             self.audit_log.append(entry)
@@ -114,11 +158,29 @@ class FakePool:
             job["approved_by"] = args[0]
             job["approved_at"] = args[1]
             return "UPDATE 1"
+        if "UPDATE revisions" in query and "SET status='approved'" in query:
+            revision = self.revisions[args[2]]
+            revision["status"] = "approved"
+            revision["approved_by"] = args[0]
+            revision["approved_at"] = args[1]
+            return "UPDATE 1"
         if "UPDATE jobs SET status='rejected'" in query:
             job = self.jobs[args[1]]
             job["status"] = "rejected"
             job["error_message"] = args[0]
             return "UPDATE 1"
+        if "INSERT INTO worker_tasks" in query:
+            self.worker_tasks.append(
+                FakeRow(
+                    job_id=args[0],
+                    project_id=args[1],
+                    worker_slug=args[2],
+                    task_type=args[3],
+                    required_capability=args[4],
+                    payload=args[5],
+                )
+            )
+            return "INSERT 0 1"
         if "INSERT INTO audit_log" in query:
             self.audit_log.append(
                 FakeRow(
@@ -196,6 +258,21 @@ def test_approval_succeeds_for_authorized_actor_and_updates_job():
     assert response.status_code == 200
     assert response.json()["status"] == "approved"
     assert pool.jobs["job-awaiting"]["approved_by"] == "owner"
+
+
+def test_revision_approval_queues_daw_execution_task():
+    pool = FakePool()
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.post(
+        "/approval-queue/job-revision/approve",
+        headers={"X-Actor": "owner"},
+    )
+    assert response.status_code == 200
+    assert pool.revisions["revision-1"]["status"] == "approved"
+    assert len(pool.worker_tasks) == 1
+    assert pool.worker_tasks[0]["task_type"] == "execute-soundflow"
 
 
 def test_direct_audit_write_requires_internal_caller():
