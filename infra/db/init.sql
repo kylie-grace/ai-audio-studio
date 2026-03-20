@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS projects (
     -- low | medium | high | unknown
     timeline      TEXT,
     notes         TEXT,
+    effort_level  INTEGER NOT NULL DEFAULT 2 CHECK (effort_level BETWEEN 1 AND 4),
+    -- 1=import-only  2=import+qc  3=import+qc+mix-plan  4=full-pipeline
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -55,7 +57,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
     job_id       UUID REFERENCES jobs(id),
     project_id   UUID REFERENCES projects(id),
     actor        TEXT NOT NULL,
-    -- system | human:maggie | worker:lead-intake | worker:audio-qc etc.
+    -- system | human:owner | human:engineer | worker:lead-intake | worker:audio-qc etc.
     action       TEXT NOT NULL,
     tier         INTEGER NOT NULL CHECK (tier BETWEEN 1 AND 4),
     payload      JSONB,

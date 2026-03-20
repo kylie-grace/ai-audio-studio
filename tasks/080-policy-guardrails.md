@@ -65,7 +65,7 @@ with gmail.compose scope. Before sending:
 6. Updates `leads.draft_sent = true` or `inbox_drafts.status = sent`
 7. Logs to audit_log with tier=3 and actor=`system:approved-send`
 
-If ANY check fails → abort, log error, alert Maggie via Studio Brain UI.
+If ANY check fails → abort, log error, alert studio owner via Studio Brain UI.
 
 ## End-to-End Integration Tests
 
@@ -74,7 +74,7 @@ If ANY check fails → abort, log error, alert Maggie via Studio Brain UI.
 1. POST to /webhook/lead-intake with valid payload
 2. Assert: job in approval queue with status=awaiting-approval
 3. Assert: draft_sent=false in leads table
-4. POST to /approval-queue/{job_id}/approve with X-Actor: maggie
+4. POST to /approval-queue/{job_id}/approve with X-Actor: owner
 5. Assert: job status=approved
 6. Trigger approved-send worker
 7. Assert: Gmail send API called exactly once with correct payload

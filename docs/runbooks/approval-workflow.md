@@ -3,13 +3,15 @@
 ## Overview
 
 Every AI-generated action that touches clients, social media, or audio
-is held in the **approval queue** until Maggie reviews and approves it.
+is held in the **approval queue** until the studio owner reviews and approves it.
 Nothing sends without a human "yes".
 
 ## Where to find items awaiting review
 
 1. Open **Studio Brain UI**: http://localhost:3000
 2. The **Approval Queue** tab shows all pending items grouped by type
+
+> Set `STUDIO_OWNER_NAME` in your `.env` to display your name in the UI.
 
 ## Item types and what to check
 

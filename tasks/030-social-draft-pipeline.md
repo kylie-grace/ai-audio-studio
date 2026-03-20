@@ -57,13 +57,14 @@ Multiple rows in `social_drafts`, one per platform:
 
 ## Prompt Contract: social-caption.txt
 ```
-You are writing social media captions for Maggie, a mixing/mastering engineer.
+You are writing social media captions for {{engineer_name}}, a mixing/mastering engineer.
 
 Platform: {{platform}}
 Content type: {{content_type}}
 Brief: {{brief}}
 
-Maggie's voice: professional but personable, proud of her craft, never cringe.
+Engineer's voice: {{voice_description}}
+Default: professional but personable, proud of their craft, never cringe.
 Do not use generic phrases like "excited to share" or "proud to announce".
 
 Write:
@@ -86,5 +87,5 @@ Output as JSON: {"caption": "...", "hashtags": [...], "short": "..."}
 
 ## Definition of Done
 Content brief in → platform-appropriate draft captions out → queued for
-Maggie's review in Studio Brain UI. All drafts tagged with project reference.
+the studio owner's review in Studio Brain UI. All drafts tagged with project reference.
 Audit log at Tier 2 (draft).

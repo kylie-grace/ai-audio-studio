@@ -3,7 +3,7 @@
 ## Purpose and Scope
 Build the lead intake pipeline. Accepts raw input (form submission, email
 text, or DM text), normalizes it into a structured lead record, scores fit
-and urgency, generates a draft reply in Maggie's voice, writes to CRM, and
+and urgency, generates a draft reply in the engineer's voice, writes to CRM, and
 queues for human approval. **Must never send anything automatically.**
 
 ## Dependencies
@@ -82,27 +82,8 @@ def score_fit(normalized: dict) -> int:
 ```
 
 ## Prompt Contract: lead-intake-draft.txt
-```
-You are writing a draft reply for Maggie, a professional mixing and mastering
-engineer. Maggie's tone: warm, direct, professional. Not overly enthusiastic.
-
-## Lead summary
-Artist: {{artist_name}}
-Service: {{service_requested}}
-Timeline: {{timeline}}
-Budget signal: {{budget_signal}}
-
-## Instructions
-Write a first-response email draft from Maggie:
-1. Acknowledge by name
-2. Confirm what service they want
-3. Ask at most 2 missing critical questions
-4. State Maggie's typical response timeline
-5. NO pricing commitments. NO booking commitments.
-
-Output ONLY the email body. No subject line. No meta-commentary.
-3-4 short paragraphs.
-```
+See `services/openclaw-orchestrator/prompts/lead-intake-draft.txt`.
+Uses `{{engineer_name}}` and `{{voice_description}}` template vars populated from env.
 
 ## n8n Workflow: lead-intake-webhook.json
 Trigger: Webhook POST to `/webhook/lead-intake`
@@ -122,6 +103,6 @@ Nodes:
 7. Malformed input returns HTTP 422 with structured error; no partial DB writes
 
 ## Definition of Done
-Full lead arrives → classified → draft reply written in Maggie's voice →
+Full lead arrives → classified → draft reply written in the engineer's voice →
 CRM updated → appears in approval queue on Studio Brain UI.
 Nothing sent. All audit log entries present with correct tier (2 or 3).

@@ -1,6 +1,8 @@
 # AI Audio Studio Platform
 
-Automated studio operations platform for Maggie's recording studio. Reduces admin overhead by 80-90% while maintaining human control over all creative, financial, and client-facing decisions.
+> **Experimental — work in progress.** This is a personal project I've been building and am making available early. It needs thorough testing before use in a real studio environment. **Pull requests and bug reports are deeply wanted** — please open an issue or PR if you find something broken or have ideas to improve it.
+
+Automated studio operations platform for independent recording studios. Reduces admin overhead by 80-90% while maintaining human control over all creative, financial, and client-facing decisions.
 
 ## Architecture
 
@@ -60,6 +62,11 @@ open http://localhost:5678                  # n8n workflow editor
 | `openclaw` | 8100 | Orchestration engine |
 | `content-pipeline` | 8110 | Social caption drafting |
 | `audio-qc` | 8120 | Loudness, peak, phase validation |
+| `lead-intake` | 8130 | Lead normalization and draft replies |
+| `inbox-triage` | 8140 | Gmail read-only classification |
+| `session-prep` | 8150 | Stem validation and session organization |
+| `revision-parser` | 8160 | Natural language → DAW change objects |
+| `delivery-packager` | 8170 | QC-gated delivery bundle assembly |
 | `ollama` | 11434 | Local LLM serving |
 | `postgres` | 5432 | Shared database (internal only) |
 

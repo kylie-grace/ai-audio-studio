@@ -58,3 +58,6 @@ coverage.xml
 # Logs
 *.log
 logs/
+
+# Legacy source docs (private, not for public repo)
+legacy/
