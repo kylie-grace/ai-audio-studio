@@ -4,6 +4,41 @@ Date: 2026-03-20
 Auditor: Codex
 Scope: repository ingest, stated-behavior review, automated test execution, structural validation, gap analysis against `README.md`, `tasks/`, and `legacy/`
 
+## Current Checkpoint Update
+
+This audit started against a much thinner scaffold. The repo has since been materially advanced and the runtime picture is different now.
+
+What is validated now:
+- the full `ai-audio-studio` control plane is up in Docker on the local network
+- the dashboard is live over both HTTP and HTTPS
+- OpenClaw now exposes seeded rule packs and the dashboard proxy can reach them
+- `project-state` enforces token-gated operator and worker write paths
+- optional worker mode remains available, but single-machine operation is now the default documented path
+- importable n8n starter workflows exist under `infra/n8n/workflows/`
+
+Latest automated validation:
+- `pytest -q tests/unit tests/approval-boundary`: `58 passed`
+- `python3 -m compileall services/project-state services/studio-worker services/openclaw-orchestrator`: passed
+- `docker compose --env-file infra/env.example -f infra/docker-compose.yml -f infra/docker-compose.edge.yml config`: passed
+- live HTTPS front door check: `curl -k --resolve studio-brain.local:443:127.0.0.1 -I https://studio-brain.local` returned `HTTP/2 200`
+
+Latest runtime status:
+- control plane project name: `ai-audio-studio`
+- optional worker still running as separate node: `infra-studio-worker-1`
+- live control-plane endpoints:
+  - dashboard: `http://<host>:3000`
+  - dashboard HTTPS: `https://studio-brain.local`
+  - project-state: `http://<host>:8080`
+  - crm-api: `http://<host>:8090`
+  - openclaw: `http://<host>:8100`
+  - n8n: `http://<host>:5678`
+
+Highest-signal remaining gaps:
+- most domain workers still need deeper business logic beyond current bounded MVP behavior
+- the dashboard is now operational, but still does not provide full approval mutation workflows
+- n8n templates are supplied, but credentialed production automations still need environment-specific hookup
+- DAW-side integration remains dry-run friendly and structure-complete, not yet fully validated against a real second machine
+
 ## Executive Summary
 
 This repository is not fully validated and does not currently deliver most of the behavior claimed in the README, task specs, and legacy brief.
