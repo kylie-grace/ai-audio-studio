@@ -281,6 +281,10 @@ code {
   grid-column: span 8;
 }
 
+.panel-span-12 {
+  grid-column: span 12;
+}
+
 .command-card {
   position: relative;
   overflow: hidden;
@@ -391,6 +395,16 @@ code {
 .alert-summary-grid {
   display: grid;
   gap: 12px;
+}
+
+.readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.readiness-card strong {
+  font-size: 1.02rem;
 }
 
 .stat-strip {
@@ -773,6 +787,7 @@ code {
 @media (max-width: 1220px) {
   .command-grid,
   .alert-summary-grid,
+  .readiness-grid,
   .stat-strip,
   .onboarding-grid,
   .settings-snapshot-grid {
@@ -788,6 +803,10 @@ code {
   .panel-span-6,
   .panel-span-7,
   .panel-span-8 {
+    grid-column: auto;
+  }
+
+  .panel-span-12 {
     grid-column: auto;
   }
 }

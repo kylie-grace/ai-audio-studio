@@ -47,6 +47,7 @@ def test_workspace_status_flags_missing_setup_fields():
     assert status["onboarding_required"] is True
     assert "studio_name" in status["missing_fields"]
     assert "worker.worker_slug" in status["missing_fields"]
+    assert any(check["slug"] == "shared-paths" and check["status"] == "needs-attention" for check in status["readiness_checks"])
 
 
 def test_workspace_status_marks_complete_when_required_fields_exist():
@@ -69,6 +70,8 @@ def test_workspace_status_marks_complete_when_required_fields_exist():
 
     assert status["onboarding_required"] is False
     assert status["missing_fields"] == []
+    assert status["readiness_summary"]["ready_count"] >= 3
+    assert any(check["slug"] == "worker-posture" and check["status"] == "optional" for check in status["readiness_checks"])
 
 
 def test_default_workspace_settings_prefers_authorized_actor_and_env_integrations(monkeypatch):

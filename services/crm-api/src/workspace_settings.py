@@ -92,6 +92,8 @@ def serialize_workspace_settings(row) -> dict[str, Any]:
 def workspace_status(settings: dict[str, Any], style_profile_count: int) -> dict[str, Any]:
     shared_paths = settings.get("shared_paths") or {}
     style_seed = settings.get("style_seed") or {}
+    alert_destinations = settings.get("alert_destinations") or {}
+    integrations = settings.get("integrations") or {}
     worker = settings.get("worker") or {}
 
     missing_fields: list[str] = []
@@ -115,9 +117,83 @@ def workspace_status(settings: dict[str, Any], style_profile_count: int) -> dict
 
     onboarding_complete = bool(settings.get("onboarding_complete")) and not missing_fields
 
+    readiness_checks = [
+        {
+            "slug": "identity",
+            "name": "Studio identity",
+            "status": "ready" if settings.get("studio_name") and settings.get("operator_name") else "needs-attention",
+            "detail": "Studio name and primary operator are captured." if settings.get("studio_name") and settings.get("operator_name")
+            else "Set the studio name and operator identity.",
+        },
+        {
+            "slug": "shared-paths",
+            "name": "Shared paths",
+            "status": "ready"
+            if shared_paths.get("projects") and shared_paths.get("deliveries") and shared_paths.get("approval_queue")
+            else "needs-attention",
+            "detail": "Project, delivery, and approval paths are configured."
+            if shared_paths.get("projects") and shared_paths.get("deliveries") and shared_paths.get("approval_queue")
+            else "Fill in the shared storage paths used by the stack.",
+        },
+        {
+            "slug": "style-context",
+            "name": "Style context",
+            "status": "ready" if style_seed.get("raw_text", "").strip() and style_profile_count > 0 else "needs-attention",
+            "detail": f"{style_profile_count} studio style profile(s) available."
+            if style_seed.get("raw_text", "").strip() and style_profile_count > 0
+            else "Provide pasted guidance or source files for the studio tone.",
+        },
+        {
+            "slug": "network",
+            "name": "Operator front door",
+            "status": "ready" if settings.get("public_base_url") else "partial",
+            "detail": settings.get("public_base_url") or "No explicit operator URL saved yet. LAN HTTP remains usable during bring-up.",
+        },
+        {
+            "slug": "alerts",
+            "name": "Alert destinations",
+            "status": "ready"
+            if alert_destinations.get("email_to") or alert_destinations.get("webhook_url")
+            else "partial",
+            "detail": "Email or webhook alert delivery is configured."
+            if alert_destinations.get("email_to") or alert_destinations.get("webhook_url")
+            else "Dashboard alerts work by default. Add email or webhook delivery for escalation.",
+        },
+        {
+            "slug": "integrations",
+            "name": "Integrations",
+            "status": "ready"
+            if sum(1 for enabled in integrations.values() if enabled) >= 2
+            else "partial",
+            "detail": f"{sum(1 for enabled in integrations.values() if enabled)} integration flag(s) enabled.",
+        },
+        {
+            "slug": "worker-posture",
+            "name": "Worker posture",
+            "status": "ready"
+            if settings.get("deployment_mode") == "control_plane_plus_worker" and worker.get("worker_slug") and worker.get("worker_api_base_url")
+            else "optional"
+            if settings.get("deployment_mode") == "single_machine"
+            else "needs-attention",
+            "detail": "Single-machine mode is active; a second worker Mac is optional."
+            if settings.get("deployment_mode") == "single_machine"
+            else "Worker slug and API URL are configured."
+            if worker.get("worker_slug") and worker.get("worker_api_base_url")
+            else "Worker mode is enabled but worker identity or API URL is missing.",
+        },
+    ]
+    readiness_summary = {
+        "ready_count": sum(1 for check in readiness_checks if check["status"] == "ready"),
+        "partial_count": sum(1 for check in readiness_checks if check["status"] == "partial"),
+        "needs_attention_count": sum(1 for check in readiness_checks if check["status"] == "needs-attention"),
+        "optional_count": sum(1 for check in readiness_checks if check["status"] == "optional"),
+    }
+
     return {
         "onboarding_required": not onboarding_complete,
         "onboarding_complete": onboarding_complete,
         "missing_fields": missing_fields,
         "style_profile_count": style_profile_count,
+        "readiness_checks": readiness_checks,
+        "readiness_summary": readiness_summary,
     }

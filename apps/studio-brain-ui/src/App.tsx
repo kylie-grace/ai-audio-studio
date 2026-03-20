@@ -207,6 +207,18 @@ type WorkspaceSettings = {
 };
 
 type WorkspaceStatus = {
+  readiness_checks: Array<{
+    slug: string;
+    name: string;
+    status: "ready" | "partial" | "needs-attention" | "optional";
+    detail: string;
+  }>;
+  readiness_summary: {
+    ready_count: number;
+    partial_count: number;
+    needs_attention_count: number;
+    optional_count: number;
+  };
   settings: WorkspaceSettings;
   onboarding_required: boolean;
   onboarding_complete: boolean;
@@ -619,6 +631,13 @@ export function App() {
       detail: "Waiting for bootstrap status.",
     },
     workspace: {
+      readiness_checks: [],
+      readiness_summary: {
+        ready_count: 0,
+        partial_count: 0,
+        needs_attention_count: 0,
+        optional_count: 0,
+      },
       settings: defaultWorkspaceSettings(),
       onboarding_required: true,
       onboarding_complete: false,
@@ -666,6 +685,7 @@ export function App() {
   const activeAlertCount = data.runtimeAlerts.active_alerts.length;
   const serviceZones = groupByZone(data.services);
   const workspaceSettings = data.workspace.settings;
+  const readinessSummary = data.workspace.readiness_summary;
   const styleSourceCount = workspaceSettings.style_seed.source_paths.length;
   const alertEmailCount = workspaceSettings.alert_destinations.email_to.length;
   const displayedFrontDoor = workspaceSettings.public_base_url || frontDoorUrl;
@@ -1497,6 +1517,38 @@ export function App() {
           </p>
           {maintenanceMessage ? <p className="feedback ok">{maintenanceMessage}</p> : null}
           {maintenanceError ? <p className="feedback bad">{maintenanceError}</p> : null}
+        </article>
+      </section>
+
+      <section className="workspace-grid">
+        <article className="panel panel-span-12">
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Readiness</p>
+              <h2>Workspace Readiness</h2>
+            </div>
+            <div className="header-actions">
+              <span className="count-pill">{readinessSummary.ready_count} ready</span>
+              <span className="status-pill warn">{readinessSummary.partial_count} partial</span>
+              <span className="status-pill bad">{readinessSummary.needs_attention_count} attention</span>
+            </div>
+          </div>
+          <div className="readiness-grid">
+            {data.workspace.readiness_checks.map((check) => (
+              <div key={check.slug} className="mini-card readiness-card">
+                <div className="panel-header compact-header">
+                  <div>
+                    <span className="metric-label">{check.name}</span>
+                    <strong>{check.status.replace("-", " ")}</strong>
+                  </div>
+                  <span className={`status-pill ${check.status === "ready" ? "ok" : check.status === "partial" || check.status === "optional" ? "warn" : "bad"}`}>
+                    {check.status}
+                  </span>
+                </div>
+                <p className="panel-note">{check.detail}</p>
+              </div>
+            ))}
+          </div>
         </article>
       </section>
 
