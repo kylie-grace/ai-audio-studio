@@ -30,6 +30,7 @@ WORKER_SLUG=studio-mac
 WORKER_DISPLAY_NAME=Studio Mac
 WORKER_API_BASE_URL=http://192.168.1.20:8190
 WORKER_CAPABILITIES=session-prep,revision-parser,delivery-packager
+STUDIO_WORKER_DRY_RUN_DAW=true
 SHARED_PROJECTS_PATH=/Volumes/StudioShare/projects
 DELIVERY_PATH=/Volumes/StudioShare/deliveries
 PATH_TRANSLATION_JSON={}
@@ -62,3 +63,4 @@ docker compose --env-file infra/.env -f infra/docker-compose.worker.yml ps
 - On success it posts structured result data back to the Mac mini
 - On failure it marks the task and linked job failed
 - `execute-soundflow` and `execute-reascript` are scaffolded adapter entry points for later approval-gated DAW execution
+- Set `STUDIO_WORKER_DRY_RUN_DAW=true` to validate DAW execution queueing before a real studio Mac is available

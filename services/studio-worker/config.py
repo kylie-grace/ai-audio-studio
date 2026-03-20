@@ -19,6 +19,7 @@ class Settings:
     shared_projects_path: str
     delivery_path: str
     path_translation_json: str
+    dry_run_daw: bool
 
 
 def load_settings() -> Settings:
@@ -40,4 +41,5 @@ def load_settings() -> Settings:
         shared_projects_path=os.environ.get("SHARED_PROJECTS_PATH", "/data/projects"),
         delivery_path=os.environ.get("DELIVERY_PATH", "/data/deliveries"),
         path_translation_json=os.environ.get("PATH_TRANSLATION_JSON", "{}"),
+        dry_run_daw=os.environ.get("STUDIO_WORKER_DRY_RUN_DAW", "false").lower() in {"1", "true", "yes", "on"},
     )

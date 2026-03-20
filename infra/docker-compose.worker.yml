@@ -11,6 +11,7 @@ services:
       WORKER_API_BASE_URL: "${WORKER_API_BASE_URL:-http://127.0.0.1:8190}"
       WORKER_CAPABILITIES: "${WORKER_CAPABILITIES:-session-prep,revision-parser,delivery-packager}"
       POLL_INTERVAL_SECONDS: "${POLL_INTERVAL_SECONDS:-5}"
+      STUDIO_WORKER_DRY_RUN_DAW: "${STUDIO_WORKER_DRY_RUN_DAW:-true}"
       SHARED_PROJECTS_PATH: "${SHARED_PROJECTS_PATH:-/Volumes/StudioShare/projects}"
       DELIVERY_PATH: "${DELIVERY_PATH:-/Volumes/StudioShare/deliveries}"
       PATH_TRANSLATION_JSON: '${PATH_TRANSLATION_JSON:-{}}'

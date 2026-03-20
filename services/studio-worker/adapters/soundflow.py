@@ -26,6 +26,15 @@ class SoundFlowAdapter:
     def execute(self, payload: dict) -> ExecutionResult:
         self.validate_environment(payload)
         rendered = self.render(payload)
+        if payload.get("dry_run"):
+            log_path = Path(rendered.path).with_suffix(".soundflow.log")
+            log_path.write_text("Dry-run SoundFlow execution completed.\n")
+            return ExecutionResult(
+                status="complete",
+                message="Dry-run SoundFlow execution completed",
+                payload={"dry_run": True, "script_path": rendered.path},
+                artifacts=[ArtifactRef(path=str(log_path), kind="execution-log", label="soundflow-dry-run-log")],
+            )
         raise NotImplementedError(
             f"SoundFlow execution is scaffolded but not enabled yet for {rendered.path}"
         )
