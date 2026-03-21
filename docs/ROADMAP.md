@@ -24,3 +24,6 @@
 - Add broader end-to-end tests that exercise Dockerized service interactions, not just unit helpers.
 - Tighten HTTPS/LAN onboarding so trusting the local Caddy certificate is a first-run step, not hidden setup knowledge.
 - Reduce the number of machine-local settings that must stay in env files to secrets, ports, tokens, and path wiring only.
+
+## Dedicated Plans
+- DAW execution, auto-mix, listening loop, and workstation onboarding are broken out in [DAW_EXECUTION_PLAN.md](/Users/kpsnyder/ai-audio-studio/docs/DAW_EXECUTION_PLAN.md).
