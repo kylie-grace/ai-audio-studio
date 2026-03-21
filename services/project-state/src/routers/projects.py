@@ -43,6 +43,24 @@ class UpdateStatusBody(BaseModel):
     status: str
 
 
+class SaveListeningReportBody(BaseModel):
+    target: str
+    status: str = "preview"
+    reference_count: int = 0
+    summary: dict = {}
+    checks: list[dict] = []
+    next_actions: list[str] = []
+
+
+class SaveRenderReviewBody(BaseModel):
+    target: str
+    status: str = "preview"
+    review_candidate_slug: str | None = None
+    profile_count: int = 0
+    profiles: list[dict] = []
+    follow_up: list[str] = []
+
+
 def _artifact_path_from_payload(artifact: dict) -> str | None:
     for key in ("path", "manifest_path", "report_path", "changes_path", "script_path", "delivery_path"):
         value = artifact.get(key)
@@ -144,12 +162,22 @@ def _review_summary(qc_reports: list[dict], revisions: list[dict], mix_plans: li
     }
 
 
-def _review_packet(session_manifests: list[dict], qc_reports: list[dict], revisions: list[dict], mix_plans: list[dict], artifact_inventory: list[dict]) -> dict:
+def _review_packet(
+    session_manifests: list[dict],
+    qc_reports: list[dict],
+    revisions: list[dict],
+    mix_plans: list[dict],
+    artifact_inventory: list[dict],
+    listening_reports: list[dict],
+    render_reviews: list[dict],
+) -> dict:
     latest_qc = qc_reports[0] if qc_reports else None
     latest_manifest = session_manifests[0] if session_manifests else None
     latest_revision = revisions[0] if revisions else None
     latest_mix_plan = mix_plans[0] if mix_plans else None
     latest_artifact = artifact_inventory[0] if artifact_inventory else None
+    latest_listening = listening_reports[0] if listening_reports else None
+    latest_render_review = render_reviews[0] if render_reviews else None
 
     hard_fail_count = sum(1 for issue in (latest_qc or {}).get("issues") or [] if issue.get("severity") == "HARD_FAIL")
     warning_count = sum(1 for issue in (latest_qc or {}).get("issues") or [] if issue.get("severity") != "HARD_FAIL")
@@ -175,6 +203,8 @@ def _review_packet(session_manifests: list[dict], qc_reports: list[dict], revisi
             recommended_action = "Objective QC is close, but a focused listening pass is still required."
     elif latest_mix_plan or latest_revision:
         recommended_action = "Execution planning is ready. Generate a review bounce and attach QC."
+    if latest_listening and (latest_listening.get("next_actions") or []):
+        recommended_action = str((latest_listening.get("next_actions") or [recommended_action])[0])
 
     return {
         "recommended_operator_action": recommended_action,
@@ -194,6 +224,8 @@ def _review_packet(session_manifests: list[dict], qc_reports: list[dict], revisi
         "latest_manifest_status": (latest_manifest or {}).get("status"),
         "latest_revision_status": (latest_revision or {}).get("status"),
         "latest_mix_plan_status": (latest_mix_plan or {}).get("status"),
+        "latest_listening_status": (latest_listening or {}).get("status"),
+        "latest_render_review_status": (latest_render_review or {}).get("status"),
     }
 
 
@@ -212,6 +244,14 @@ async def _load_project_detail_payload(pool, project_id: str) -> dict:
         _serialize_row(row)
         for row in await pool.fetch("SELECT * FROM session_manifests WHERE project_id=$1 ORDER BY created_at DESC LIMIT 20", project_key)
     ]
+    listening_reports = [
+        _serialize_row(row)
+        for row in await pool.fetch("SELECT * FROM listening_reports WHERE project_id=$1 ORDER BY created_at DESC LIMIT 10", project_key)
+    ]
+    render_reviews = [
+        _serialize_row(row)
+        for row in await pool.fetch("SELECT * FROM render_reviews WHERE project_id=$1 ORDER BY created_at DESC LIMIT 10", project_key)
+    ]
     worker_tasks = [_serialize_row(row) for row in await pool.fetch("SELECT * FROM worker_tasks WHERE project_id=$1 ORDER BY created_at DESC LIMIT 30", project_key)]
     audit_entries = [
         _serialize_row(row)
@@ -227,11 +267,21 @@ async def _load_project_detail_payload(pool, project_id: str) -> dict:
         "qc_reports": qc_reports,
         "mix_plans": mix_plans,
         "session_manifests": session_manifests,
+        "listening_reports": listening_reports,
+        "render_reviews": render_reviews,
         "worker_tasks": worker_tasks,
         "audit_entries": audit_entries,
         "artifact_inventory": artifact_inventory[:50],
         "review_summary": _review_summary(qc_reports, revisions, mix_plans, artifact_inventory),
-        "review_packet": _review_packet(session_manifests, qc_reports, revisions, mix_plans, artifact_inventory[:50]),
+        "review_packet": _review_packet(
+            session_manifests,
+            qc_reports,
+            revisions,
+            mix_plans,
+            artifact_inventory[:50],
+            listening_reports,
+            render_reviews,
+        ),
     }
 
 
@@ -343,6 +393,51 @@ async def download_project_artifact(project_id: str, artifact_id: int):
     if path.is_dir():
         raise HTTPException(status_code=409, detail="Artifact is a directory")
     return FileResponse(path, filename=path.name)
+
+
+@router.post("/{project_id}/listening-reports", status_code=201)
+async def save_listening_report(project_id: str, body: SaveListeningReportBody):
+    pool = await get_pool()
+    project = await pool.fetchrow("SELECT * FROM projects WHERE id::text=$1 OR slug=$1", project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    row = await pool.fetchrow(
+        """INSERT INTO listening_reports
+           (project_id, target, status, reference_count, payload, summary, next_actions, created_by)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8)
+           RETURNING *""",
+        project["id"],
+        body.target,
+        body.status,
+        body.reference_count,
+        json.dumps({"checks": body.checks}),
+        json.dumps(body.summary),
+        json.dumps(body.next_actions),
+        "operator",
+    )
+    return _serialize_row(row)
+
+
+@router.post("/{project_id}/render-reviews", status_code=201)
+async def save_render_review(project_id: str, body: SaveRenderReviewBody):
+    pool = await get_pool()
+    project = await pool.fetchrow("SELECT * FROM projects WHERE id::text=$1 OR slug=$1", project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    row = await pool.fetchrow(
+        """INSERT INTO render_reviews
+           (project_id, target, status, review_candidate_slug, payload, follow_up, created_by)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7)
+           RETURNING *""",
+        project["id"],
+        body.target,
+        body.status,
+        body.review_candidate_slug,
+        json.dumps({"profile_count": body.profile_count, "profiles": body.profiles}),
+        json.dumps(body.follow_up),
+        "operator",
+    )
+    return _serialize_row(row)
 
 
 @router.put("/{project_id}/status")

@@ -312,6 +312,8 @@ type ProjectDetail = {
   qc_reports: Array<Record<string, unknown>>;
   mix_plans: Array<Record<string, unknown>>;
   session_manifests: Array<Record<string, unknown>>;
+  listening_reports: Array<Record<string, unknown>>;
+  render_reviews: Array<Record<string, unknown>>;
   worker_tasks: WorkerTask[];
   audit_entries: AuditEntry[];
   artifact_inventory: Array<{
@@ -355,6 +357,8 @@ type ProjectDetail = {
       stereo_width?: number | null;
       spectral_tilt_db?: number | null;
     };
+    latest_listening_status?: string | null;
+    latest_render_review_status?: string | null;
   };
 };
 
@@ -1492,6 +1496,9 @@ export function App() {
   const [artifactActionError, setArtifactActionError] = useState<string | null>(null);
   const [artifactPreview, setArtifactPreview] = useState<ArtifactPreview | null>(null);
   const [artifactPreviewState, setArtifactPreviewState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [reviewSavePending, setReviewSavePending] = useState<"listening" | "render" | null>(null);
+  const [reviewSaveMessage, setReviewSaveMessage] = useState<string | null>(null);
+  const [reviewSaveError, setReviewSaveError] = useState<string | null>(null);
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const isInitialLoad = data.loadState === "loading" && !data.refreshedAt;
@@ -2050,6 +2057,64 @@ export function App() {
       setArtifactPreview(null);
       setArtifactPreviewState("error");
       setArtifactActionError(error instanceof Error ? error.message : "Unable to preview artifact");
+    }
+  }
+
+  async function saveListeningReview() {
+    if (!selectedProject?.id || !data.listeningReportPreview) return;
+    setReviewSavePending("listening");
+    setReviewSaveMessage(null);
+    setReviewSaveError(null);
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-Actor": operatorName,
+      };
+      if (operatorToken) headers["X-Operator-Token"] = operatorToken;
+      const response = await fetch(`${API.projectState}/projects/${selectedProject.id}/listening-reports`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(data.listeningReportPreview),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? `Save failed with ${response.status}`);
+      }
+      setReviewSaveMessage("Listening review saved to the selected project.");
+      await refreshData();
+    } catch (error) {
+      setReviewSaveError(error instanceof Error ? error.message : "Unable to save listening review");
+    } finally {
+      setReviewSavePending(null);
+    }
+  }
+
+  async function saveRenderReview() {
+    if (!selectedProject?.id || !data.renderPlanPreview) return;
+    setReviewSavePending("render");
+    setReviewSaveMessage(null);
+    setReviewSaveError(null);
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-Actor": operatorName,
+      };
+      if (operatorToken) headers["X-Operator-Token"] = operatorToken;
+      const response = await fetch(`${API.projectState}/projects/${selectedProject.id}/render-reviews`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(data.renderPlanPreview),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? `Save failed with ${response.status}`);
+      }
+      setReviewSaveMessage("Render review saved to the selected project.");
+      await refreshData();
+    } catch (error) {
+      setReviewSaveError(error instanceof Error ? error.message : "Unable to save render review");
+    } finally {
+      setReviewSavePending(null);
     }
   }
 
@@ -2788,21 +2853,30 @@ export function App() {
                 </div>
                 <div className="panel-span-4 table-stack">
                   {data.renderPlanPreview ? (
-                    data.renderPlanPreview.profiles.map((profile) => (
-                      <div key={profile.slug} className="table-row">
-                        <div className="row-main">
-                          <strong>{profile.label}</strong>
-                          <div className="muted">{profile.filename}</div>
-                          <div className="muted">{profile.sample_rate} Hz · {profile.bit_depth}-bit · {profile.target}</div>
-                          <div className="muted">{profile.review_gate ?? "internal-review"} · {profile.qc_required ? "qc required" : "qc optional"} · {profile.listening_required ? "listening required" : "listening optional"}</div>
+                    <>
+                      {data.renderPlanPreview.profiles.map((profile) => (
+                        <div key={profile.slug} className="table-row">
+                          <div className="row-main">
+                            <strong>{profile.label}</strong>
+                            <div className="muted">{profile.filename}</div>
+                            <div className="muted">{profile.sample_rate} Hz · {profile.bit_depth}-bit · {profile.target}</div>
+                            <div className="muted">{profile.review_gate ?? "internal-review"} · {profile.qc_required ? "qc required" : "qc optional"} · {profile.listening_required ? "listening required" : "listening optional"}</div>
+                          </div>
+                          <div className="row-meta">
+                            <span className={`status-pill ${profile.slug === data.renderPlanPreview?.review_candidate_slug ? "ok" : "muted"}`}>
+                              {profile.slug === data.renderPlanPreview?.review_candidate_slug ? "candidate" : "supporting"}
+                            </span>
+                          </div>
                         </div>
-                        <div className="row-meta">
-                          <span className={`status-pill ${profile.slug === data.renderPlanPreview?.review_candidate_slug ? "ok" : "muted"}`}>
-                            {profile.slug === data.renderPlanPreview?.review_candidate_slug ? "candidate" : "supporting"}
-                          </span>
+                      ))}
+                      {selectedProject?.id ? (
+                        <div className="action-row">
+                          <button className="action-button" type="button" disabled={reviewSavePending === "render"} onClick={saveRenderReview}>
+                            {reviewSavePending === "render" ? "saving" : "save render review"}
+                          </button>
                         </div>
-                      </div>
-                    ))
+                      ) : null}
+                    </>
                   ) : (
                     <p className="empty-state">Render profiles will appear here once preview generation is available.</p>
                   )}
@@ -2835,6 +2909,13 @@ export function App() {
                           </div>
                         </div>
                       ))}
+                      {selectedProject?.id ? (
+                        <div className="action-row">
+                          <button className="action-button" type="button" disabled={reviewSavePending === "listening"} onClick={saveListeningReview}>
+                            {reviewSavePending === "listening" ? "saving" : "save listening review"}
+                          </button>
+                        </div>
+                      ) : null}
                     </>
                   ) : (
                     <p className="empty-state">Listening heuristics will appear here once preview generation is available.</p>
@@ -4224,8 +4305,18 @@ export function App() {
                         {projectDetail.review_packet.latest_qc.file_path ? ` Latest QC target: ${projectDetail.review_packet.latest_qc.file_path}.` : ""}
                       </p>
                     ) : null}
+                    {projectDetail ? (
+                      <div className="summary-pill-row top-gap">
+                        <span className="summary-pill">{projectDetail.listening_reports.length} listening reports</span>
+                        <span className="summary-pill">{projectDetail.render_reviews.length} render reviews</span>
+                        {projectDetail.review_packet.latest_listening_status ? <span className="summary-pill">listening {projectDetail.review_packet.latest_listening_status}</span> : null}
+                        {projectDetail.review_packet.latest_render_review_status ? <span className="summary-pill">render {projectDetail.review_packet.latest_render_review_status}</span> : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
+                {reviewSaveMessage ? <p className="feedback ok">{reviewSaveMessage}</p> : null}
+                {reviewSaveError ? <p className="feedback bad">{reviewSaveError}</p> : null}
               </div>
             </article>
           </section>

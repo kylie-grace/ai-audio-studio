@@ -37,6 +37,33 @@ async def ensure_runtime_schema(pool: asyncpg.Pool) -> None:
                UNIQUE(worker_slug, path)
            )"""
     )
+    await pool.execute(
+        """CREATE TABLE IF NOT EXISTS listening_reports (
+               id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+               project_id      UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+               target          TEXT NOT NULL,
+               status          TEXT NOT NULL DEFAULT 'preview',
+               reference_count INTEGER NOT NULL DEFAULT 0,
+               payload         JSONB NOT NULL DEFAULT '{}'::jsonb,
+               summary         JSONB NOT NULL DEFAULT '{}'::jsonb,
+               next_actions    JSONB NOT NULL DEFAULT '[]'::jsonb,
+               created_by      TEXT NOT NULL DEFAULT 'system',
+               created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+           )"""
+    )
+    await pool.execute(
+        """CREATE TABLE IF NOT EXISTS render_reviews (
+               id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+               project_id            UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+               target                TEXT NOT NULL,
+               status                TEXT NOT NULL DEFAULT 'preview',
+               review_candidate_slug TEXT,
+               payload               JSONB NOT NULL DEFAULT '{}'::jsonb,
+               follow_up             JSONB NOT NULL DEFAULT '[]'::jsonb,
+               created_by            TEXT NOT NULL DEFAULT 'system',
+               created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+           )"""
+    )
 
 
 @asynccontextmanager

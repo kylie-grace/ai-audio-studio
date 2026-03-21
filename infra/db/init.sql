@@ -165,6 +165,31 @@ CREATE TABLE IF NOT EXISTS qc_reports (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS listening_reports (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id      UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    target          TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'preview',
+    reference_count INTEGER NOT NULL DEFAULT 0,
+    payload         JSONB NOT NULL DEFAULT '{}',
+    summary         JSONB NOT NULL DEFAULT '{}',
+    next_actions    JSONB NOT NULL DEFAULT '[]',
+    created_by      TEXT NOT NULL DEFAULT 'system',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS render_reviews (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id            UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    target                TEXT NOT NULL,
+    status                TEXT NOT NULL DEFAULT 'preview',
+    review_candidate_slug TEXT,
+    payload               JSONB NOT NULL DEFAULT '{}',
+    follow_up             JSONB NOT NULL DEFAULT '[]',
+    created_by            TEXT NOT NULL DEFAULT 'system',
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ── Mix Plans ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS mix_plans (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
