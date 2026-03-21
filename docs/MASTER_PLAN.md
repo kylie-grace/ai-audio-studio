@@ -63,6 +63,10 @@ Execution targets:
 10. Finish Gmail/social communications and novice-safe automation packs.
 11. Refresh docs, cut over fully, and run final validation.
 
+Newly surfaced implementation gaps:
+- artifact browser still needs true front-door download/open flows, not just copy-path actions
+- Windows worker support still needs explicit path translation, mount conventions, and runtime validation
+
 ## Definition of done
 
 The system is complete when:

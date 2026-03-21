@@ -191,3 +191,60 @@ def detect_workstation_profile(settings) -> dict:
         "blockers": blockers,
         "ready": not blockers or blockers == ["dry-run-enabled"],
     }
+
+
+def validate_workstation_setup(settings) -> dict:
+    profile = detect_workstation_profile(settings)
+    checks: list[dict] = [
+        {
+            "slug": "shared-projects-path",
+            "label": "Shared projects path",
+            "status": "ready" if Path(profile["shared_projects_path"]).exists() else "needs-attention",
+            "detail": profile["shared_projects_path"],
+        },
+        {
+            "slug": "delivery-path",
+            "label": "Delivery path",
+            "status": "ready" if Path(profile["delivery_path"]).exists() else "needs-attention",
+            "detail": profile["delivery_path"],
+        },
+        {
+            "slug": "reaper-readiness",
+            "label": "Reaper readiness",
+            "status": "ready" if any(daw["slug"] == "reaper" and daw["automation_ready"] for daw in profile["daws"]) else "watch",
+            "detail": next((daw["notes"] for daw in profile["daws"] if daw["slug"] == "reaper"), "Reaper not configured."),
+        },
+        {
+            "slug": "protools-readiness",
+            "label": "Pro Tools readiness",
+            "status": "ready" if any(daw["slug"] == "protools" and daw["automation_ready"] for daw in profile["daws"]) else "watch",
+            "detail": next((daw["notes"] for daw in profile["daws"] if daw["slug"] == "protools"), "Pro Tools not configured."),
+        },
+        {
+            "slug": "plugin-inventory",
+            "label": "Plugin inventory",
+            "status": "ready" if (profile.get("plugins", {}).get("summary", {}).get("count", 0) > 0) else "watch",
+            "detail": f"{profile.get('plugins', {}).get('summary', {}).get('count', 0)} plugins discovered",
+        },
+    ]
+    if profile["dry_run_daw"]:
+        checks.append(
+            {
+                "slug": "dry-run-mode",
+                "label": "Dry-run mode",
+                "status": "watch",
+                "detail": "DAW execution is still in dry-run mode.",
+            }
+        )
+    return {
+        "status": "ok",
+        "ready": profile["ready"],
+        "host": profile["host"],
+        "platform": profile["platform"],
+        "blockers": profile["blockers"],
+        "checks": checks,
+        "recommended_next_step": next(
+            (check["label"] for check in checks if check["status"] != "ready"),
+            "Workstation is ready for operator-reviewed execution.",
+        ),
+    }

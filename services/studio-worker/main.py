@@ -16,7 +16,7 @@ from tasks.mix_plan import build_mix_plan
 from tasks.execution_plan import build_execution_plan
 from tasks.render_plan import build_render_plan
 from tasks.session_manifest import build_session_manifest
-from workstation import detect_workstation_profile
+from workstation import detect_workstation_profile, validate_workstation_setup
 
 _client: httpx.AsyncClient | None = None
 _runner: asyncio.Task | None = None
@@ -123,6 +123,11 @@ async def workstation_profile():
 async def workstation_plugins():
     profile = detect_workstation_profile(_settings)
     return profile.get("plugins", {})
+
+
+@app.get("/workstation/validate")
+async def workstation_validate():
+    return validate_workstation_setup(_settings)
 
 
 @app.post("/session-manifest/preview")

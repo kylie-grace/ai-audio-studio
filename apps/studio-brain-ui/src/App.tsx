@@ -409,6 +409,16 @@ type ExecutionPlanPreview = {
   phases: Array<{ slug: string; title: string; status: string; summary: string }>;
 };
 
+type WorkstationValidation = {
+  status: string;
+  ready: boolean;
+  host: string;
+  platform: string;
+  blockers: string[];
+  checks: Array<{ slug: string; label: string; status: string; detail: string }>;
+  recommended_next_step: string;
+};
+
 type BootstrapStatus = {
   status: string;
   workflow_count: number;
@@ -1433,6 +1443,8 @@ export function App() {
   const [selectedWorkerSlug, setSelectedWorkerSlug] = useState<string>("");
   const [workstationPlugins, setWorkstationPlugins] = useState<WorkstationPluginInventory | null>(null);
   const [workstationPluginsState, setWorkstationPluginsState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [workstationValidation, setWorkstationValidation] = useState<WorkstationValidation | null>(null);
+  const [workstationValidationState, setWorkstationValidationState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [artifactActionMessage, setArtifactActionMessage] = useState<string | null>(null);
   const [artifactActionError, setArtifactActionError] = useState<string | null>(null);
 
@@ -1633,6 +1645,29 @@ export function App() {
       active = false;
     };
   }, [selectedWorker?.slug]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadWorkstationValidation() {
+      setWorkstationValidationState("loading");
+      try {
+        const payload = await fetchJson<WorkstationValidation>(`${API.studioWorker}/workstation/validate`);
+        if (!active) return;
+        setWorkstationValidation(payload);
+        setWorkstationValidationState("ready");
+      } catch {
+        if (!active) return;
+        setWorkstationValidation(null);
+        setWorkstationValidationState("error");
+      }
+    }
+
+    void loadWorkstationValidation();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -3286,6 +3321,49 @@ export function App() {
             <article className="panel panel-span-12">
               <div className="panel-header">
                 <div>
+                  <p className="section-kicker">Workstation</p>
+                  <h2>Setup Validation</h2>
+                </div>
+                <span className={`status-pill ${workstationValidation?.ready ? "ok" : "warn"}`}>
+                  {workstationValidation ? (workstationValidation.ready ? "ready" : "needs review") : "unavailable"}
+                </span>
+              </div>
+              <div className="workspace-grid nested-grid">
+                <div className="panel-span-4">
+                  <div className="mini-card">
+                    <span className="metric-label">Recommended next step</span>
+                    <strong>{workstationValidation?.recommended_next_step ?? "Waiting for worker validation."}</strong>
+                    <p className="panel-note">{workstationValidation?.host ?? "No workstation host reported yet."}</p>
+                  </div>
+                </div>
+                <div className="panel-span-8">
+                  <div className="readiness-grid">
+                    {(workstationValidation?.checks ?? []).map((check) => (
+                      <div key={check.slug} className="mini-card readiness-card">
+                        <div className="panel-header compact-header">
+                          <div>
+                            <span className="metric-label">{check.label}</span>
+                            <strong>{check.status.replace("-", " ")}</strong>
+                          </div>
+                          <span className={`status-pill ${check.status === "ready" ? "ok" : check.status === "needs-attention" ? "bad" : "warn"}`}>
+                            {check.status}
+                          </span>
+                        </div>
+                        <p className="panel-note">{check.detail}</p>
+                      </div>
+                    ))}
+                    {workstationValidationState === "loading" ? <p className="empty-state">Validating workstation setup…</p> : null}
+                    {workstationValidationState === "error" ? <p className="empty-state">Workstation validation is not available yet.</p> : null}
+                  </div>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section className="workspace-grid">
+            <article className="panel panel-span-12">
+              <div className="panel-header">
+                <div>
                   <p className="section-kicker">Recovery</p>
                   <h2>Runtime Recovery</h2>
                 </div>
@@ -3932,6 +4010,87 @@ export function App() {
                 ) : null}
                 {artifactActionMessage ? <p className="feedback ok">{artifactActionMessage}</p> : null}
                 {artifactActionError ? <p className="feedback bad">{artifactActionError}</p> : null}
+              </div>
+            </article>
+          </section>
+
+          <section className="workspace-grid">
+            <article className="panel panel-span-12">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Review Surface</p>
+                  <h2>Project Review Stack</h2>
+                </div>
+                <span className="count-pill">
+                  {projectDetail ? `${projectDetail.session_manifests.length} manifests · ${projectDetail.qc_reports.length} qc · ${projectDetail.mix_plans.length} plans` : "loading"}
+                </span>
+              </div>
+              <div className="workspace-grid nested-grid">
+                <div className="panel-span-4 table-stack">
+                  <div className="table-row">
+                    <div className="row-main">
+                      <strong>Session manifests</strong>
+                      <div className="muted">Session readiness, prep reports, and discovered assets.</div>
+                    </div>
+                  </div>
+                  {projectDetail?.session_manifests.slice(0, 4).map((manifest, index) => (
+                    <div key={`${manifest.id ?? index}`} className="table-row compact-row">
+                      <div className="row-main">
+                        <strong>{String(manifest.status ?? "pending")}</strong>
+                        <div className="muted">{String(manifest.session_path ?? manifest.prep_report_path ?? "No session path recorded")}</div>
+                      </div>
+                      <div className="row-meta">
+                        <span className="muted">{String((manifest.stems as unknown[] | undefined)?.length ?? 0)} stems</span>
+                      </div>
+                    </div>
+                  ))}
+                  {projectDetail && !projectDetail.session_manifests.length ? <p className="empty-state">No session manifests yet.</p> : null}
+                </div>
+                <div className="panel-span-4 table-stack">
+                  <div className="table-row">
+                    <div className="row-main">
+                      <strong>QC reports</strong>
+                      <div className="muted">Rendered candidate checks and pass/fail posture.</div>
+                    </div>
+                  </div>
+                  {projectDetail?.qc_reports.slice(0, 4).map((report, index) => (
+                    <div key={`${report.id ?? index}`} className="table-row compact-row">
+                      <div className="row-main">
+                        <strong>{String(report.file_path ?? "qc report")}</strong>
+                        <div className="muted">{String(report.lufs_integrated ?? "n/a")} LUFS · TP {String(report.true_peak_dbfs ?? "n/a")}</div>
+                      </div>
+                      <div className="row-meta">
+                        <span className={`status-pill ${report.overall_pass ? "ok" : "bad"}`}>{report.overall_pass ? "pass" : "review"}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {projectDetail && !projectDetail.qc_reports.length ? <p className="empty-state">No QC reports yet.</p> : null}
+                </div>
+                <div className="panel-span-4 table-stack">
+                  <div className="table-row">
+                    <div className="row-main">
+                      <strong>Mix and revision plans</strong>
+                      <div className="muted">Planned execution posture and recent revision artifacts.</div>
+                    </div>
+                  </div>
+                  {projectDetail?.mix_plans.slice(0, 3).map((plan, index) => (
+                    <div key={`${plan.id ?? index}`} className="table-row compact-row">
+                      <div className="row-main">
+                        <strong>{String(plan.status ?? "draft")}</strong>
+                        <div className="muted">{String((plan.plan_json as Record<string, unknown> | undefined)?.target ?? "Mix plan")}</div>
+                      </div>
+                    </div>
+                  ))}
+                  {projectDetail?.revisions.slice(0, 3).map((revision, index) => (
+                    <div key={`${revision.id ?? index}`} className="table-row compact-row">
+                      <div className="row-main">
+                        <strong>{String(revision.status ?? "parsed")}</strong>
+                        <div className="muted">{String(revision.raw_notes ?? "Revision notes unavailable")}</div>
+                      </div>
+                    </div>
+                  ))}
+                  {projectDetail && !projectDetail.mix_plans.length && !projectDetail.revisions.length ? <p className="empty-state">No mix plans or revisions yet.</p> : null}
+                </div>
               </div>
             </article>
           </section>

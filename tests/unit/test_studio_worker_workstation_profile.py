@@ -7,7 +7,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "../..")
 SERVICE_ROOT = os.path.join(ROOT, "services/studio-worker")
 sys.path.insert(0, SERVICE_ROOT)
 
-from workstation import detect_workstation_profile  # type: ignore  # noqa: E402
+from workstation import detect_workstation_profile, validate_workstation_setup  # type: ignore  # noqa: E402
 import workstation as workstation_module  # type: ignore  # noqa: E402
 from tasks.execution_plan import build_execution_plan  # type: ignore  # noqa: E402
 from tasks.session_manifest import build_session_manifest  # type: ignore  # noqa: E402
@@ -70,6 +70,29 @@ def test_detect_workstation_profile_scans_plugin_inventory(tmp_path: Path):
     assert profile["plugins"]["summary"]["counts_by_format"]["au"] == 1
     assert profile["plugins"]["summary"]["counts_by_format"]["vst3"] == 1
     assert any(plugin["name"] == "DemoVendor - VocalStrip" for plugin in profile["plugins"]["plugins"])
+
+
+def test_validate_workstation_setup_reports_path_and_daw_checks(tmp_path: Path):
+    projects = tmp_path / "projects"
+    deliveries = tmp_path / "deliveries"
+    projects.mkdir()
+    deliveries.mkdir()
+    settings = SimpleNamespace(
+        reaper_binary_path=None,
+        protools_app_path=None,
+        soundflow_cli_path=None,
+        dry_run_daw=True,
+        worker_platform="macos",
+        worker_api_base_url=None,
+        shared_projects_path=str(projects),
+        delivery_path=str(deliveries),
+    )
+
+    report = validate_workstation_setup(settings)
+
+    assert report["status"] == "ok"
+    assert any(check["slug"] == "shared-projects-path" and check["status"] == "ready" for check in report["checks"])
+    assert any(check["slug"] == "dry-run-mode" for check in report["checks"])
 
 
 def test_build_session_manifest_lists_stems_and_references(tmp_path: Path):
