@@ -28,6 +28,26 @@ type WorkerNode = {
   last_seen_at: string;
 };
 
+type PluginInventoryRecord = {
+  name: string;
+  plugin_format: string;
+  vendor?: string | null;
+  version?: string | null;
+  path: string;
+  file_name: string;
+  installed: boolean;
+  source_root?: string | null;
+  size_bytes?: number | null;
+  modified_at?: string | number | null;
+};
+
+type WorkstationPluginInventory = {
+  worker_slug: string;
+  plugin_count: number;
+  counts_by_format: Record<string, number>;
+  plugins: PluginInventoryRecord[];
+};
+
 type OrchestrationRule = {
   id: string;
   slug: string;
@@ -272,8 +292,39 @@ type WorkstationProfile = {
   }>;
   capabilities: Record<string, boolean>;
   permissions: Record<string, boolean>;
+  plugins?: {
+    summary?: {
+      count: number;
+      counts_by_format: Record<string, number>;
+      sample_names: string[];
+    };
+    roots?: Array<{ format: string; root: string; exists: boolean; count: number }>;
+  };
   blockers: string[];
   ready: boolean;
+};
+
+type ProjectDetail = {
+  project: ProjectRecord;
+  leads: Array<Record<string, unknown>>;
+  jobs: Array<Record<string, unknown>>;
+  revisions: Array<Record<string, unknown>>;
+  qc_reports: Array<Record<string, unknown>>;
+  mix_plans: Array<Record<string, unknown>>;
+  session_manifests: Array<Record<string, unknown>>;
+  worker_tasks: WorkerTask[];
+  audit_entries: AuditEntry[];
+  artifact_inventory: Array<{
+    source: string;
+    created_at?: string | null;
+    artifact: Record<string, unknown>;
+    job_id?: string;
+    task_id?: string;
+    module?: string;
+    action?: string;
+    task_type?: string;
+    worker_slug?: string;
+  }>;
 };
 
 type SessionManifestPreview = {
@@ -898,6 +949,11 @@ function summarizeTime(value: string) {
   });
 }
 
+function fileLabel(path: string | null | undefined) {
+  if (!path) return "unavailable";
+  return path.split("/").pop() || path;
+}
+
 function parseDelimitedList(value: string) {
   return value
     .split(/\r?\n|,/)
@@ -1346,6 +1402,12 @@ export function App() {
   const [selectedServiceStatus, setSelectedServiceStatus] = useState<ServiceStatusPayload | null>(null);
   const [selectedServiceStatusState, setSelectedServiceStatusState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [styleRescanPending, setStyleRescanPending] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [projectDetail, setProjectDetail] = useState<ProjectDetail | null>(null);
+  const [projectDetailState, setProjectDetailState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [selectedWorkerSlug, setSelectedWorkerSlug] = useState<string>("");
+  const [workstationPlugins, setWorkstationPlugins] = useState<WorkstationPluginInventory | null>(null);
+  const [workstationPluginsState, setWorkstationPluginsState] = useState<"idle" | "loading" | "ready" | "error">("idle");
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const isInitialLoad = data.loadState === "loading" && !data.refreshedAt;
@@ -1391,6 +1453,8 @@ export function App() {
   const latestStyleProfile = data.styleProfiles[0] ?? null;
   const voicePreview = studioVoicePreview(workspaceSettings, latestStyleProfile);
   const workstationProfile = data.workstationProfile;
+  const selectedProject = data.projects.find((project) => project.id === selectedProjectId) ?? data.projects[0] ?? null;
+  const selectedWorker = data.workers.find((worker) => worker.slug === selectedWorkerSlug) ?? data.workers[0] ?? null;
 
   useEffect(() => {
     const storedName = window.localStorage.getItem(OPERATOR_NAME_KEY);
@@ -1439,6 +1503,18 @@ export function App() {
   }, [data.workspace.onboarding_required]);
 
   useEffect(() => {
+    if (!selectedProjectId && data.projects[0]?.id) {
+      setSelectedProjectId(data.projects[0].id);
+    }
+  }, [data.projects, selectedProjectId]);
+
+  useEffect(() => {
+    if (!selectedWorkerSlug && data.workers[0]?.slug) {
+      setSelectedWorkerSlug(data.workers[0].slug);
+    }
+  }, [data.workers, selectedWorkerSlug]);
+
+  useEffect(() => {
     let active = true;
 
     async function loadSelectedServiceStatus() {
@@ -1474,6 +1550,62 @@ export function App() {
       active = false;
     };
   }, [selectedService]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadProjectDetail() {
+      if (!selectedProject?.id) {
+        setProjectDetail(null);
+        setProjectDetailState("idle");
+        return;
+      }
+      setProjectDetailState("loading");
+      try {
+        const payload = await fetchJson<ProjectDetail>(`${API.projectState}/projects/${selectedProject.id}/detail`);
+        if (!active) return;
+        setProjectDetail(payload);
+        setProjectDetailState("ready");
+      } catch {
+        if (!active) return;
+        setProjectDetail(null);
+        setProjectDetailState("error");
+      }
+    }
+
+    void loadProjectDetail();
+    return () => {
+      active = false;
+    };
+  }, [selectedProject?.id]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadWorkstationPlugins() {
+      if (!selectedWorker?.slug) {
+        setWorkstationPlugins(null);
+        setWorkstationPluginsState("idle");
+        return;
+      }
+      setWorkstationPluginsState("loading");
+      try {
+        const payload = await fetchJson<WorkstationPluginInventory>(`${API.projectState}/workers/${selectedWorker.slug}/plugins`);
+        if (!active) return;
+        setWorkstationPlugins(payload);
+        setWorkstationPluginsState("ready");
+      } catch {
+        if (!active) return;
+        setWorkstationPlugins(null);
+        setWorkstationPluginsState("error");
+      }
+    }
+
+    void loadWorkstationPlugins();
+    return () => {
+      active = false;
+    };
+  }, [selectedWorker?.slug]);
 
   useEffect(() => {
     let active = true;
@@ -3577,6 +3709,143 @@ export function App() {
           </section>
 
           <section className="workspace-grid">
+            <article className="panel panel-span-5">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Workstations</p>
+                  <h2>Plugin Inventory</h2>
+                </div>
+                <span className="count-pill">{workstationPlugins?.plugin_count ?? workstationProfile?.plugins?.summary?.count ?? 0} plugins</span>
+              </div>
+              <div className="segmented-list">
+                {data.workers.map((worker) => (
+                  <button
+                    key={worker.slug}
+                    type="button"
+                    className={`segment-button ${selectedWorker?.slug === worker.slug ? "is-active" : ""}`}
+                    onClick={() => setSelectedWorkerSlug(worker.slug)}
+                  >
+                    <span>{worker.display_name}</span>
+                    <span className={`status-pill ${statusTone(worker.status)}`}>{worker.status}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="table-stack top-gap">
+                {workstationPluginsState === "loading" ? <p className="empty-state">Loading plugin inventory…</p> : null}
+                {workstationPlugins ? (
+                  <>
+                    <div className="summary-pill-row">
+                      {Object.entries(workstationPlugins.counts_by_format).map(([pluginFormat, count]) => (
+                        <span key={pluginFormat} className="summary-pill">
+                          {pluginFormat}: {count}
+                        </span>
+                      ))}
+                    </div>
+                    {workstationPlugins.plugins.slice(0, 10).map((plugin) => (
+                      <div key={`${plugin.plugin_format}-${plugin.path}`} className="table-row compact-row">
+                        <div className="row-main">
+                          <strong>{plugin.name}</strong>
+                          <div className="muted">{plugin.vendor ?? "unknown vendor"} · {plugin.plugin_format}</div>
+                          <div className="muted">{plugin.path}</div>
+                        </div>
+                        <div className="row-meta">
+                          <span className={`status-pill ${plugin.installed ? "ok" : "warn"}`}>{plugin.installed ? "installed" : "missing"}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {!workstationPlugins.plugins.length ? <p className="empty-state">No plugins discovered yet on the selected workstation.</p> : null}
+                  </>
+                ) : null}
+                {workstationPluginsState === "error" ? <p className="empty-state">Plugin inventory is not available yet for the selected workstation.</p> : null}
+              </div>
+            </article>
+
+            <article className="panel panel-span-7">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Projects</p>
+                  <h2>Project Detail</h2>
+                </div>
+                <span className="count-pill">{projectDetail?.artifact_inventory.length ?? 0} artifacts</span>
+              </div>
+              <div className="segmented-list">
+                {data.projects.slice(0, 8).map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    className={`segment-button ${selectedProject?.id === project.id ? "is-active" : ""}`}
+                    onClick={() => setSelectedProjectId(project.id)}
+                  >
+                    <span>{project.client_name}</span>
+                    <span className={`status-pill ${project.status === "complete" ? "ok" : project.status === "lead" ? "warn" : "muted"}`}>{project.status}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="workspace-grid nested-grid top-gap">
+                <div className="panel-span-4">
+                  <div className="mini-card">
+                    <span className="metric-label">Selected project</span>
+                    <strong>{selectedProject?.client_name ?? "No project selected"}</strong>
+                    <p className="panel-note">{selectedProject?.service_type ?? "Project detail will appear here once CRM has at least one project."}</p>
+                    <div className="summary-pill-row">
+                      {selectedProject?.budget_signal ? <span className="summary-pill">{selectedProject.budget_signal}</span> : null}
+                      {selectedProject?.timeline ? <span className="summary-pill">{selectedProject.timeline}</span> : null}
+                      {selectedProject?.lead_count !== undefined ? <span className="summary-pill">{selectedProject.lead_count} leads</span> : null}
+                    </div>
+                  </div>
+                </div>
+                <div className="panel-span-4">
+                  <div className="mini-card">
+                    <span className="metric-label">Pipeline evidence</span>
+                    <strong>
+                      {projectDetail ? `${projectDetail.jobs.length} jobs · ${projectDetail.worker_tasks.length} worker tasks` : "Loading project detail"}
+                    </strong>
+                    <p className="panel-note">
+                      {projectDetail ? `${projectDetail.revisions.length} revisions · ${projectDetail.qc_reports.length} qc reports · ${projectDetail.mix_plans.length} mix plans` : "Project detail is loading."}
+                    </p>
+                  </div>
+                </div>
+                <div className="panel-span-4">
+                  <div className="mini-card">
+                    <span className="metric-label">Latest artifact</span>
+                    <strong>{fileLabel((projectDetail?.artifact_inventory[0]?.artifact?.path as string | undefined) ?? (projectDetail?.artifact_inventory[0]?.artifact?.manifest_path as string | undefined))}</strong>
+                    <p className="panel-note">
+                      {projectDetail?.artifact_inventory[0]?.source
+                        ? `${projectDetail.artifact_inventory[0].source} · ${projectDetail.artifact_inventory[0].task_type ?? projectDetail.artifact_inventory[0].module ?? "artifact"}`
+                        : "Artifacts will appear here after worker execution or packaging."}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="table-stack top-gap">
+                {projectDetailState === "loading" ? <p className="empty-state">Loading project timeline…</p> : null}
+                {projectDetail?.artifact_inventory.slice(0, 10).map((entry, index) => {
+                  const artifact = entry.artifact ?? {};
+                  const artifactPath = (artifact.path as string | undefined) ?? (artifact.manifest_path as string | undefined);
+                  return (
+                    <div key={`${entry.source}-${entry.job_id ?? entry.task_id ?? index}`} className="table-row compact-row">
+                      <div className="row-main">
+                        <strong>{fileLabel(artifactPath)}</strong>
+                        <div className="muted">
+                          {(artifact.kind as string | undefined) ?? (artifact.type as string | undefined) ?? "artifact"} · {entry.source}
+                        </div>
+                        <div className="muted">{artifactPath ?? JSON.stringify(artifact)}</div>
+                      </div>
+                      <div className="row-meta">
+                        <span className="muted">{entry.created_at ? summarizeTime(entry.created_at) : "n/a"}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {projectDetailState === "error" ? <p className="empty-state">Project detail could not be loaded yet.</p> : null}
+                {projectDetail && !projectDetail.artifact_inventory.length ? (
+                  <p className="empty-state">This project does not have artifact history yet. Approvals and worker executions will start filling it in.</p>
+                ) : null}
+              </div>
+            </article>
+          </section>
+
+          <section className="workspace-grid">
             <article className="panel panel-span-7">
               <div className="panel-header">
                 <div>
@@ -3588,7 +3857,7 @@ export function App() {
               <div className="table-stack">
                 {data.projects.length ? (
                   data.projects.map((project) => (
-                    <div key={project.id} className="table-row">
+                    <button key={project.id} type="button" className={`table-row service-button ${selectedProject?.id === project.id ? "is-selected" : ""}`} onClick={() => setSelectedProjectId(project.id)}>
                       <div className="row-main">
                         <strong>{project.client_name}</strong>
                         <div className="muted">{project.service_type}</div>
@@ -3610,7 +3879,7 @@ export function App() {
                           {project.status}
                         </span>
                       </div>
-                    </div>
+                    </button>
                   ))
                 ) : (
                   <p className="empty-state">No projects have been created yet. Lead intake auto-creates projects on first inquiry.</p>

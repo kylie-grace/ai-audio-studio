@@ -8,6 +8,7 @@ SERVICE_ROOT = os.path.join(ROOT, "services/studio-worker")
 sys.path.insert(0, SERVICE_ROOT)
 
 from workstation import detect_workstation_profile  # type: ignore  # noqa: E402
+import workstation as workstation_module  # type: ignore  # noqa: E402
 from tasks.execution_plan import build_execution_plan  # type: ignore  # noqa: E402
 from tasks.session_manifest import build_session_manifest  # type: ignore  # noqa: E402
 from tasks.mix_plan import build_mix_plan  # type: ignore  # noqa: E402
@@ -33,6 +34,42 @@ def test_detect_workstation_profile_reports_reaper_readiness(tmp_path: Path):
     assert profile["dry_run_daw"] is True
     assert any(daw["slug"] == "reaper" and daw["installed"] for daw in profile["daws"])
     assert profile["capabilities"]["session_manifest"] is True
+
+
+def test_detect_workstation_profile_scans_plugin_inventory(tmp_path: Path):
+    au_root = tmp_path / "Components"
+    vst3_root = tmp_path / "VST3"
+    au_root.mkdir()
+    vst3_root.mkdir()
+    (au_root / "DemoVendor - VocalStrip.component").write_text("plugin")
+    (vst3_root / "WideStage.vst3").write_text("plugin")
+
+    original_roots = workstation_module.PLUGIN_ROOTS
+    workstation_module.PLUGIN_ROOTS = {
+        "au": [au_root],
+        "vst3": [vst3_root],
+        "vst": [],
+        "aax": [],
+    }
+    try:
+        settings = SimpleNamespace(
+            reaper_binary_path=None,
+            protools_app_path=None,
+            soundflow_cli_path=None,
+            dry_run_daw=True,
+            worker_platform="macos",
+            worker_api_base_url=None,
+            shared_projects_path=str(tmp_path / "projects"),
+            delivery_path=str(tmp_path / "deliveries"),
+        )
+        profile = detect_workstation_profile(settings)
+    finally:
+        workstation_module.PLUGIN_ROOTS = original_roots
+
+    assert profile["plugins"]["summary"]["count"] == 2
+    assert profile["plugins"]["summary"]["counts_by_format"]["au"] == 1
+    assert profile["plugins"]["summary"]["counts_by_format"]["vst3"] == 1
+    assert any(plugin["name"] == "DemoVendor - VocalStrip" for plugin in profile["plugins"]["plugins"])
 
 
 def test_build_session_manifest_lists_stems_and_references(tmp_path: Path):

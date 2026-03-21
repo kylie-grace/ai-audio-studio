@@ -118,6 +118,12 @@ async def workstation_profile():
     return detect_workstation_profile(_settings)
 
 
+@app.get("/workstation/plugins")
+async def workstation_plugins():
+    profile = detect_workstation_profile(_settings)
+    return profile.get("plugins", {})
+
+
 @app.post("/session-manifest/preview")
 async def session_manifest_preview(body: SessionManifestBody):
     return build_session_manifest(body.model_dump())

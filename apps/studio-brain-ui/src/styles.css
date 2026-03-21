@@ -1203,6 +1203,41 @@ code {
   line-height: 1.4;
 }
 
+.segmented-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.segment-button {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: inherit;
+  border-radius: 999px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.segment-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(85, 192, 214, 0.22);
+}
+
+.segment-button.is-active {
+  border-color: rgba(85, 192, 214, 0.34);
+  background:
+    linear-gradient(180deg, rgba(85, 192, 214, 0.12), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.03);
+}
+
 .service-button {
   appearance: none;
   width: 100%;

@@ -99,6 +99,24 @@ class HeartbeatBody(BaseModel):
     workstation_status: dict | None = None
 
 
+class PluginInventoryItem(BaseModel):
+    name: str
+    plugin_format: str
+    vendor: str | None = None
+    version: str | None = None
+    path: str
+    file_name: str
+    installed: bool = True
+    source_root: str | None = None
+    size_bytes: int | None = None
+    modified_at: int | str | None = None
+
+
+class SyncPluginInventoryBody(BaseModel):
+    plugins: list[PluginInventoryItem] = Field(default_factory=list)
+    summary: dict = Field(default_factory=dict)
+
+
 class EnqueueWorkerTaskBody(BaseModel):
     task_type: str
     payload: dict = Field(default_factory=dict)
@@ -150,6 +168,24 @@ async def list_workers():
 async def list_workstations():
     pool = await get_pool()
     rows = await pool.fetch("SELECT * FROM worker_nodes WHERE status <> 'retired' ORDER BY slug ASC")
+    plugin_rows = await pool.fetch(
+        """SELECT worker_slug,
+                  COUNT(*) AS plugin_count,
+                  COALESCE(jsonb_object_agg(plugin_format, count_by_format), '{}'::jsonb) AS counts_by_format
+           FROM (
+               SELECT worker_slug, plugin_format, COUNT(*) AS count_by_format
+               FROM workstation_plugins
+               GROUP BY worker_slug, plugin_format
+           ) grouped
+           GROUP BY worker_slug"""
+    )
+    plugin_index = {
+        row["worker_slug"]: {
+            "plugin_count": row["plugin_count"],
+            "counts_by_format": decode_jsonb(row["counts_by_format"]),
+        }
+        for row in plugin_rows
+    }
     return [
         {
             "slug": row["slug"],
@@ -160,6 +196,7 @@ async def list_workstations():
             "capabilities": decode_jsonb(row.get("capabilities")),
             "workstation_profile": decode_jsonb(row.get("workstation_profile")),
             "workstation_status": decode_jsonb(row.get("workstation_status")),
+            "plugin_inventory": plugin_index.get(row["slug"], {"plugin_count": 0, "counts_by_format": {}}),
             "last_seen_at": _iso(row.get("last_seen_at")),
         }
         for row in rows
@@ -173,6 +210,38 @@ async def get_worker(slug: str):
     if row is None:
         raise HTTPException(status_code=404, detail="Worker not found")
     return serialize_worker(row)
+
+
+@router.get("/{slug}/plugins")
+async def list_worker_plugins(slug: str, limit: int = 200):
+    pool = await get_pool()
+    worker = await pool.fetchrow("SELECT * FROM worker_nodes WHERE slug=$1", slug)
+    if worker is None:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    rows = await pool.fetch(
+        """SELECT worker_slug, plugin_format, name, vendor, version, path, file_name,
+                  installed, source_root, size_bytes, modified_at, discovered_at, updated_at
+           FROM workstation_plugins
+           WHERE worker_slug=$1
+           ORDER BY plugin_format ASC, name ASC
+           LIMIT $2""",
+        slug,
+        limit,
+    )
+    counts = await pool.fetch(
+        """SELECT plugin_format, COUNT(*) AS plugin_count
+           FROM workstation_plugins
+           WHERE worker_slug=$1
+           GROUP BY plugin_format
+           ORDER BY plugin_format ASC""",
+        slug,
+    )
+    return {
+        "worker_slug": slug,
+        "plugin_count": len(rows),
+        "counts_by_format": {row["plugin_format"]: row["plugin_count"] for row in counts},
+        "plugins": [dict(row) for row in rows],
+    }
 
 
 @router.post("/register", status_code=201)
@@ -240,6 +309,47 @@ async def heartbeat(slug: str, body: HeartbeatBody, x_worker_token: str | None =
     )
     updated = await pool.fetchrow("SELECT * FROM worker_nodes WHERE slug=$1", slug)
     return serialize_worker(updated)
+
+
+@router.post("/{slug}/plugins/sync")
+async def sync_worker_plugins(slug: str, body: SyncPluginInventoryBody, x_worker_token: str | None = Header(default=None)):
+    require_worker_token(x_worker_token)
+    pool = await get_pool()
+    worker = await pool.fetchrow("SELECT * FROM worker_nodes WHERE slug=$1", slug)
+    if worker is None:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM workstation_plugins WHERE worker_slug=$1", slug)
+            for plugin in body.plugins:
+                modified_at = plugin.modified_at
+                if isinstance(modified_at, (int, float)):
+                    modified_at = datetime.fromtimestamp(modified_at, tz=timezone.utc)
+                await conn.execute(
+                    """INSERT INTO workstation_plugins
+                       (worker_slug, plugin_format, name, vendor, version, path, file_name,
+                        installed, source_root, size_bytes, modified_at, discovered_at, updated_at)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now())""",
+                    slug,
+                    plugin.plugin_format,
+                    plugin.name,
+                    plugin.vendor,
+                    plugin.version,
+                    plugin.path,
+                    plugin.file_name,
+                    plugin.installed,
+                    plugin.source_root,
+                    plugin.size_bytes,
+                    modified_at,
+                    datetime.now(timezone.utc),
+                )
+
+    return {
+        "worker_slug": slug,
+        "synced_plugin_count": len(body.plugins),
+        "summary": body.summary,
+    }
 
 
 @router.get("/tasks/list")

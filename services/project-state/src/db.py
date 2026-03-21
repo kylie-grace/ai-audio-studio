@@ -18,6 +18,25 @@ async def ensure_runtime_schema(pool: asyncpg.Pool) -> None:
         """ALTER TABLE worker_nodes
            ADD COLUMN IF NOT EXISTS workstation_status JSONB NOT NULL DEFAULT '{}'::jsonb"""
     )
+    await pool.execute(
+        """CREATE TABLE IF NOT EXISTS workstation_plugins (
+               id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+               worker_slug  TEXT NOT NULL REFERENCES worker_nodes(slug) ON DELETE CASCADE,
+               plugin_format TEXT NOT NULL,
+               name         TEXT NOT NULL,
+               vendor       TEXT,
+               version      TEXT,
+               path         TEXT NOT NULL,
+               file_name    TEXT NOT NULL,
+               installed    BOOLEAN NOT NULL DEFAULT true,
+               source_root  TEXT,
+               size_bytes   BIGINT,
+               modified_at  TIMESTAMPTZ,
+               discovered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+               updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+               UNIQUE(worker_slug, path)
+           )"""
+    )
 
 
 @asynccontextmanager

@@ -7,6 +7,33 @@ import platform
 import shutil
 import socket
 from pathlib import Path
+from typing import Iterable
+
+
+PLUGIN_ROOTS = {
+    "au": [
+        Path("/Library/Audio/Plug-Ins/Components"),
+        Path.home() / "Library/Audio/Plug-Ins/Components",
+    ],
+    "vst3": [
+        Path("/Library/Audio/Plug-Ins/VST3"),
+        Path.home() / "Library/Audio/Plug-Ins/VST3",
+    ],
+    "vst": [
+        Path("/Library/Audio/Plug-Ins/VST"),
+        Path.home() / "Library/Audio/Plug-Ins/VST",
+    ],
+    "aax": [
+        Path("/Library/Application Support/Avid/Audio/Plug-Ins"),
+    ],
+}
+
+PLUGIN_SUFFIXES = {
+    "au": ".component",
+    "vst3": ".vst3",
+    "vst": ".vst",
+    "aax": ".aaxplugin",
+}
 
 
 def _which(candidates: list[str]) -> str | None:
@@ -25,10 +52,78 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _plugin_vendor(name: str) -> str | None:
+    if " - " in name:
+        return name.split(" - ", 1)[0].strip() or None
+    if "_" in name:
+        return name.split("_", 1)[0].strip() or None
+    return None
+
+
+def _iter_plugin_paths(root: Path, suffix: str) -> Iterable[Path]:
+    if not root.exists() or not root.is_dir():
+        return []
+    entries = sorted(root.iterdir(), key=lambda item: item.name.lower())
+    return [entry for entry in entries if entry.name.lower().endswith(suffix)]
+
+
+def scan_plugin_inventory(limit_per_format: int = 150) -> dict:
+    plugins: list[dict] = []
+    counts_by_format: dict[str, int] = {}
+    roots_summary: list[dict] = []
+
+    for plugin_format, roots in PLUGIN_ROOTS.items():
+        suffix = PLUGIN_SUFFIXES[plugin_format]
+        counts_by_format[plugin_format] = 0
+        for root in roots:
+            discovered_here = 0
+            for path in _iter_plugin_paths(root, suffix):
+                name = path.name[: -len(suffix)] if path.name.lower().endswith(suffix) else path.stem
+                stats = path.stat()
+                plugins.append(
+                    {
+                        "name": name,
+                        "plugin_format": plugin_format,
+                        "vendor": _plugin_vendor(name),
+                        "path": str(path),
+                        "file_name": path.name,
+                        "installed": True,
+                        "source_root": str(root),
+                        "size_bytes": stats.st_size,
+                        "modified_at": int(stats.st_mtime),
+                    }
+                )
+                discovered_here += 1
+                counts_by_format[plugin_format] += 1
+                if counts_by_format[plugin_format] >= limit_per_format:
+                    break
+            roots_summary.append(
+                {
+                    "format": plugin_format,
+                    "root": str(root),
+                    "exists": root.exists(),
+                    "count": discovered_here,
+                }
+            )
+
+    plugins.sort(key=lambda item: (item["plugin_format"], item["name"].lower()))
+    sample_names = [plugin["name"] for plugin in plugins[:8]]
+    return {
+        "plugins": plugins,
+        "summary": {
+            "count": len(plugins),
+            "counts_by_format": counts_by_format,
+            "sample_names": sample_names,
+        },
+        "roots": roots_summary,
+    }
+
+
 def detect_workstation_profile(settings) -> dict:
     reaper_binary = settings.reaper_binary_path or _which(["reaper", "REAPER", "/Applications/REAPER.app/Contents/MacOS/REAPER"])
     soundflow_cli = settings.soundflow_cli_path or _which(["sf", "soundflow"])
     protools_app = settings.protools_app_path
+    plugin_inventory = scan_plugin_inventory()
 
     reaper_installed = _path_exists(reaper_binary)
     protools_installed = _path_exists(protools_app)
@@ -92,6 +187,7 @@ def detect_workstation_profile(settings) -> dict:
         "daws": daws,
         "capabilities": capabilities,
         "permissions": permissions,
+        "plugins": plugin_inventory,
         "blockers": blockers,
         "ready": not blockers or blockers == ["dry-run-enabled"],
     }

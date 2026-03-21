@@ -30,6 +30,7 @@ class StudioWorkerRunner:
     def __init__(self, client: httpx.AsyncClient, settings: Settings) -> None:
         self.client = client
         self.settings = settings
+        self._heartbeat_count = 0
 
     def workstation_snapshot(self) -> dict:
         detected = detect_workstation_profile(self.settings)
@@ -37,6 +38,19 @@ class StudioWorkerRunner:
             "configured": self.settings.workstation_profile,
             "detected": detected,
         }
+
+    async def sync_plugin_inventory(self) -> None:
+        snapshot = self.workstation_snapshot()
+        detected = snapshot.get("detected") or {}
+        plugin_inventory = detected.get("plugins") or {}
+        await self.client.post(
+            f"{self.settings.project_state_url}/workers/{self.settings.worker_slug}/plugins/sync",
+            headers=headers(self.settings),
+            json={
+                "plugins": plugin_inventory.get("plugins", []),
+                "summary": plugin_inventory.get("summary", {}),
+            },
+        )
 
     async def register_worker(self) -> None:
         await self.client.post(
@@ -56,8 +70,10 @@ class StudioWorkerRunner:
                 "workstation_profile": self.workstation_snapshot(),
             },
         )
+        await self.sync_plugin_inventory()
 
     async def heartbeat(self, status: str = "idle") -> None:
+        self._heartbeat_count += 1
         await self.client.post(
             f"{self.settings.project_state_url}/workers/{self.settings.worker_slug}/heartbeat",
             headers=headers(self.settings),
@@ -73,6 +89,8 @@ class StudioWorkerRunner:
                 "workstation_status": self.workstation_snapshot(),
             },
         )
+        if self._heartbeat_count % 12 == 0:
+            await self.sync_plugin_inventory()
 
     def execute_task(self, task: dict) -> dict:
         payload = decode_jsonb(task["payload"]) or {}

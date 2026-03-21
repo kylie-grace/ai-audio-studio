@@ -355,7 +355,7 @@ async def create_project(body: CreateProjectBody):
 @app.get("/projects/{project_id}")
 async def get_project(project_id: str):
     pool = await get_pool()
-    row = await pool.fetchrow("SELECT * FROM projects WHERE id=$1 OR slug=$1", project_id)
+    row = await pool.fetchrow("SELECT * FROM projects WHERE id::text=$1 OR slug=$1", project_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Project not found")
     lead_count = await pool.fetchval("SELECT COUNT(*) FROM leads WHERE project_id=$1", row["id"])
