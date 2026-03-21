@@ -35,6 +35,14 @@ async def get_pool() -> asyncpg.Pool:
     return _pool
 
 
+async def load_module_settings(pool: asyncpg.Pool) -> dict:
+    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
+    if row is None or not row["module_settings"]:
+        return {}
+    value = row["module_settings"]
+    return json.loads(value) if isinstance(value, str) else dict(value)
+
+
 class PrepareSessionBody(BaseModel):
     source_dir: str
     project_id: str | None = None
@@ -51,6 +59,23 @@ def slugify(text: str) -> str:
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/status")
+async def status():
+    pool = await get_pool()
+    module_settings = (await load_module_settings(pool)).get("session_prep", {})
+    pending_jobs = await pool.fetchval("SELECT COUNT(*) FROM jobs WHERE module='session-prep' AND status='awaiting-approval'")
+    manifest_count = await pool.fetchval("SELECT COUNT(*) FROM session_manifests")
+    return {
+        "status": "ok",
+        "module": "session-prep",
+        "enabled": module_settings.get("enabled", True),
+        "settings": module_settings,
+        "pending_approvals": pending_jobs,
+        "manifest_count": manifest_count,
+        "shared_projects_path": os.environ.get("SHARED_PROJECTS_PATH", "/data/projects"),
+    }
 
 
 @app.post("/prepare-session", status_code=201)

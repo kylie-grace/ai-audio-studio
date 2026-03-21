@@ -723,6 +723,54 @@ code {
   gap: 12px;
 }
 
+.status-key-grid,
+.module-settings-grid,
+.inline-form-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.status-key-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.module-settings-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inline-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.status-key-card,
+.module-setting-block {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.032), rgba(255, 255, 255, 0.016)),
+    rgba(255, 255, 255, 0.018);
+}
+
+.status-key-card strong,
+.module-setting-block strong {
+  font-size: 0.98rem;
+}
+
+.module-settings-card {
+  grid-column: span 3;
+}
+
+.module-setting-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .recovery-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1170,6 +1218,9 @@ code {
   .platform-grid,
   .context-card-grid,
   .action-deck,
+  .status-key-grid,
+  .module-settings-grid,
+  .inline-form-grid,
   .tab-strip {
     grid-template-columns: 1fr;
   }

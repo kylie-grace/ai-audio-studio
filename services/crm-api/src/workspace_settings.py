@@ -23,6 +23,52 @@ def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def default_module_settings() -> dict[str, Any]:
+    return {
+        "lead_intake": {
+            "enabled": True,
+            "minimum_fit_score": 55,
+            "response_sla_hours": 24,
+            "auto_create_projects": True,
+        },
+        "inbox_triage": {
+            "enabled": True,
+            "ignore_noise": True,
+            "high_priority_types": ["payment", "revision-request"],
+        },
+        "content_pipeline": {
+            "enabled": True,
+            "default_platforms": ["instagram", "facebook"],
+            "require_assets": False,
+            "approval_required": True,
+        },
+        "audio_qc": {
+            "enabled": True,
+            "default_target": "streaming",
+            "hard_fail_on_clipping": True,
+        },
+        "session_prep": {
+            "enabled": True,
+            "filename_space_warning": True,
+            "remote_enabled": True,
+        },
+        "revision_parser": {
+            "enabled": True,
+            "default_daw": "reaper",
+            "confidence_threshold": 0.85,
+        },
+        "delivery_packager": {
+            "enabled": True,
+            "require_qc_pass": True,
+            "include_manifest": True,
+        },
+        "mix_planner": {
+            "enabled": True,
+            "default_focus": ["vocals", "drums", "low-end translation"],
+        },
+    }
+
+
 def default_workspace_settings() -> dict[str, Any]:
     operator_name = (
         _split_csv(os.environ.get("AUTHORIZED_ACTORS", ""))[:1]
@@ -62,6 +108,7 @@ def default_workspace_settings() -> dict[str, Any]:
             "worker_slug": os.environ.get("WORKER_SLUG", ""),
             "worker_api_base_url": os.environ.get("WORKER_API_BASE_URL", ""),
         },
+        "module_settings": default_module_settings(),
         "onboarding_complete": False,
     }
 
@@ -83,6 +130,7 @@ def serialize_workspace_settings(row) -> dict[str, Any]:
         "alert_destinations": decode_jsonb(raw["alert_destinations"]),
         "integrations": decode_jsonb(raw["integrations"]),
         "worker": decode_jsonb(raw["worker_config"]),
+        "module_settings": decode_jsonb(raw.get("module_settings") or "{}") or default_module_settings(),
         "onboarding_complete": raw["onboarding_complete"],
         "created_at": raw["created_at"].isoformat() if raw.get("created_at") else None,
         "updated_at": raw["updated_at"].isoformat() if raw.get("updated_at") else None,
@@ -95,6 +143,7 @@ def workspace_status(settings: dict[str, Any], style_profile_count: int) -> dict
     alert_destinations = settings.get("alert_destinations") or {}
     integrations = settings.get("integrations") or {}
     worker = settings.get("worker") or {}
+    module_settings = settings.get("module_settings") or {}
 
     missing_fields: list[str] = []
     if not settings.get("studio_name") or settings["studio_name"] == "Your Studio Name":
@@ -180,6 +229,16 @@ def workspace_status(settings: dict[str, Any], style_profile_count: int) -> dict
             else "Worker slug and API URL are configured."
             if worker.get("worker_slug") and worker.get("worker_api_base_url")
             else "Worker mode is enabled but worker identity or API URL is missing.",
+        },
+        {
+            "slug": "service-tuning",
+            "name": "Module settings",
+            "status": "ready"
+            if module_settings and all(isinstance(value, dict) and value.get("enabled", True) for value in module_settings.values())
+            else "partial",
+            "detail": f"{len(module_settings)} module configuration block(s) persisted."
+            if module_settings
+            else "No persisted module settings found yet.",
         },
     ]
     readiness_summary = {

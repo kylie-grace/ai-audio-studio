@@ -114,16 +114,24 @@ class FakePool:
         ]
 
     async def fetchval(self, query: str, *args: Any) -> int:
-        if "SELECT COUNT(*) FROM projects" in query:
+        if "SELECT COUNT(*) FROM projects" in query and args:
             value = args[0]
             prefix = value.rstrip("%")
             return sum(1 for row in self.projects.values() if str(row["slug"]).startswith(prefix))
+        if "SELECT COUNT(*) FROM projects" in query:
+            return len(self.projects)
         if "SELECT COUNT(*) FROM jobs WHERE status = 'awaiting-approval'" in query:
+            return sum(1 for row in self.jobs.values() if row["status"] == "awaiting-approval")
+        if "SELECT COUNT(*) FROM jobs WHERE status='awaiting-approval'" in query:
             return sum(1 for row in self.jobs.values() if row["status"] == "awaiting-approval")
         if "SELECT COUNT(*) FROM worker_tasks WHERE status = 'failed'" in query:
             return sum(1 for row in self.worker_tasks if row.get("status") == "failed")
+        if "SELECT COUNT(*) FROM worker_nodes" in query:
+            return len(self.worker_nodes)
         if "SELECT COUNT(*) FROM worker_tasks WHERE status = 'claimed'" in query and "lease_expires_at" not in query:
             return sum(1 for row in self.worker_tasks if row.get("status") == "claimed")
+        if "SELECT COUNT(*) FROM worker_tasks WHERE status IN ('queued','claimed')" in query:
+            return sum(1 for row in self.worker_tasks if row.get("status") in {"queued", "claimed"})
         if "SELECT COUNT(*) FROM worker_tasks WHERE status = 'claimed' AND lease_expires_at IS NOT NULL" in query:
             cutoff = args[0]
             return sum(
@@ -284,6 +292,25 @@ def _install_fake_pool(pool: FakePool) -> None:
     jobs.get_pool = get_pool
     workers.get_pool = get_pool
     alerts.get_pool = get_pool
+    main.app.state.pool = pool
+
+
+def test_status_returns_runtime_summary_counts():
+    pool = FakePool()
+    pool.projects["project-1"] = FakeRow(id="project-1", slug="artist-name")
+    pool.worker_tasks.append(FakeRow(id="task-1", status="queued"))
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.get("/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["project_count"] == 1
+    assert payload["approvals_waiting"] == 2
+    assert payload["worker_count"] == 2
+    assert payload["active_worker_tasks"] == 1
 
 
 def test_mutating_requests_require_actor_header():

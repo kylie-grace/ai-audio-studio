@@ -15,8 +15,8 @@ This repository is no longer just a scaffold. It now represents a strong control
 It is still not a novice-ready finished product.
 
 The biggest remaining gap is no longer “nothing exists.” The biggest remaining gap is productization:
-- onboarding/settings now have a real persisted home, but coverage is still partial and many modules still read directly from env
-- the dashboard is useful, but not yet the complete operator control room
+- onboarding/settings now have a real persisted home, persisted module tuning, and service status surfaces, but coverage is still partial and many modules still read directly from env
+- the dashboard is now a much stronger control room, but it is not yet the complete operator control room
 - several domain workflows still need deeper execution depth and more real-world connector coverage
 - broader end-to-end runtime validation is still needed
 
@@ -30,9 +30,12 @@ What is working now:
 - DB-backed `project-state` for jobs, approvals, audit, workers, alerts, and worker tasks
 - DB-backed `crm-api` for projects, leads, and style profiles
 - DB-backed workspace settings bootstrap for first-run studio identity, shared paths, style seed, and worker posture
+- persisted module settings for lead intake, inbox triage, content pipeline, audio QC, session prep, revision parser, delivery packaging, and mix planning
 - DB-backed `openclaw` rule seeding, starter packs, playbooks, alert config, and bootstrap status
 - optional `studio-worker` path for local-worker or split-worker execution
 - idempotent one-shot n8n workflow bootstrap against the running `n8n` service
+- service `/status` endpoints across the major automation and production modules
+- control-room service drilldowns with live status snapshots and saved tuning summaries
 
 What is still incomplete:
 - complete operator-safe settings coverage for every major service
@@ -45,9 +48,13 @@ What is still incomplete:
 
 Latest known validation in this repo state:
 - `pytest -q tests/unit tests/approval-boundary`
-- `python3 -m compileall services/project-state services/studio-worker services/openclaw-orchestrator`
+- `python3 -m compileall services/crm-api services/project-state services/openclaw-orchestrator services/content-pipeline services/audio-qc workers services/studio-worker`
+- Docker rebuild of the control-room and service stack under `infra/docker-compose.yml`
 - `docker compose --env-file infra/env.example -f infra/docker-compose.yml config`
-- runtime smoke checks for dashboard, control-plane health, and n8n bootstrap helper
+- runtime smoke checks for dashboard, proxied service status endpoints, control-plane health, and HTTPS front door
+
+Host-environment note:
+- API-level FastAPI tests in `tests/api` currently skip on this host because the active Python environment does not have `fastapi` and `asyncpg` installed. Runtime validation was therefore completed through Dockerized services and the live dashboard proxy instead.
 
 This validation is meaningful for the MVP, but it is not yet comprehensive enough to claim production readiness.
 
@@ -55,7 +62,7 @@ This validation is meaningful for the MVP, but it is not yet comprehensive enoug
 
 1. Onboarding/settings have started, but are not yet broad enough.
    Current state:
-   - there is now a persisted workspace-settings surface and first-run questionnaire
+   - there is now a persisted workspace-settings surface, first-run questionnaire, service drilldowns, and persisted module tuning for eight modules
    - many module-level settings still live primarily in `infra/.env`
    Impact:
    - the product is meaningfully easier to start, but still too operator-technical to call turnkey
@@ -63,8 +70,8 @@ This validation is meaningful for the MVP, but it is not yet comprehensive enoug
 
 2. The control plane is strong, but the control room is not yet complete.
    Current state:
-   - the dashboard surfaces health, approvals, workers, rules, alerts, and bootstrap state
-   - it still needs deeper mutation flows, more guided operator actions, and a clearer first-run path
+   - the dashboard surfaces health, approvals, workers, rules, alerts, bootstrap state, live service status, and saved module posture
+   - it still needs deeper mutation flows, more guided operator actions, and a clearer first-run path across every service
    Impact:
    - operators can see much more than before, but still cannot complete every normal setup and operations task from one UI
 

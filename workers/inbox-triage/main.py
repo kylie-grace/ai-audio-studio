@@ -31,6 +31,14 @@ async def get_pool() -> asyncpg.Pool:
     return _pool
 
 
+async def load_module_settings(pool: asyncpg.Pool) -> dict:
+    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
+    if row is None or not row["module_settings"]:
+        return {}
+    value = row["module_settings"]
+    return json.loads(value) if isinstance(value, str) else dict(value)
+
+
 class InboxBody(BaseModel):
     thread_id: str
     message_id: str
@@ -65,6 +73,22 @@ def draft_response(message_type: str, subject: str) -> str:
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/status")
+async def status():
+    pool = await get_pool()
+    module_settings = (await load_module_settings(pool)).get("inbox_triage", {})
+    pending_drafts = await pool.fetchval("SELECT COUNT(*) FROM inbox_drafts WHERE status='pending-review'")
+    pending_jobs = await pool.fetchval("SELECT COUNT(*) FROM jobs WHERE module='inbox-triage' AND status='awaiting-approval'")
+    return {
+        "status": "ok",
+        "module": "inbox-triage",
+        "enabled": module_settings.get("enabled", True),
+        "settings": module_settings,
+        "pending_review": pending_drafts,
+        "pending_approvals": pending_jobs,
+    }
 
 
 @app.post("/webhook/inbox-triage", status_code=201)

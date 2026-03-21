@@ -42,3 +42,17 @@ async def health():
         "capabilities": _settings.capabilities,
         "project_state_url": _settings.project_state_url,
     }
+
+
+@app.get("/status")
+async def status():
+    return {
+        "status": "ok",
+        "worker_slug": _settings.worker_slug,
+        "display_name": _settings.worker_display_name,
+        "platform": _settings.worker_platform,
+        "capabilities": _settings.capabilities,
+        "project_state_url": _settings.project_state_url,
+        "shared_projects_path": _settings.shared_projects_path,
+        "delivery_path": _settings.delivery_path,
+    }

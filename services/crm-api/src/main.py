@@ -116,6 +116,66 @@ class WorkspaceWorkerBody(BaseModel):
     worker_api_base_url: str = ""
 
 
+class LeadIntakeSettingsBody(BaseModel):
+    enabled: bool = True
+    minimum_fit_score: int = 55
+    response_sla_hours: int = 24
+    auto_create_projects: bool = True
+
+
+class InboxTriageSettingsBody(BaseModel):
+    enabled: bool = True
+    ignore_noise: bool = True
+    high_priority_types: list[str] = ["payment", "revision-request"]
+
+
+class ContentPipelineSettingsBody(BaseModel):
+    enabled: bool = True
+    default_platforms: list[str] = ["instagram", "facebook"]
+    require_assets: bool = False
+    approval_required: bool = True
+
+
+class AudioQcSettingsBody(BaseModel):
+    enabled: bool = True
+    default_target: str = "streaming"
+    hard_fail_on_clipping: bool = True
+
+
+class SessionPrepSettingsBody(BaseModel):
+    enabled: bool = True
+    filename_space_warning: bool = True
+    remote_enabled: bool = True
+
+
+class RevisionParserSettingsBody(BaseModel):
+    enabled: bool = True
+    default_daw: str = "reaper"
+    confidence_threshold: float = 0.85
+
+
+class DeliveryPackagerSettingsBody(BaseModel):
+    enabled: bool = True
+    require_qc_pass: bool = True
+    include_manifest: bool = True
+
+
+class MixPlannerSettingsBody(BaseModel):
+    enabled: bool = True
+    default_focus: list[str] = ["vocals", "drums", "low-end translation"]
+
+
+class WorkspaceModuleSettingsBody(BaseModel):
+    lead_intake: LeadIntakeSettingsBody = LeadIntakeSettingsBody()
+    inbox_triage: InboxTriageSettingsBody = InboxTriageSettingsBody()
+    content_pipeline: ContentPipelineSettingsBody = ContentPipelineSettingsBody()
+    audio_qc: AudioQcSettingsBody = AudioQcSettingsBody()
+    session_prep: SessionPrepSettingsBody = SessionPrepSettingsBody()
+    revision_parser: RevisionParserSettingsBody = RevisionParserSettingsBody()
+    delivery_packager: DeliveryPackagerSettingsBody = DeliveryPackagerSettingsBody()
+    mix_planner: MixPlannerSettingsBody = MixPlannerSettingsBody()
+
+
 class WorkspaceBootstrapBody(BaseModel):
     studio_name: str
     deployment_mode: str = "single_machine"
@@ -127,6 +187,7 @@ class WorkspaceBootstrapBody(BaseModel):
     alert_destinations: WorkspaceAlertDestinationsBody = WorkspaceAlertDestinationsBody()
     integrations: WorkspaceIntegrationsBody = WorkspaceIntegrationsBody()
     worker: WorkspaceWorkerBody = WorkspaceWorkerBody()
+    module_settings: WorkspaceModuleSettingsBody = WorkspaceModuleSettingsBody()
 
 
 async def seed_default_style_profile(pool: asyncpg.Pool) -> None:
@@ -160,11 +221,13 @@ async def ensure_workspace_settings_table(pool: asyncpg.Pool) -> None:
                alert_destinations  JSONB NOT NULL DEFAULT '{}'::jsonb,
                integrations        JSONB NOT NULL DEFAULT '{}'::jsonb,
                worker_config       JSONB NOT NULL DEFAULT '{}'::jsonb,
+               module_settings     JSONB NOT NULL DEFAULT '{}'::jsonb,
                onboarding_complete BOOLEAN NOT NULL DEFAULT false,
                created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
                updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
            )"""
     )
+    await pool.execute("ALTER TABLE workspace_settings ADD COLUMN IF NOT EXISTS module_settings JSONB NOT NULL DEFAULT '{}'::jsonb")
 
 
 async def seed_default_workspace_settings(pool: asyncpg.Pool) -> None:
@@ -175,8 +238,8 @@ async def seed_default_workspace_settings(pool: asyncpg.Pool) -> None:
     await pool.execute(
         """INSERT INTO workspace_settings
            (singleton, studio_name, deployment_mode, public_base_url, https_mode, operator_name,
-            shared_paths, style_seed, alert_destinations, integrations, worker_config, onboarding_complete)
-           VALUES (TRUE,$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11)""",
+            shared_paths, style_seed, alert_destinations, integrations, worker_config, module_settings, onboarding_complete)
+           VALUES (TRUE,$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12)""",
         defaults["studio_name"],
         defaults["deployment_mode"],
         defaults["public_base_url"],
@@ -187,6 +250,7 @@ async def seed_default_workspace_settings(pool: asyncpg.Pool) -> None:
         json.dumps(defaults["alert_destinations"]),
         json.dumps(defaults["integrations"]),
         json.dumps(defaults["worker"]),
+        json.dumps(defaults["module_settings"]),
         defaults["onboarding_complete"],
     )
 
@@ -210,6 +274,25 @@ def combined_style_seed(raw_text: str, file_paths: list[str]) -> tuple[str, str]
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/status")
+async def status():
+    pool = await get_pool()
+    project_count = await pool.fetchval("SELECT COUNT(*) FROM projects")
+    lead_count = await pool.fetchval("SELECT COUNT(*) FROM leads")
+    style_profile_count = await pool.fetchval("SELECT COUNT(*) FROM style_profiles")
+    row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    settings = serialize_workspace_settings(row)
+    return {
+        "status": "ok",
+        "project_count": project_count,
+        "lead_count": lead_count,
+        "style_profile_count": style_profile_count,
+        "studio_name": settings.get("studio_name", ""),
+        "operator_name": settings.get("operator_name", ""),
+        "integrations": settings.get("integrations", {}),
+    }
 
 
 @app.post("/projects", status_code=201)
@@ -379,6 +462,55 @@ async def get_workspace_settings_status():
     }
 
 
+@app.post("/workspace-settings/style-seed/rescan")
+async def rescan_workspace_style_seed():
+    pool = await get_pool()
+    row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    settings = serialize_workspace_settings(row)
+    style_seed = settings.get("style_seed") or {}
+    style_seed_text, source_type = combined_style_seed(style_seed.get("raw_text", ""), style_seed.get("source_paths", []))
+    extracted = extract_guidance(style_seed_text)
+
+    existing_profile = await pool.fetchrow(
+        "SELECT id FROM style_profiles WHERE name=$1 ORDER BY created_at ASC LIMIT 1",
+        style_seed.get("name", DEFAULT_STYLE_PROFILE_NAME),
+    )
+    if existing_profile is None:
+        await pool.execute(
+            """INSERT INTO style_profiles
+               (scope, name, source_type, raw_text, file_paths, extracted_guidance)
+               VALUES ('studio',$1,$2,$3,$4::jsonb,$5::jsonb)""",
+            style_seed.get("name", DEFAULT_STYLE_PROFILE_NAME),
+            source_type,
+            style_seed_text,
+            json.dumps(style_seed.get("source_paths", [])),
+            json.dumps(extracted),
+        )
+    else:
+        await pool.execute(
+            """UPDATE style_profiles
+               SET source_type=$2,
+                   raw_text=$3,
+                   file_paths=$4::jsonb,
+                   extracted_guidance=$5::jsonb,
+                   updated_at=now()
+               WHERE id=$1""",
+            existing_profile["id"],
+            source_type,
+            style_seed_text,
+            json.dumps(style_seed.get("source_paths", [])),
+            json.dumps(extracted),
+        )
+
+    return {
+        "status": "ok",
+        "style_profile_name": style_seed.get("name", DEFAULT_STYLE_PROFILE_NAME),
+        "source_type": source_type,
+        "source_count": len(style_seed.get("source_paths", [])),
+        "summary": extracted.get("summary", ""),
+    }
+
+
 @app.post("/workspace-settings/bootstrap")
 async def bootstrap_workspace_settings(body: WorkspaceBootstrapBody):
     pool = await get_pool()
@@ -387,8 +519,8 @@ async def bootstrap_workspace_settings(body: WorkspaceBootstrapBody):
     await pool.execute(
         """INSERT INTO workspace_settings
            (singleton, studio_name, deployment_mode, public_base_url, https_mode, operator_name,
-            shared_paths, style_seed, alert_destinations, integrations, worker_config, onboarding_complete, updated_at)
-           VALUES (TRUE,$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,TRUE,now())
+            shared_paths, style_seed, alert_destinations, integrations, worker_config, module_settings, onboarding_complete, updated_at)
+           VALUES (TRUE,$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,TRUE,now())
            ON CONFLICT (singleton) DO UPDATE SET
              studio_name=EXCLUDED.studio_name,
              deployment_mode=EXCLUDED.deployment_mode,
@@ -400,6 +532,7 @@ async def bootstrap_workspace_settings(body: WorkspaceBootstrapBody):
              alert_destinations=EXCLUDED.alert_destinations,
              integrations=EXCLUDED.integrations,
              worker_config=EXCLUDED.worker_config,
+             module_settings=EXCLUDED.module_settings,
              onboarding_complete=EXCLUDED.onboarding_complete,
              updated_at=now()""",
         body.studio_name.strip(),
@@ -412,6 +545,7 @@ async def bootstrap_workspace_settings(body: WorkspaceBootstrapBody):
         json.dumps(body.alert_destinations.dict()),
         json.dumps(body.integrations.dict()),
         json.dumps(body.worker.dict()),
+        json.dumps(body.module_settings.dict()),
     )
 
     existing_profile = await pool.fetchrow(

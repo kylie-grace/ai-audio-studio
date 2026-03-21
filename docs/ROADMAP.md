@@ -1,7 +1,7 @@
 # Roadmap
 
 ## Now
-- Keep turning the dashboard into a true control room: one front door, full service visibility, approvals, alerts, bootstrap state, and operator actions without exposing novice users to raw service ports.
+- Keep turning the dashboard into a true control room: one front door, full service visibility, approvals, alerts, bootstrap state, service drilldowns, and operator actions without exposing novice users to raw service ports.
 - Treat single-machine mode as the default deployment. The studio worker remains optional capacity for DAW-side execution on the same Mac or a second Mac.
 - Finish the legacy cutover so the old infra mental model is retired and the product is described consistently as `ai-audio-studio`.
 - Preserve the current reality in docs: strong control-plane MVP, not yet novice-complete product.
@@ -10,10 +10,11 @@
 ## Next
 - Extend the new workspace questionnaire into broader operator-safe settings coverage so normal setup does not require editing compose or env files beyond secrets and host wiring.
 - Keep `workspace-settings` as the persisted source of truth for studio identity and operating preferences, then connect more modules to read from it.
+- Deepen the module-tuning layer beyond the current eight service blocks so more runtime behavior is driven from persisted settings instead of env defaults.
+- Keep expanding service drilldowns with more safe actions and more specific runtime detail per service.
 - Expand OpenClaw from seeded rule packs into deeper prebuilt automations for lead intake, inbox drafting, content drafting, approvals, and escalation handoff.
 - Add richer style-profile ingestion from pasted guidance, reference files, and watched folders so tone and brand context can be loaded without manual prompt engineering.
 - Add alert fan-out through webhook, email, and n8n from one configuration surface.
-- Expose more operator-safe settings in the control room so service behavior can be tuned without editing compose files.
 - Improve first-run UX so a studio owner can get from fresh clone to usable dashboard, starter workflows, and baseline studio configuration with a clear guided path.
 - Make hostname and certificate trust setup feel like a standard onboarding step rather than hidden ops knowledge.
 

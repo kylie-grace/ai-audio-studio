@@ -33,6 +33,14 @@ async def get_pool() -> asyncpg.Pool:
     return _pool
 
 
+async def load_module_settings(pool: asyncpg.Pool) -> dict:
+    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
+    if row is None or not row["module_settings"]:
+        return {}
+    value = row["module_settings"]
+    return json.loads(value) if isinstance(value, str) else dict(value)
+
+
 class ParseRevisionsBody(BaseModel):
     project_id: str
     raw_notes: str = Field(min_length=1)
@@ -84,6 +92,22 @@ def parse_changes(raw_notes: str) -> list[dict]:
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/status")
+async def status():
+    pool = await get_pool()
+    module_settings = (await load_module_settings(pool)).get("revision_parser", {})
+    pending_jobs = await pool.fetchval("SELECT COUNT(*) FROM jobs WHERE module='revision-parser' AND status='awaiting-approval'")
+    revision_count = await pool.fetchval("SELECT COUNT(*) FROM revisions")
+    return {
+        "status": "ok",
+        "module": "revision-parser",
+        "enabled": module_settings.get("enabled", True),
+        "settings": module_settings,
+        "pending_approvals": pending_jobs,
+        "revision_count": revision_count,
+    }
 
 
 @app.post("/parse-revisions", status_code=201)

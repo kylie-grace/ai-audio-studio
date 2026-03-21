@@ -18,6 +18,7 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 default_workspace_settings = MODULE.default_workspace_settings
+default_module_settings = MODULE.default_module_settings
 serialize_workspace_settings = MODULE.serialize_workspace_settings
 workspace_status = MODULE.workspace_status
 
@@ -28,6 +29,7 @@ def test_default_workspace_settings_has_operator_and_style_seed():
     assert defaults["operator_name"]
     assert defaults["style_seed"]["raw_text"]
     assert "shared_paths" in defaults
+    assert defaults["module_settings"] == default_module_settings()
 
 
 def test_workspace_status_flags_missing_setup_fields():
@@ -63,6 +65,7 @@ def test_workspace_status_marks_complete_when_required_fields_exist():
             "style_seed": {"raw_text": "Warm, direct, professional."},
             "deployment_mode": "single_machine",
             "worker": {"worker_slug": "", "worker_api_base_url": ""},
+            "module_settings": default_module_settings(),
             "onboarding_complete": True,
         },
         style_profile_count=2,
@@ -72,6 +75,7 @@ def test_workspace_status_marks_complete_when_required_fields_exist():
     assert status["missing_fields"] == []
     assert status["readiness_summary"]["ready_count"] >= 3
     assert any(check["slug"] == "worker-posture" and check["status"] == "optional" for check in status["readiness_checks"])
+    assert any(check["slug"] == "service-tuning" and check["status"] == "ready" for check in status["readiness_checks"])
 
 
 def test_default_workspace_settings_prefers_authorized_actor_and_env_integrations(monkeypatch):
@@ -126,6 +130,7 @@ def test_serialize_workspace_settings_decodes_json_and_timestamps():
             "alert_destinations": '{"email_to":["ops@example.test"],"webhook_url":"https://hooks.example.test/studio"}',
             "integrations": '{"n8n":true,"gmail_readonly":true,"gmail_send":false,"instagram":false,"facebook":false}',
             "worker_config": '{"enabled":true,"worker_slug":"studio-mac","worker_api_base_url":"http://studio-mac.local:8190"}',
+            "module_settings": '{"lead_intake":{"enabled":true,"minimum_fit_score":72,"response_sla_hours":12,"auto_create_projects":true}}',
             "onboarding_complete": True,
             "created_at": now,
             "updated_at": now,
@@ -137,5 +142,6 @@ def test_serialize_workspace_settings_decodes_json_and_timestamps():
     assert serialized["alert_destinations"]["email_to"] == ["ops@example.test"]
     assert serialized["integrations"]["gmail_readonly"] is True
     assert serialized["worker"]["enabled"] is True
+    assert serialized["module_settings"]["lead_intake"]["minimum_fit_score"] == 72
     assert serialized["created_at"] == now.isoformat()
     assert serialized["updated_at"] == now.isoformat()

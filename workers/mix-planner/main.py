@@ -31,6 +31,14 @@ async def get_pool() -> asyncpg.Pool:
     return _pool
 
 
+async def load_module_settings(pool: asyncpg.Pool) -> dict:
+    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
+    if row is None or not row["module_settings"]:
+        return {}
+    value = row["module_settings"]
+    return json.loads(value) if isinstance(value, str) else dict(value)
+
+
 class MixPlanBody(BaseModel):
     project_id: str
     notes: str | None = None
@@ -40,6 +48,22 @@ class MixPlanBody(BaseModel):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/status")
+async def status():
+    pool = await get_pool()
+    module_settings = (await load_module_settings(pool)).get("mix_planner", {})
+    pending_jobs = await pool.fetchval("SELECT COUNT(*) FROM jobs WHERE module='mix-planner' AND status='awaiting-approval'")
+    plan_count = await pool.fetchval("SELECT COUNT(*) FROM mix_plans")
+    return {
+        "status": "ok",
+        "module": "mix-planner",
+        "enabled": module_settings.get("enabled", True),
+        "settings": module_settings,
+        "pending_approvals": pending_jobs,
+        "plan_count": plan_count,
+    }
 
 
 @app.post("/mix-plan", status_code=201)

@@ -90,9 +90,37 @@ async def load_workspace_context(pool: asyncpg.Pool) -> tuple[str, str]:
     )
 
 
+async def load_module_settings(pool: asyncpg.Pool) -> dict:
+    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
+    if row is None or not row["module_settings"]:
+        return {}
+    value = row["module_settings"]
+    return json.loads(value) if isinstance(value, str) else dict(value)
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/status")
+async def status():
+    pool = await get_pool()
+    studio_name, style_summary = await load_workspace_context(pool)
+    module_settings = (await load_module_settings(pool)).get("content_pipeline", {})
+    draft_count = await pool.fetchval("SELECT COUNT(*) FROM social_drafts")
+    pending_review = await pool.fetchval("SELECT COUNT(*) FROM social_drafts WHERE status='pending-review'")
+    return {
+        "status": "ok",
+        "module": "content-pipeline",
+        "enabled": module_settings.get("enabled", True),
+        "settings": module_settings,
+        "draft_count": draft_count,
+        "pending_review": pending_review,
+        "studio_name": studio_name,
+        "style_summary": style_summary,
+        "supported_platforms": sorted(PLATFORM_LIMITS.keys()),
+    }
 
 
 @app.post("/draft-social", status_code=201)

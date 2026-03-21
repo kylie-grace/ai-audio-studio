@@ -186,6 +186,52 @@ type BootstrapStatus = {
   updated_at?: string;
 };
 
+type ServiceStatusPayload = Record<string, unknown>;
+
+type ModuleSettings = {
+  lead_intake: {
+    enabled: boolean;
+    minimum_fit_score: number;
+    response_sla_hours: number;
+    auto_create_projects: boolean;
+  };
+  inbox_triage: {
+    enabled: boolean;
+    ignore_noise: boolean;
+    high_priority_types: string[];
+  };
+  content_pipeline: {
+    enabled: boolean;
+    default_platforms: string[];
+    require_assets: boolean;
+    approval_required: boolean;
+  };
+  audio_qc: {
+    enabled: boolean;
+    default_target: string;
+    hard_fail_on_clipping: boolean;
+  };
+  session_prep: {
+    enabled: boolean;
+    filename_space_warning: boolean;
+    remote_enabled: boolean;
+  };
+  revision_parser: {
+    enabled: boolean;
+    default_daw: string;
+    confidence_threshold: number;
+  };
+  delivery_packager: {
+    enabled: boolean;
+    require_qc_pass: boolean;
+    include_manifest: boolean;
+  };
+  mix_planner: {
+    enabled: boolean;
+    default_focus: string[];
+  };
+};
+
 type WorkspaceSettings = {
   studio_name: string;
   deployment_mode: "single_machine" | "control_plane_plus_worker";
@@ -220,6 +266,7 @@ type WorkspaceSettings = {
     worker_slug: string;
     worker_api_base_url: string;
   };
+  module_settings: ModuleSettings;
   onboarding_complete: boolean;
   created_at?: string | null;
   updated_at?: string | null;
@@ -300,6 +347,23 @@ const API = {
   deliveryPackager: "/api/delivery-packager",
   mixPlanner: "/api/mix-planner",
   studioWorker: "/api/studio-worker",
+};
+
+const serviceStatusApi: Record<string, string> = {
+  "project-state": `${API.projectState}/status`,
+  "crm-api": `${API.crm}/status`,
+  openclaw: `${API.openclaw}/status`,
+  n8n: `${API.n8n}/healthz`,
+  ollama: `${API.ollama}/api/tags`,
+  "content-pipeline": `${API.contentPipeline}/status`,
+  "audio-qc": `${API.audioQc}/status`,
+  "lead-intake": `${API.leadIntake}/status`,
+  "inbox-triage": `${API.inboxTriage}/status`,
+  "session-prep": `${API.sessionPrep}/status`,
+  "revision-parser": `${API.revisionParser}/status`,
+  "delivery-packager": `${API.deliveryPackager}/status`,
+  "mix-planner": `${API.mixPlanner}/status`,
+  "studio-worker": `${API.studioWorker}/status`,
 };
 
 const OPERATOR_NAME_KEY = "studioBrain.operatorName";
@@ -518,6 +582,49 @@ function defaultWorkspaceSettings(): WorkspaceSettings {
       worker_slug: "studio-mac",
       worker_api_base_url: "",
     },
+    module_settings: {
+      lead_intake: {
+        enabled: true,
+        minimum_fit_score: 55,
+        response_sla_hours: 24,
+        auto_create_projects: true,
+      },
+      inbox_triage: {
+        enabled: true,
+        ignore_noise: true,
+        high_priority_types: ["payment", "revision-request"],
+      },
+      content_pipeline: {
+        enabled: true,
+        default_platforms: ["instagram", "facebook"],
+        require_assets: false,
+        approval_required: true,
+      },
+      audio_qc: {
+        enabled: true,
+        default_target: "streaming",
+        hard_fail_on_clipping: true,
+      },
+      session_prep: {
+        enabled: true,
+        filename_space_warning: true,
+        remote_enabled: true,
+      },
+      revision_parser: {
+        enabled: true,
+        default_daw: "reaper",
+        confidence_threshold: 0.85,
+      },
+      delivery_packager: {
+        enabled: true,
+        require_qc_pass: true,
+        include_manifest: true,
+      },
+      mix_planner: {
+        enabled: true,
+        default_focus: ["vocals", "drums", "low-end translation"],
+      },
+    },
     onboarding_complete: false,
     created_at: null,
     updated_at: null,
@@ -559,6 +666,71 @@ function parseDelimitedList(value: string) {
     .split(/\r?\n|,/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function formatStatusValue(value: unknown): string {
+  if (Array.isArray(value)) return value.join(", ");
+  if (value && typeof value === "object") return JSON.stringify(value);
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  if (value === null || value === undefined || value === "") return "n/a";
+  return String(value);
+}
+
+function serviceStatusHighlights(payload: ServiceStatusPayload | null): Array<{ label: string; value: string }> {
+  if (!payload) return [];
+  return Object.entries(payload)
+    .filter(([key]) => key !== "status" && key !== "settings")
+    .slice(0, 6)
+    .map(([key, value]) => ({
+      label: key.replace(/_/g, " "),
+      value: formatStatusValue(value),
+    }));
+}
+
+function serviceSettingsSummary(service: ServiceRecord, settings: ModuleSettings): string[] {
+  switch (service.key) {
+    case "lead-intake":
+      return [
+        `Fit floor ${settings.lead_intake.minimum_fit_score}`,
+        `${settings.lead_intake.response_sla_hours}h reply SLA`,
+        settings.lead_intake.auto_create_projects ? "auto-create projects" : "manual project creation",
+      ];
+    case "inbox-triage":
+      return [
+        settings.inbox_triage.ignore_noise ? "noise filtering on" : "noise filtering off",
+        `${settings.inbox_triage.high_priority_types.length} priority classes`,
+      ];
+    case "content-pipeline":
+      return [
+        settings.content_pipeline.approval_required ? "approval gate on" : "approval gate off",
+        settings.content_pipeline.require_assets ? "assets required" : "asset-light drafts allowed",
+        settings.content_pipeline.default_platforms.join(", "),
+      ];
+    case "audio-qc":
+      return [
+        settings.audio_qc.default_target,
+        settings.audio_qc.hard_fail_on_clipping ? "clip hard-fail" : "clip warning only",
+      ];
+    case "session-prep":
+      return [
+        settings.session_prep.remote_enabled ? "remote prep allowed" : "local prep only",
+        settings.session_prep.filename_space_warning ? "filename warnings on" : "filename warnings off",
+      ];
+    case "revision-parser":
+      return [
+        settings.revision_parser.default_daw,
+        `confidence ${settings.revision_parser.confidence_threshold}`,
+      ];
+    case "delivery-packager":
+      return [
+        settings.delivery_packager.require_qc_pass ? "QC pass required" : "QC optional",
+        settings.delivery_packager.include_manifest ? "manifest included" : "manifest off",
+      ];
+    case "mix-planner":
+      return settings.mix_planner.default_focus;
+    default:
+      return [];
+  }
 }
 
 function statusTone(state: ServiceState | string) {
@@ -820,6 +992,9 @@ export function App() {
   const [selectedServiceKey, setSelectedServiceKey] = useState<string>("project-state");
   const [serviceInspectorMessage, setServiceInspectorMessage] = useState<string | null>(null);
   const [serviceInspectorError, setServiceInspectorError] = useState<string | null>(null);
+  const [selectedServiceStatus, setSelectedServiceStatus] = useState<ServiceStatusPayload | null>(null);
+  const [selectedServiceStatusState, setSelectedServiceStatusState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [styleRescanPending, setStyleRescanPending] = useState(false);
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const optionalOfflineCount = data.services.filter((service) => service.optional && service.state === "offline").length;
@@ -855,6 +1030,9 @@ export function App() {
     workspaceSettings.integrations.instagram,
     workspaceSettings.integrations.facebook,
   ].filter(Boolean).length;
+  const moduleSettings = workspaceSettings.module_settings;
+  const moduleEnabledCount = Object.values(moduleSettings).filter((module) => module.enabled).length;
+  const selectedServiceHighlights = serviceStatusHighlights(selectedServiceStatus);
 
   useEffect(() => {
     const storedName = window.localStorage.getItem(OPERATOR_NAME_KEY);
@@ -897,6 +1075,43 @@ export function App() {
       setEditingWorkspaceSetup(true);
     }
   }, [data.workspace.onboarding_required]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadSelectedServiceStatus() {
+      if (!selectedService) {
+        setSelectedServiceStatus(null);
+        setSelectedServiceStatusState("idle");
+        return;
+      }
+      const path = serviceStatusApi[selectedService.key];
+      if (!path) {
+        setSelectedServiceStatus(null);
+        setSelectedServiceStatusState("idle");
+        return;
+      }
+      setSelectedServiceStatusState("loading");
+      try {
+        const payload = await fetchJson<ServiceStatusPayload>(path);
+        if (!active) return;
+        setSelectedServiceStatus(payload);
+        setSelectedServiceStatusState("ready");
+      } catch (error) {
+        if (!active) return;
+        setSelectedServiceStatus({
+          error: error instanceof Error ? error.message : "Unable to load service status.",
+        });
+        setSelectedServiceStatusState("error");
+      }
+    }
+
+    void loadSelectedServiceStatus();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedService]);
 
   useEffect(() => {
     let active = true;
@@ -1180,6 +1395,33 @@ export function App() {
       setServiceInspectorMessage(`${label} copied.`);
     } catch (error) {
       setServiceInspectorError(error instanceof Error ? error.message : `Unable to copy ${label.toLowerCase()}.`);
+    }
+  }
+
+  async function rescanStyleSources() {
+    setStyleRescanPending(true);
+    setOnboardingError(null);
+    setOnboardingMessage(null);
+    try {
+      const response = await fetch(`${API.crm}/workspace-settings/style-seed/rescan`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? `Style rescan failed with ${response.status}`);
+      }
+      const payload = (await response.json()) as { source_count?: number; style_profile_name?: string };
+      setOnboardingMessage(
+        `Rescanned ${payload.source_count ?? 0} style source file(s) into ${payload.style_profile_name ?? "the studio profile"}.`,
+      );
+      await refreshData();
+    } catch (error) {
+      setOnboardingError(error instanceof Error ? error.message : "Unable to rescan style sources");
+    } finally {
+      setStyleRescanPending(false);
     }
   }
 
@@ -1660,6 +1902,41 @@ export function App() {
                       ))}
                     </div>
                   </div>
+                  <div className="mini-card">
+                    <div className="panel-header compact-header">
+                      <div>
+                        <span className="metric-label">Live status</span>
+                        <strong>{selectedServiceStatusState === "loading" ? "loading" : "service snapshot"}</strong>
+                      </div>
+                      <span className={`status-pill ${selectedServiceStatusState === "error" ? "bad" : selectedServiceStatusState === "ready" ? "ok" : "warn"}`}>
+                        {selectedServiceStatusState}
+                      </span>
+                    </div>
+                    {selectedServiceHighlights.length ? (
+                      <div className="status-key-grid">
+                        {selectedServiceHighlights.map((item) => (
+                          <div key={item.label} className="status-key-card">
+                            <span className="metric-label">{item.label}</span>
+                            <strong>{item.value}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="panel-note">No detailed service payload is available for this module yet.</p>
+                    )}
+                  </div>
+                  {serviceSettingsSummary(selectedService, moduleSettings).length ? (
+                    <div className="mini-card">
+                      <span className="metric-label">Saved tuning</span>
+                      <div className="summary-pill-row">
+                        {serviceSettingsSummary(selectedService, moduleSettings).map((item) => (
+                          <span key={item} className="summary-pill">
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="action-deck">
                     <button
                       className="action-button ok"
@@ -2455,6 +2732,11 @@ export function App() {
                 <strong>{integrationFlags} enabled</strong>
                 <p>{alertEmailCount} alert destination(s) · {workerPostureLabel}</p>
               </article>
+              <article className="snapshot-card">
+                <span className="metric-label">Module posture</span>
+                <strong>{moduleEnabledCount}/{Object.keys(moduleSettings).length} enabled</strong>
+                <p>Persisted tuning now drives service status and operator defaults.</p>
+              </article>
             </div>
             <div className="onboarding-actions-bar">
               <div className="summary-pill-row onboarding-steps-row">
@@ -2604,6 +2886,9 @@ export function App() {
                       }))}
                   />
                 </label>
+                <button className="action-button" type="button" disabled={styleRescanPending} onClick={rescanStyleSources}>
+                  {styleRescanPending ? "rescanning" : "rescan saved sources"}
+                </button>
               </article>
               <article className="mini-card">
                 <span className="metric-label">5. Alerts and integrations</span>
@@ -2701,6 +2986,273 @@ export function App() {
                     disabled={!workspaceDraft.worker.enabled}
                   />
                 </label>
+              </article>
+              <article className="mini-card module-settings-card">
+                <span className="metric-label">7. Module tuning</span>
+                <div className="module-settings-grid">
+                  <div className="module-setting-block">
+                    <div className="module-setting-head">
+                      <strong>Lead intake</strong>
+                      <label className="toggle-chip">
+                        <input
+                          type="checkbox"
+                          checked={workspaceDraft.module_settings.lead_intake.enabled}
+                          onChange={(event) =>
+                            setWorkspaceDraft((current) => ({
+                              ...current,
+                              module_settings: {
+                                ...current.module_settings,
+                                lead_intake: { ...current.module_settings.lead_intake, enabled: event.target.checked },
+                              },
+                            }))}
+                        />
+                        <span>enabled</span>
+                      </label>
+                    </div>
+                    <div className="inline-form-grid">
+                      <label className="field">
+                        <span className="metric-label">Min fit score</span>
+                        <input
+                          type="number"
+                          value={workspaceDraft.module_settings.lead_intake.minimum_fit_score}
+                          onChange={(event) =>
+                            setWorkspaceDraft((current) => ({
+                              ...current,
+                              module_settings: {
+                                ...current.module_settings,
+                                lead_intake: {
+                                  ...current.module_settings.lead_intake,
+                                  minimum_fit_score: Number(event.target.value) || 0,
+                                },
+                              },
+                            }))}
+                        />
+                      </label>
+                      <label className="field">
+                        <span className="metric-label">Reply SLA hours</span>
+                        <input
+                          type="number"
+                          value={workspaceDraft.module_settings.lead_intake.response_sla_hours}
+                          onChange={(event) =>
+                            setWorkspaceDraft((current) => ({
+                              ...current,
+                              module_settings: {
+                                ...current.module_settings,
+                                lead_intake: {
+                                  ...current.module_settings.lead_intake,
+                                  response_sla_hours: Number(event.target.value) || 0,
+                                },
+                              },
+                            }))}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="module-setting-block">
+                    <div className="module-setting-head">
+                      <strong>Inbox triage</strong>
+                      <label className="toggle-chip">
+                        <input
+                          type="checkbox"
+                          checked={workspaceDraft.module_settings.inbox_triage.enabled}
+                          onChange={(event) =>
+                            setWorkspaceDraft((current) => ({
+                              ...current,
+                              module_settings: {
+                                ...current.module_settings,
+                                inbox_triage: { ...current.module_settings.inbox_triage, enabled: event.target.checked },
+                              },
+                            }))}
+                        />
+                        <span>enabled</span>
+                      </label>
+                    </div>
+                    <label className="field">
+                      <span className="metric-label">Priority classes</span>
+                      <input
+                        value={workspaceDraft.module_settings.inbox_triage.high_priority_types.join(", ")}
+                        onChange={(event) =>
+                          setWorkspaceDraft((current) => ({
+                            ...current,
+                            module_settings: {
+                              ...current.module_settings,
+                              inbox_triage: {
+                                ...current.module_settings.inbox_triage,
+                                high_priority_types: parseDelimitedList(event.target.value),
+                              },
+                            },
+                          }))}
+                      />
+                    </label>
+                  </div>
+                  <div className="module-setting-block">
+                    <div className="module-setting-head">
+                      <strong>Content pipeline</strong>
+                      <label className="toggle-chip">
+                        <input
+                          type="checkbox"
+                          checked={workspaceDraft.module_settings.content_pipeline.enabled}
+                          onChange={(event) =>
+                            setWorkspaceDraft((current) => ({
+                              ...current,
+                              module_settings: {
+                                ...current.module_settings,
+                                content_pipeline: { ...current.module_settings.content_pipeline, enabled: event.target.checked },
+                              },
+                            }))}
+                        />
+                        <span>enabled</span>
+                      </label>
+                    </div>
+                    <label className="field">
+                      <span className="metric-label">Default platforms</span>
+                      <input
+                        value={workspaceDraft.module_settings.content_pipeline.default_platforms.join(", ")}
+                        onChange={(event) =>
+                          setWorkspaceDraft((current) => ({
+                            ...current,
+                            module_settings: {
+                              ...current.module_settings,
+                              content_pipeline: {
+                                ...current.module_settings.content_pipeline,
+                                default_platforms: parseDelimitedList(event.target.value),
+                              },
+                            },
+                          }))}
+                      />
+                    </label>
+                  </div>
+                  <div className="module-setting-block">
+                    <div className="module-setting-head">
+                      <strong>Audio QC</strong>
+                      <label className="toggle-chip">
+                        <input
+                          type="checkbox"
+                          checked={workspaceDraft.module_settings.audio_qc.enabled}
+                          onChange={(event) =>
+                            setWorkspaceDraft((current) => ({
+                              ...current,
+                              module_settings: {
+                                ...current.module_settings,
+                                audio_qc: { ...current.module_settings.audio_qc, enabled: event.target.checked },
+                              },
+                            }))}
+                        />
+                        <span>enabled</span>
+                      </label>
+                    </div>
+                    <label className="field">
+                      <span className="metric-label">Default target</span>
+                      <select
+                        value={workspaceDraft.module_settings.audio_qc.default_target}
+                        onChange={(event) =>
+                          setWorkspaceDraft((current) => ({
+                            ...current,
+                            module_settings: {
+                              ...current.module_settings,
+                              audio_qc: { ...current.module_settings.audio_qc, default_target: event.target.value },
+                            },
+                          }))}
+                      >
+                        <option value="streaming">streaming</option>
+                        <option value="broadcast">broadcast</option>
+                        <option value="club">club</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="module-setting-block">
+                    <div className="module-setting-head">
+                      <strong>Revision parser</strong>
+                      <label className="toggle-chip">
+                        <input
+                          type="checkbox"
+                          checked={workspaceDraft.module_settings.revision_parser.enabled}
+                          onChange={(event) =>
+                            setWorkspaceDraft((current) => ({
+                              ...current,
+                              module_settings: {
+                                ...current.module_settings,
+                                revision_parser: { ...current.module_settings.revision_parser, enabled: event.target.checked },
+                              },
+                            }))}
+                        />
+                        <span>enabled</span>
+                      </label>
+                    </div>
+                    <div className="inline-form-grid">
+                      <label className="field">
+                        <span className="metric-label">Default DAW</span>
+                        <select
+                          value={workspaceDraft.module_settings.revision_parser.default_daw}
+                          onChange={(event) =>
+                            setWorkspaceDraft((current) => ({
+                              ...current,
+                              module_settings: {
+                                ...current.module_settings,
+                                revision_parser: { ...current.module_settings.revision_parser, default_daw: event.target.value },
+                              },
+                            }))}
+                        >
+                          <option value="reaper">reaper</option>
+                          <option value="protools">protools</option>
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span className="metric-label">Confidence floor</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={workspaceDraft.module_settings.revision_parser.confidence_threshold}
+                          onChange={(event) =>
+                            setWorkspaceDraft((current) => ({
+                              ...current,
+                              module_settings: {
+                                ...current.module_settings,
+                                revision_parser: {
+                                  ...current.module_settings.revision_parser,
+                                  confidence_threshold: Number(event.target.value) || 0,
+                                },
+                              },
+                            }))}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="module-setting-block">
+                    <div className="module-setting-head">
+                      <strong>Delivery + planning</strong>
+                    </div>
+                    <div className="summary-pill-row">
+                      {workspaceDraft.module_settings.mix_planner.default_focus.map((item) => (
+                        <span key={item} className="summary-pill">
+                          {item}
+                        </span>
+                      ))}
+                      <span className="summary-pill">
+                        {workspaceDraft.module_settings.delivery_packager.require_qc_pass ? "qc required" : "qc optional"}
+                      </span>
+                    </div>
+                    <label className="field">
+                      <span className="metric-label">Mix focus priorities</span>
+                      <input
+                        value={workspaceDraft.module_settings.mix_planner.default_focus.join(", ")}
+                        onChange={(event) =>
+                          setWorkspaceDraft((current) => ({
+                            ...current,
+                            module_settings: {
+                              ...current.module_settings,
+                              mix_planner: {
+                                ...current.module_settings.mix_planner,
+                                default_focus: parseDelimitedList(event.target.value),
+                              },
+                            },
+                          }))}
+                      />
+                    </label>
+                  </div>
+                </div>
               </article>
             </div>
             <div className="onboarding-footer">

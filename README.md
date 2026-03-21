@@ -25,7 +25,7 @@ What is solid today:
 - single-machine mode is the default path, with optional local or remote worker execution
 
 What is still being added:
-- deeper operator-safe settings coverage across every major service
+- deeper operator-safe settings coverage across every major service beyond the current persisted module-tuning layer
 - deeper novice-friendly control-room actions so operators do not need to edit env files for normal product setup
 - richer end-to-end email/content automations beyond the current MVP pathways
 - full DAW execution validation on a real production worker machine
@@ -184,8 +184,10 @@ Implemented or partially implemented:
 - `local-worker` Docker profile for single-Mac execution
 - operator dashboard with live health, approvals, style profiles, worker state, and rule-pack visibility
 - persisted `workspace-settings` and first-run questionnaire for studio identity, paths, tone, alerts, and worker posture
+- persisted module settings and per-service `/status` surfaces for the core automation and production modules
 - LAN and HTTPS operator access paths
 - idempotent n8n bootstrap status surfaced through OpenClaw and the dashboard
+- service drilldowns in the control room with live status snapshots and saved tuning summaries
 
 Still incomplete:
 - complete operator-safe settings coverage for every service/module

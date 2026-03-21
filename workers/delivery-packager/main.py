@@ -33,6 +33,14 @@ async def get_pool() -> asyncpg.Pool:
     return _pool
 
 
+async def load_module_settings(pool: asyncpg.Pool) -> dict:
+    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
+    if row is None or not row["module_settings"]:
+        return {}
+    value = row["module_settings"]
+    return json.loads(value) if isinstance(value, str) else dict(value)
+
+
 class PackageDeliveryBody(BaseModel):
     project_id: str
     file_paths: list[str] = Field(min_length=1)
@@ -44,6 +52,23 @@ class PackageDeliveryBody(BaseModel):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/status")
+async def status():
+    pool = await get_pool()
+    module_settings = (await load_module_settings(pool)).get("delivery_packager", {})
+    pending_jobs = await pool.fetchval("SELECT COUNT(*) FROM jobs WHERE module='delivery-packager' AND status='awaiting-approval'")
+    qc_pass_count = await pool.fetchval("SELECT COUNT(*) FROM qc_reports WHERE overall_pass = TRUE")
+    return {
+        "status": "ok",
+        "module": "delivery-packager",
+        "enabled": module_settings.get("enabled", True),
+        "settings": module_settings,
+        "pending_approvals": pending_jobs,
+        "passing_qc_reports": qc_pass_count,
+        "delivery_path": os.environ.get("DELIVERY_PATH", "/data/deliveries"),
+    }
 
 
 @app.post("/package-delivery", status_code=201)

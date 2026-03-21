@@ -169,6 +169,21 @@ async def health():
     return {"status": "ok", "policy": os.environ.get("POLICY_ENFORCEMENT", "strict")}
 
 
+@app.get("/status")
+async def status():
+    pool = await get_pool()
+    enabled_rules = await pool.fetchval("SELECT COUNT(*) FROM orchestration_rules WHERE enabled = TRUE")
+    total_rules = await pool.fetchval("SELECT COUNT(*) FROM orchestration_rules")
+    return {
+        "status": "ok",
+        "policy": os.environ.get("POLICY_ENFORCEMENT", "strict"),
+        "enabled_rules": enabled_rules,
+        "total_rules": total_rules,
+        "starter_pack_count": len(starter_packs(None)),
+        "playbook_count": len(default_playbooks()),
+    }
+
+
 @app.get("/policy/blocklist")
 async def policy_blocklist():
     return {"blocklist": sorted(BLOCKLIST)}

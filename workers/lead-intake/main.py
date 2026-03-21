@@ -130,9 +130,33 @@ async def load_workspace_context(pool: asyncpg.Pool) -> tuple[str, str]:
     )
 
 
+async def load_module_settings(pool: asyncpg.Pool) -> dict:
+    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
+    if row is None or not row["module_settings"]:
+        return {}
+    value = row["module_settings"]
+    return json.loads(value) if isinstance(value, str) else dict(value)
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/status")
+async def status():
+    pool = await get_pool()
+    module_settings = (await load_module_settings(pool)).get("lead_intake", {})
+    pending_jobs = await pool.fetchval("SELECT COUNT(*) FROM jobs WHERE module='lead-intake' AND status='awaiting-approval'")
+    lead_count = await pool.fetchval("SELECT COUNT(*) FROM leads")
+    return {
+        "status": "ok",
+        "module": "lead-intake",
+        "enabled": module_settings.get("enabled", True),
+        "settings": module_settings,
+        "pending_approvals": pending_jobs,
+        "lead_count": lead_count,
+    }
 
 
 @app.post("/webhook/lead-intake", status_code=201)

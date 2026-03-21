@@ -38,6 +38,14 @@ async def get_pool() -> asyncpg.Pool:
     return _pool
 
 
+async def load_module_settings(pool: asyncpg.Pool) -> dict:
+    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
+    if row is None or not row["module_settings"]:
+        return {}
+    value = row["module_settings"]
+    return json.loads(value) if isinstance(value, str) else dict(value)
+
+
 class RunQCBody(BaseModel):
     project_id: str
     file_path: str
@@ -118,6 +126,22 @@ def analyze_audio(file_path: Path, target: str) -> dict:
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/status")
+async def status():
+    pool = await get_pool()
+    module_settings = (await load_module_settings(pool)).get("audio_qc", {})
+    report_count = await pool.fetchval("SELECT COUNT(*) FROM qc_reports")
+    passing_reports = await pool.fetchval("SELECT COUNT(*) FROM qc_reports WHERE overall_pass = TRUE")
+    return {
+        "status": "ok",
+        "module": "audio-qc",
+        "enabled": module_settings.get("enabled", True),
+        "settings": module_settings,
+        "report_count": report_count,
+        "passing_reports": passing_reports,
+    }
 
 
 @app.post("/qc/run", status_code=201)
