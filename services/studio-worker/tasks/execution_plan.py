@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tasks.plugin_dependencies import build_dependency_warnings
+
 
 def build_execution_plan(payload: dict) -> dict:
     workstation = payload.get("workstation") or {}
@@ -9,6 +11,11 @@ def build_execution_plan(payload: dict) -> dict:
     mix_plan = payload.get("mix_plan") or {}
     render_plan = payload.get("render_plan") or {}
     listening_report = payload.get("listening_report") or {}
+    dependency_warnings = build_dependency_warnings(
+        session_manifest.get("session_details", {}).get("session_type", "reaper"),
+        workstation,
+        priorities=mix_plan.get("priorities") or [],
+    )
 
     blockers = list(workstation.get("blockers") or [])
     readiness = session_manifest.get("readiness") or {}
@@ -55,6 +62,7 @@ def build_execution_plan(payload: dict) -> dict:
     return {
         "status": "preview",
         "blockers": blockers,
+        "dependency_warnings": dependency_warnings,
         "ready_for_operator_review": not blockers or blockers == ["dry-run-enabled"],
         "phases": phases,
         "recommended_next_step": next(

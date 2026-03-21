@@ -29,6 +29,7 @@ def test_default_workspace_settings_has_operator_and_style_seed():
     assert defaults["operator_name"]
     assert defaults["style_seed"]["raw_text"]
     assert "shared_paths" in defaults
+    assert defaults["host_machine_type"]
     assert defaults["module_settings"] == default_module_settings()
 
 
@@ -99,6 +100,7 @@ def test_default_workspace_settings_prefers_authorized_actor_and_env_integration
 
     assert defaults["operator_name"] == "engineer"
     assert defaults["studio_name"] == "North Loop"
+    assert defaults["host_machine_type"] == "other"
     assert defaults["shared_paths"]["projects"] == "/Volumes/StudioShare/projects"
     assert defaults["alert_destinations"]["email_to"] == ["ops@example.test", "owner@example.test"]
     assert defaults["alert_destinations"]["webhook_url"] == "https://hooks.example.test/studio"
@@ -132,6 +134,7 @@ def test_serialize_workspace_settings_decodes_json_and_timestamps():
         {
             "studio_name": "North Loop",
             "deployment_mode": "control_plane_plus_worker",
+            "host_machine_type": "mac-mini",
             "public_base_url": "https://studio-brain.local",
             "https_mode": "caddy_internal",
             "operator_name": "owner",
@@ -148,6 +151,7 @@ def test_serialize_workspace_settings_decodes_json_and_timestamps():
     )
 
     assert serialized["shared_paths"]["projects"] == "/Volumes/StudioShare/projects"
+    assert serialized["host_machine_type"] == "mac-mini"
     assert serialized["style_seed"]["name"] == "Default Studio Tone"
     assert serialized["alert_destinations"]["email_to"] == ["ops@example.test"]
     assert serialized["integrations"]["gmail_readonly"] is True

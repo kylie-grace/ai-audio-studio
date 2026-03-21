@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from tasks.plugin_dependencies import build_dependency_warnings
+
 
 def build_mix_plan(payload: dict) -> dict:
     session_manifest = payload.get("session_manifest") or {}
+    workstation = payload.get("workstation") or {}
     priorities = payload.get("priorities") or ["vocals", "drums", "low-end translation"]
     references = payload.get("references") or []
     client_notes = payload.get("client_notes") or ""
@@ -61,6 +64,11 @@ def build_mix_plan(payload: dict) -> dict:
         "priorities": priorities,
         "client_notes": client_notes,
         "phases": phases,
+        "dependency_warnings": build_dependency_warnings(
+            session_manifest.get("session_details", {}).get("session_type", "reaper"),
+            workstation,
+            priorities=priorities,
+        ),
         "risk_summary": [
             "Keep destructive automation behind approval.",
             "Prefer session copy or working version before execution.",

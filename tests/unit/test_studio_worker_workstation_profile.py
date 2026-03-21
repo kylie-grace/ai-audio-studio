@@ -113,11 +113,17 @@ def test_build_session_manifest_parses_reaper_tracks(tmp_path: Path):
 
 
 def test_build_mix_plan_returns_preview_phases():
-    plan = build_mix_plan({"session_manifest": {"stem_count": 12, "reference_count": 1, "readiness": {"ready_for_planning": True}}})
+    plan = build_mix_plan(
+        {
+            "workstation": {"plugins": {"summary": {"count": 0, "counts_by_format": {"au": 0, "vst3": 0, "vst": 0, "aax": 0}}}},
+            "session_manifest": {"stem_count": 12, "reference_count": 1, "readiness": {"ready_for_planning": True}},
+        }
+    )
 
     assert plan["status"] == "preview"
     assert len(plan["phases"]) >= 3
     assert plan["session_summary"]["ready_for_planning"] is True
+    assert any(warning["slug"] == "empty-plugin-inventory" for warning in plan["dependency_warnings"])
 
 
 def test_build_listening_report_returns_preview_checks():
@@ -140,7 +146,11 @@ def test_build_listening_report_returns_preview_checks():
 def test_build_execution_plan_reports_blockers():
     plan = build_execution_plan(
         {
-            "workstation": {"dry_run_daw": True, "blockers": ["dry-run-enabled"]},
+            "workstation": {
+                "dry_run_daw": True,
+                "blockers": ["dry-run-enabled"],
+                "plugins": {"summary": {"count": 0, "counts_by_format": {"au": 0, "vst3": 0, "vst": 0, "aax": 0}}},
+            },
             "session_manifest": {"stem_count": 12, "session_details": {"track_count": 16}, "readiness": {"ready_for_planning": True}},
             "mix_plan": {"phases": [{"slug": "static", "title": "Static", "actions": []}]},
             "render_plan": {"profiles": [{"slug": "review"}], "profile_count": 1},
@@ -151,3 +161,4 @@ def test_build_execution_plan_reports_blockers():
     assert plan["status"] == "preview"
     assert plan["ready_for_operator_review"] is True
     assert len(plan["phases"]) == 5
+    assert any(warning["slug"] == "empty-plugin-inventory" for warning in plan["dependency_warnings"])

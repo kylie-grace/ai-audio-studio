@@ -102,6 +102,7 @@ def default_workspace_settings() -> dict[str, Any]:
     )[0]
     return {
         "studio_name": os.environ.get("STUDIO_NAME", "").strip(),
+        "host_machine_type": os.environ.get("HOST_MACHINE_TYPE", "other"),
         "deployment_mode": "single_machine",
         "public_base_url": "",
         "https_mode": "local_http",
@@ -157,6 +158,7 @@ def serialize_workspace_settings(row) -> dict[str, Any]:
 
     return {
         "studio_name": raw["studio_name"],
+        "host_machine_type": raw.get("host_machine_type") or "other",
         "deployment_mode": raw["deployment_mode"],
         "public_base_url": raw["public_base_url"],
         "https_mode": raw["https_mode"],
@@ -206,8 +208,9 @@ def workspace_status(settings: dict[str, Any], style_profile_count: int) -> dict
         {
             "slug": "identity",
             "name": "Studio identity",
-            "status": "ready" if settings.get("studio_name") and settings.get("operator_name") else "needs-attention",
-            "detail": "Studio name and primary operator are captured." if settings.get("studio_name") and settings.get("operator_name")
+            "status": "ready" if settings.get("studio_name") and settings.get("operator_name") and settings.get("host_machine_type") else "needs-attention",
+            "detail": f"Studio name, host type ({settings.get('host_machine_type') or 'unknown'}), and primary operator are captured."
+            if settings.get("studio_name") and settings.get("operator_name") and settings.get("host_machine_type")
             else "Set the studio name and operator identity.",
         },
         {

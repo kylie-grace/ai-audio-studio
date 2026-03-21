@@ -188,6 +188,7 @@ class WorkspaceModuleSettingsBody(BaseModel):
 
 class WorkspaceBootstrapBody(BaseModel):
     studio_name: str
+    host_machine_type: str = "other"
     deployment_mode: str = "single_machine"
     public_base_url: str = ""
     https_mode: str = "local_http"
@@ -222,6 +223,7 @@ async def ensure_workspace_settings_table(pool: asyncpg.Pool) -> None:
         """CREATE TABLE IF NOT EXISTS workspace_settings (
                singleton           BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
                studio_name         TEXT NOT NULL DEFAULT '',
+               host_machine_type   TEXT NOT NULL DEFAULT 'other',
                deployment_mode     TEXT NOT NULL DEFAULT 'single_machine',
                public_base_url     TEXT NOT NULL DEFAULT '',
                https_mode          TEXT NOT NULL DEFAULT 'local_http',
@@ -237,6 +239,7 @@ async def ensure_workspace_settings_table(pool: asyncpg.Pool) -> None:
                updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
            )"""
     )
+    await pool.execute("ALTER TABLE workspace_settings ADD COLUMN IF NOT EXISTS host_machine_type TEXT NOT NULL DEFAULT 'other'")
     await pool.execute("ALTER TABLE workspace_settings ADD COLUMN IF NOT EXISTS module_settings JSONB NOT NULL DEFAULT '{}'::jsonb")
 
 
@@ -247,10 +250,11 @@ async def seed_default_workspace_settings(pool: asyncpg.Pool) -> None:
     defaults = default_workspace_settings()
     await pool.execute(
         """INSERT INTO workspace_settings
-           (singleton, studio_name, deployment_mode, public_base_url, https_mode, operator_name,
+           (singleton, studio_name, host_machine_type, deployment_mode, public_base_url, https_mode, operator_name,
             shared_paths, style_seed, alert_destinations, integrations, worker_config, module_settings, onboarding_complete)
-           VALUES (TRUE,$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12)""",
+           VALUES (TRUE,$1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb,$13)""",
         defaults["studio_name"],
+        defaults["host_machine_type"],
         defaults["deployment_mode"],
         defaults["public_base_url"],
         defaults["https_mode"],
@@ -500,6 +504,7 @@ async def get_workspace_settings():
 
 class WorkspaceSettingsPatch(BaseModel):
     studio_name: str | None = None
+    host_machine_type: str | None = None
     operator_name: str | None = None
     public_base_url: str | None = None
     alert_destinations: dict | None = None
@@ -517,7 +522,7 @@ async def patch_workspace_settings(body: WorkspaceSettingsPatch):
     values: list = []
     idx = 1
 
-    simple_fields = ["studio_name", "operator_name", "public_base_url", "onboarding_complete"]
+    simple_fields = ["studio_name", "host_machine_type", "operator_name", "public_base_url", "onboarding_complete"]
     json_fields = ["alert_destinations", "integrations", "module_settings", "shared_paths", "style_seed"]
 
     for field in simple_fields:
@@ -621,11 +626,12 @@ async def bootstrap_workspace_settings(body: WorkspaceBootstrapBody):
 
     await pool.execute(
         """INSERT INTO workspace_settings
-           (singleton, studio_name, deployment_mode, public_base_url, https_mode, operator_name,
+           (singleton, studio_name, host_machine_type, deployment_mode, public_base_url, https_mode, operator_name,
             shared_paths, style_seed, alert_destinations, integrations, worker_config, module_settings, onboarding_complete, updated_at)
-           VALUES (TRUE,$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,TRUE,now())
+           VALUES (TRUE,$1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb,TRUE,now())
            ON CONFLICT (singleton) DO UPDATE SET
              studio_name=EXCLUDED.studio_name,
+             host_machine_type=EXCLUDED.host_machine_type,
              deployment_mode=EXCLUDED.deployment_mode,
              public_base_url=EXCLUDED.public_base_url,
              https_mode=EXCLUDED.https_mode,
@@ -639,16 +645,17 @@ async def bootstrap_workspace_settings(body: WorkspaceBootstrapBody):
              onboarding_complete=EXCLUDED.onboarding_complete,
              updated_at=now()""",
         body.studio_name.strip(),
+        body.host_machine_type,
         body.deployment_mode,
         body.public_base_url.strip(),
         body.https_mode,
         body.operator_name.strip(),
-        json.dumps(body.shared_paths.dict()),
-        json.dumps(body.style_seed.dict()),
-        json.dumps(body.alert_destinations.dict()),
-        json.dumps(body.integrations.dict()),
-        json.dumps(body.worker.dict()),
-        json.dumps(body.module_settings.dict()),
+        json.dumps(body.shared_paths.model_dump()),
+        json.dumps(body.style_seed.model_dump()),
+        json.dumps(body.alert_destinations.model_dump()),
+        json.dumps(body.integrations.model_dump()),
+        json.dumps(body.worker.model_dump()),
+        json.dumps(body.module_settings.model_dump()),
     )
 
     existing_profile = await pool.fetchrow(

@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 
 from paths import translate_path
+from tasks.plugin_dependencies import build_dependency_warnings
+from workstation import detect_workstation_profile
 
 
 def parse_changes(raw_notes: str) -> list[dict]:
@@ -126,4 +128,8 @@ def generate_revision_artifacts(payload: dict, settings) -> dict:
     session_dir.mkdir(parents=True, exist_ok=True)
     changes = parse_changes(payload["raw_notes"])
     artifact_paths = write_revision_artifacts(session_dir, payload["daw"], changes, payload.get("session_path"))
-    return {"changes": changes, **artifact_paths}
+    return {
+        "changes": changes,
+        "plugin_warnings": build_dependency_warnings(payload["daw"], detect_workstation_profile(settings), changes=changes),
+        **artifact_paths,
+    }

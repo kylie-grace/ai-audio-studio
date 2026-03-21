@@ -9,9 +9,10 @@ It assumes:
 - no ReaScript automation is already built
 - Pro Tools may or may not be licensed on a given day
 - Reaper is available sooner than Pro Tools
+- Wavelab is desirable as a mastering-oriented execution target if its scripting surface is reliable enough
 - the system must support both:
-  - single-machine mode on one powerful Mac
-  - optional split mode where a Mac mini is the control plane and a studio Mac is the execution node
+  - single-machine mode on one powerful workstation
+  - optional split mode where a dedicated control-plane host and a DAW execution worker node are separate
 
 ## Current State
 
@@ -26,6 +27,7 @@ Already built:
 Not yet built:
 - real SoundFlow execution
 - real ReaScript execution
+- Wavelab capability validation
 - DAW environment discovery
 - workstation onboarding
 - actual session introspection
@@ -58,14 +60,20 @@ The finished DAW system should do all of this:
 ## Execution Modes
 
 - `single_machine`
-  - control room, database, automations, and DAW execution all run on one Mac
+  - control room, database, automations, and DAW execution all run on one workstation
   - best for fastest early adoption
 - `control_plane_plus_worker`
-  - Mac mini runs orchestration
-  - studio Mac runs DAW execution and heavy session access
+  - one host runs orchestration
+  - one worker runs DAW execution and heavy session access
   - best for always-on production
 
 The worker must remain optional. The execution layer should be the same abstraction in both modes.
+
+The onboarding/configuration surface must let the operator choose:
+- what machine type the control plane is running on
+- whether the current host also executes DAW work
+- whether future remote workers are expected
+- which worker platforms are in scope: `macos`, `windows`, or both
 
 ## Core DAW Layers
 
@@ -85,7 +93,8 @@ The worker must remain optional. The execution layer should be the same abstract
 4. `daw-adapters`
    - SoundFlow adapter for Pro Tools
    - ReaScript adapter for Reaper
-   - later: shared adapter contract for any future DAW
+   - Wavelab adapter for mastering-safe workflows if supported
+   - shared adapter contract for any future DAW
 
 5. `render-and-listen`
    - generates work bounces
@@ -109,6 +118,7 @@ Build:
   - Pro Tools installed
   - SoundFlow installed
   - SoundFlow CLI/API reachable
+  - Wavelab installed where mastering workflows are expected
   - Reaper CLI or script entry available
   - shared session paths mounted
   - plugin directories readable where possible
@@ -121,6 +131,9 @@ Outputs:
 - `installed_versions`
 - `path_translation_health`
 - `execution_blockers`
+- `worker_platform`
+- `host_machine_type`
+- `plugin_inventory_summary`
 
 Acceptance criteria:
 - operator can open the control room and immediately see whether Reaper automation is ready, Pro Tools automation is ready, or both are unavailable
@@ -255,6 +268,26 @@ Important constraint:
 Acceptance criteria:
 - operator can run approved Pro Tools actions from the queue and get bounded execution with artifacts and rollback-safe session copies
 
+## 5b. DAW Adapter: Wavelab for Mastering
+
+Goal:
+- support mastering-oriented workflows if Wavelab scripting is available and deterministic enough
+
+Build:
+- Wavelab detection and version reporting in workstation discovery
+- capability probe for scripting/CLI hooks
+- bounded commands for:
+  - open mastering project or montage
+  - run export/render variants
+  - write mastering execution notes and logs
+  - package mastering deliverables
+
+Constraint:
+- Wavelab support should start narrower than Reaper or Pro Tools, focused on mastering/export-safe tasks first
+
+Acceptance criteria:
+- the control room can clearly state whether Wavelab automation is supported, and mastering-safe bounded tasks can be previewed before any live execution is enabled
+
 ## 6. Listening and Review Loop
 
 Goal:
@@ -363,6 +396,7 @@ Must-have safeguards:
 Add to the dashboard:
 - workstation readiness panel
 - DAW capability matrix
+- host-machine selector and remote-worker platform posture
 - session manifest viewer
 - mix plan viewer
 - render review panel
@@ -417,6 +451,11 @@ Status:
 - workstation readiness now reports Pro Tools/SoundFlow posture
 - live SoundFlow execution remains intentionally gated pending real workstation validation
 
+## Phase 3b: Wavelab discovery and mastering scaffolding
+- add Wavelab readiness detection
+- define a mastering-safe bounded adapter contract
+- expose Wavelab capability posture in workstation and control-room views
+
 ## Phase 4: Listening/QC loop
 - extend `audio-qc` outputs into richer review objects
 - build reference-compare pipeline
@@ -453,7 +492,7 @@ Status:
 These are the real-world inputs I will need from you before the DAW layer can be called production-ready:
 
 ## Workstation access
-- which Mac will be the first real DAW execution machine
+- which machine will be the first real DAW execution machine
 - whether single-machine or split mode is the initial deploy target
 
 ## DAW posture
@@ -461,6 +500,8 @@ These are the real-world inputs I will need from you before the DAW layer can be
 - Pro Tools version
 - whether SoundFlow is installed
 - whether Pro Tools scripting/accessibility permissions are enabled
+- whether Wavelab is installed and intended for mastering workflows
+- whether remote worker targets include Windows
 
 ## Session conventions
 - preferred project folder structure
@@ -495,8 +536,9 @@ These are the real-world inputs I will need from you before the DAW layer can be
 3. Build listening/reporting and render review.
 4. Build mix-plan and session-manifest UI.
 5. Build SoundFlow bootstrap and deterministic Pro Tools scaffolding.
-6. Validate on a real workstation.
-7. Only then expand into aggressive auto-mix iteration.
+6. Add Wavelab discovery/mastering scaffolding where viable.
+7. Validate on real workstation targets, including future Windows worker assumptions where relevant.
+8. Only then expand into aggressive auto-mix iteration.
 
 ## Definition of Done
 

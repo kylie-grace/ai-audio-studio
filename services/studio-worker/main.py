@@ -49,6 +49,7 @@ class SessionManifestBody(BaseModel):
 
 
 class MixPlanPreviewBody(BaseModel):
+    workstation: dict = {}
     session_manifest: dict = {}
     priorities: list[str] = []
     references: list[str] = []

@@ -366,6 +366,7 @@ type MixPlanPreview = {
   priorities: string[];
   client_notes: string;
   phases: Array<{ slug: string; title: string; actions: string[] }>;
+  dependency_warnings?: Array<{ slug: string; severity: string; detail: string }>;
   risk_summary: string[];
 };
 
@@ -402,6 +403,7 @@ type RenderPlanPreview = {
 type ExecutionPlanPreview = {
   status: string;
   blockers: string[];
+  dependency_warnings?: Array<{ slug: string; severity: string; detail: string }>;
   ready_for_operator_review: boolean;
   recommended_next_step: string;
   phases: Array<{ slug: string; title: string; status: string; summary: string }>;
@@ -462,6 +464,7 @@ type ModuleSettings = {
 
 type WorkspaceSettings = {
   studio_name: string;
+  host_machine_type: "mac-mini" | "mac-studio" | "macbook-pro" | "windows-pc" | "other";
   deployment_mode: "single_machine" | "control_plane_plus_worker";
   public_base_url: string;
   https_mode: "local_http" | "https_enabled" | "https_terminated_elsewhere";
@@ -840,6 +843,7 @@ const primaryTabs: Array<{ id: TabId; label: string; summary: string; accent: st
 function defaultWorkspaceSettings(): WorkspaceSettings {
   return {
     studio_name: "",
+    host_machine_type: "macbook-pro",
     deployment_mode: "single_machine",
     public_base_url: browserProtocol === "https:" ? frontDoorUrl : "https://localhost",
     https_mode: browserProtocol === "https:" ? "https_enabled" : "local_http",
@@ -1232,8 +1236,8 @@ async function loadDashboardData(): Promise<DashboardData> {
     ]);
 
   const previewProjectRoot = workspace.settings.shared_paths.projects || "/data/projects";
-  const [workstationProfile, sessionManifestPreview, mixPlanPreview, renderPlanPreview, listeningReportPreview] = await Promise.all([
-    fetchOptionalJson<WorkstationProfile>(`${API.studioWorker}/workstation/profile`),
+  const workstationProfile = await fetchOptionalJson<WorkstationProfile>(`${API.studioWorker}/workstation/profile`);
+  const [sessionManifestPreview, mixPlanPreview, renderPlanPreview, listeningReportPreview] = await Promise.all([
     fetchOptionalJson<SessionManifestPreview>(`${API.studioWorker}/session-manifest/preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -1243,6 +1247,7 @@ async function loadDashboardData(): Promise<DashboardData> {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
+        workstation: workstationProfile,
         session_manifest: {
           project_root: previewProjectRoot,
           stem_count: 0,
@@ -1428,6 +1433,8 @@ export function App() {
   const [selectedWorkerSlug, setSelectedWorkerSlug] = useState<string>("");
   const [workstationPlugins, setWorkstationPlugins] = useState<WorkstationPluginInventory | null>(null);
   const [workstationPluginsState, setWorkstationPluginsState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [artifactActionMessage, setArtifactActionMessage] = useState<string | null>(null);
+  const [artifactActionError, setArtifactActionError] = useState<string | null>(null);
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const isInitialLoad = data.loadState === "loading" && !data.refreshedAt;
@@ -1933,6 +1940,17 @@ export function App() {
     }
   }
 
+  async function copyArtifactValue(value: string, label: string) {
+    setArtifactActionMessage(null);
+    setArtifactActionError(null);
+    try {
+      await navigator.clipboard.writeText(value);
+      setArtifactActionMessage(`${label} copied.`);
+    } catch (error) {
+      setArtifactActionError(error instanceof Error ? error.message : `Unable to copy ${label.toLowerCase()}`);
+    }
+  }
+
   async function copyServiceField(value: string, label: string) {
     setServiceInspectorMessage(null);
     setServiceInspectorError(null);
@@ -2047,7 +2065,7 @@ export function App() {
     {
       label: "Studio identity",
       value: workspaceSettings.studio_name || "Unnamed studio",
-      detail: `${workspaceSettings.operator_name || "owner"} · ${workspaceSettings.deployment_mode === "control_plane_plus_worker" ? "control plane + worker" : "single machine"}`,
+      detail: `${workspaceSettings.operator_name || "owner"} · ${workspaceSettings.host_machine_type} · ${workspaceSettings.deployment_mode === "control_plane_plus_worker" ? "control plane + worker" : "single machine"}`,
     },
     {
       label: "Voice context",
@@ -2641,14 +2659,27 @@ export function App() {
                 </div>
                 <div className="panel-span-4 table-stack">
                   {data.mixPlanPreview ? (
-                    data.mixPlanPreview.phases.map((phase) => (
-                      <div key={phase.slug} className="table-row">
-                        <div className="row-main">
-                          <strong>{phase.title}</strong>
-                          <div className="muted">{phase.actions.join(" · ")}</div>
+                    <>
+                      {data.mixPlanPreview.phases.map((phase) => (
+                        <div key={phase.slug} className="table-row">
+                          <div className="row-main">
+                            <strong>{phase.title}</strong>
+                            <div className="muted">{phase.actions.join(" · ")}</div>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      ))}
+                      {(data.mixPlanPreview.dependency_warnings ?? []).map((warning) => (
+                        <div key={warning.slug} className="table-row compact-row">
+                          <div className="row-main">
+                            <strong>{warning.slug}</strong>
+                            <div className="muted">{warning.detail}</div>
+                          </div>
+                          <div className="row-meta">
+                            <span className={`status-pill ${warning.severity === "warn" ? "warn" : "muted"}`}>{warning.severity}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </>
                   ) : (
                     <p className="empty-state">Mix-plan previews will appear here once the worker preview endpoint is reachable.</p>
                   )}
@@ -2721,6 +2752,17 @@ export function App() {
                           </div>
                           <div className="row-meta">
                             <span className={`status-pill ${phase.status === "ready" ? "ok" : phase.status === "watch" ? "warn" : "bad"}`}>{phase.status}</span>
+                          </div>
+                        </div>
+                      ))}
+                      {(data.executionPlanPreview.dependency_warnings ?? []).map((warning) => (
+                        <div key={warning.slug} className="table-row compact-row">
+                          <div className="row-main">
+                            <strong>{warning.slug}</strong>
+                            <div className="muted">{warning.detail}</div>
+                          </div>
+                          <div className="row-meta">
+                            <span className={`status-pill ${warning.severity === "warn" ? "warn" : "muted"}`}>{warning.severity}</span>
                           </div>
                         </div>
                       ))}
@@ -3871,6 +3913,15 @@ export function App() {
                       </div>
                       <div className="row-meta">
                         <span className="muted">{entry.created_at ? summarizeTime(entry.created_at) : "n/a"}</span>
+                        {artifactPath ? (
+                          <button className="action-button" type="button" onClick={() => copyArtifactValue(artifactPath, "Artifact path")}>
+                            copy path
+                          </button>
+                        ) : (
+                          <button className="action-button" type="button" onClick={() => copyArtifactValue(JSON.stringify(artifact, null, 2), "Artifact payload")}>
+                            copy payload
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -3879,6 +3930,8 @@ export function App() {
                 {projectDetail && !projectDetail.artifact_inventory.length ? (
                   <p className="empty-state">This project does not have artifact history yet. Approvals and worker executions will start filling it in.</p>
                 ) : null}
+                {artifactActionMessage ? <p className="feedback ok">{artifactActionMessage}</p> : null}
+                {artifactActionError ? <p className="feedback bad">{artifactActionError}</p> : null}
               </div>
             </article>
           </section>
@@ -4033,7 +4086,7 @@ export function App() {
               <article className="snapshot-card">
                 <span className="metric-label">Saved workspace</span>
                 <strong>{workspaceSettings.studio_name || "Unnamed studio"}</strong>
-                <p>{workspaceSettings.operator_name || "owner"} · {workspaceSettings.deployment_mode === "control_plane_plus_worker" ? "control plane + worker" : "single machine"}</p>
+                <p>{workspaceSettings.operator_name || "owner"} · {workspaceSettings.host_machine_type} · {workspaceSettings.deployment_mode === "control_plane_plus_worker" ? "control plane + worker" : "single machine"}</p>
               </article>
               <article className="snapshot-card">
                 <span className="metric-label">LAN front door</span>
@@ -4118,6 +4171,23 @@ export function App() {
                   >
                     <option value="single_machine">Single machine</option>
                     <option value="control_plane_plus_worker">Control plane + worker</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="metric-label">Host machine</span>
+                  <select
+                    value={workspaceDraft.host_machine_type}
+                    onChange={(event) =>
+                      setWorkspaceDraft((current) => ({
+                        ...current,
+                        host_machine_type: event.target.value as WorkspaceSettings["host_machine_type"],
+                      }))}
+                  >
+                    <option value="mac-mini">Mac mini</option>
+                    <option value="mac-studio">Mac Studio</option>
+                    <option value="macbook-pro">MacBook Pro</option>
+                    <option value="windows-pc">Windows PC</option>
+                    <option value="other">Other</option>
                   </select>
                 </label>
                 <label className="field">
