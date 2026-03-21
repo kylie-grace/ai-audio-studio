@@ -36,6 +36,8 @@ What is working now:
 - DAW preview loop for workstation readiness, session introspection, mix plans, render plans, listening summaries, and execution-plan staging
 - dry-run DAW execution now stages disposable working copies and execution manifests before touching generated scripts
 - host-side REAPER smoke dispatch is now validated on this Mac via `scripts/reaper_host_smoke_test.py`
+- host-native `studio-worker` launch scripts now exist for single-machine REAPER execution outside Docker
+- end-to-end queued `execute-reascript` execution has been validated on this Mac through `project-state` -> host worker -> REAPER -> worker task completion
 - idempotent one-shot n8n workflow bootstrap against the running `n8n` service
 - service `/status` endpoints across the major automation and production modules
 - control-room service drilldowns with live status snapshots and saved tuning summaries
@@ -55,6 +57,9 @@ Latest known validation in this repo state:
 - Docker rebuild of the control-room and service stack under `infra/docker-compose.yml`
 - `docker compose --env-file infra/env.example -f infra/docker-compose.yml config`
 - runtime smoke checks for dashboard, proxied service status endpoints, control-plane health, and HTTPS front door
+- host REAPER smoke dispatch via `python3 scripts/reaper_host_smoke_test.py`
+- host-native worker launch on `:8191` with successful registration against `project-state`
+- live queued `execute-reascript` task completion against the host worker, including working-copy artifacts and a script-written marker file
 
 Host-environment note:
 - API-level FastAPI tests in `tests/api` currently skip on this host because the active Python environment does not have `fastapi` and `asyncpg` installed. Runtime validation was therefore completed through Dockerized services and the live dashboard proxy instead.
@@ -90,9 +95,10 @@ This validation is meaningful for the MVP, but it is not yet comprehensive enoug
    - local and optional worker execution paths exist
    - dry-run-friendly DAW task handling exists
    - Reaper `.rpp` session introspection, render-plan previews, QC/reference compare previews, and execution-plan previews now exist
+   - host-native REAPER execution has now been validated on this Mac through the queued worker path
    - a real second-machine validation pass with production DAW tooling is still pending
    Impact:
-   - the platform is architecturally ready for the worker model, but not yet fully proven against a live studio workstation
+   - the platform is now proven for single-machine REAPER orchestration on this Mac, but not yet fully proven for remote-worker DAW execution or Pro Tools/SoundFlow
 
 5. Test coverage still trails the runtime ambition.
    Current state:

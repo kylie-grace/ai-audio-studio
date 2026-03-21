@@ -55,6 +55,20 @@ docker compose --env-file infra/.env -f infra/docker-compose.worker.yml up -d
 docker compose --env-file infra/.env -f infra/docker-compose.worker.yml ps
 ```
 
+For single-machine or host-native REAPER automation on the same Mac:
+
+```bash
+bash scripts/install_host_studio_worker.sh
+PORT=8191 \
+WORKER_SLUG=host-reaper-worker \
+WORKER_DISPLAY_NAME="Host Reaper Worker" \
+WORKER_API_BASE_URL=http://127.0.0.1:8191 \
+PROJECT_STATE_URL=http://127.0.0.1:8080 \
+WORKER_CAPABILITIES=session-prep,revision-parser,delivery-packager,execute-soundflow,execute-reascript \
+STUDIO_WORKER_DRY_RUN_DAW=false \
+bash scripts/start_host_studio_worker.sh infra/env.example
+```
+
 ## Verify
 
 - Studio worker health: `http://<studio-mac-ip>:8190/health`
@@ -67,6 +81,7 @@ docker compose --env-file infra/.env -f infra/docker-compose.worker.yml ps
 - Registered workers: `http://<mac-mini-ip>:8080/workers`
 - Worker tasks: `http://<mac-mini-ip>:8080/workers/tasks/list`
 - Host-side Reaper smoke test: `python3 scripts/reaper_host_smoke_test.py`
+- Host worker status: `http://127.0.0.1:8191/status`
 
 ## Behavior
 
