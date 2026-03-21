@@ -202,7 +202,7 @@ class FakePool:
             )
             self.projects[project_id] = row
             return row
-        if "SELECT * FROM projects WHERE id=$1 OR slug=$1" in query:
+        if "SELECT * FROM projects WHERE id::text=$1 OR slug=$1" in query or "SELECT * FROM projects WHERE id=$1 OR slug=$1" in query:
             key = args[0]
             return self.projects.get(key) or next(
                 (row for row in self.projects.values() if row["slug"] == key),
@@ -229,6 +229,22 @@ class FakePool:
     async def fetch(self, query: str, *args: Any) -> list[FakeRow]:
         if "SELECT * FROM jobs WHERE status = 'awaiting-approval'" in query:
             return [row for row in self.jobs.values() if row["status"] == "awaiting-approval"]
+        if "SELECT * FROM leads WHERE project_id=$1" in query:
+            return [row for row in self.leads.values() if row.get("project_id") == args[0]]
+        if "SELECT * FROM jobs WHERE project_id=$1" in query:
+            return [row for row in self.jobs.values() if row.get("project_id") == args[0]]
+        if "SELECT * FROM revisions WHERE project_id=$1" in query:
+            return [row for row in self.revisions.values() if row.get("project_id") == args[0]]
+        if "SELECT * FROM qc_reports WHERE project_id=$1" in query:
+            return [row for row in getattr(self, "qc_reports", []) if row.get("project_id") == args[0]]
+        if "SELECT * FROM mix_plans WHERE project_id=$1" in query:
+            return [row for row in getattr(self, "mix_plans", []) if row.get("project_id") == args[0]]
+        if "SELECT * FROM session_manifests WHERE project_id=$1" in query:
+            return [row for row in getattr(self, "session_manifests", []) if row.get("project_id") == args[0]]
+        if "SELECT * FROM worker_tasks WHERE project_id=$1" in query:
+            return [row for row in self.worker_tasks if row.get("project_id") == args[0]]
+        if "SELECT * FROM audit_log WHERE project_id=$1" in query:
+            return [row for row in self.audit_log if row.get("project_id") == args[0]]
         if "SELECT slug, display_name, status, last_seen_at FROM worker_nodes" in query:
             if "status <> 'retired'" in query:
                 return [row for row in self.worker_nodes if row.get("status") != "retired"]
@@ -423,6 +439,44 @@ def test_create_and_fetch_project_by_slug():
     fetch = client.get(f"/projects/{created['slug']}")
     assert fetch.status_code == 200
     assert fetch.json()["client_name"] == "Artist Name"
+
+
+def test_project_artifact_routes_expose_inventory_preview_and_download(tmp_path):
+    pool = FakePool()
+    project_root = tmp_path / "demo-project"
+    project_root.mkdir()
+    manifest_path = project_root / "session_manifest.json"
+    manifest_path.write_text('{"session":"demo","status":"ready"}', encoding="utf-8")
+    pool.projects["project-1"] = FakeRow(
+        id="project-1",
+        slug="demo-artist",
+        client_name="Demo Artist",
+        service_type="mix",
+        status="active",
+    )
+    pool.jobs["job-awaiting"]["artifacts"] = [{"kind": "session-manifest", "path": str(manifest_path)}]
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    inventory = client.get("/projects/project-1/artifacts")
+    assert inventory.status_code == 200
+    payload = inventory.json()
+    assert payload["review_summary"]["artifact_count"] == 1
+    assert payload["artifact_inventory"][0]["artifact_path"] == str(manifest_path)
+
+    artifact_id = payload["artifact_inventory"][0]["artifact_id"]
+    artifact_detail = client.get(f"/projects/project-1/artifacts/{artifact_id}")
+    assert artifact_detail.status_code == 200
+    assert artifact_detail.json()["exists"] is True
+    assert artifact_detail.json()["file_name"] == "session_manifest.json"
+
+    preview = client.get(f"/projects/project-1/artifacts/{artifact_id}/preview")
+    assert preview.status_code == 200
+    assert preview.json()["content"].startswith('{"session":"demo"')
+
+    download = client.get(f"/projects/project-1/artifacts/{artifact_id}/download")
+    assert download.status_code == 200
+    assert download.headers["content-disposition"].endswith('filename="session_manifest.json"')
 
 
 def test_approval_requires_authorized_actor():

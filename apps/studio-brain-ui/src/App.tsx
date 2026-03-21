@@ -315,9 +315,11 @@ type ProjectDetail = {
   worker_tasks: WorkerTask[];
   audit_entries: AuditEntry[];
   artifact_inventory: Array<{
+    artifact_id: number;
     source: string;
     created_at?: string | null;
     artifact: Record<string, unknown>;
+    artifact_path?: string | null;
     job_id?: string;
     task_id?: string;
     module?: string;
@@ -325,6 +327,23 @@ type ProjectDetail = {
     task_type?: string;
     worker_slug?: string;
   }>;
+  review_summary: {
+    qc_report_count: number;
+    passing_qc_count: number;
+    failing_qc_count: number;
+    revision_count: number;
+    mix_plan_count: number;
+    artifact_count: number;
+    latest_revision_status?: string | null;
+    latest_mix_plan_status?: string | null;
+  };
+};
+
+type ArtifactPreview = {
+  artifact_id: number;
+  path: string;
+  file_name: string;
+  content: string;
 };
 
 type SessionManifestPreview = {
@@ -1447,6 +1466,8 @@ export function App() {
   const [workstationValidationState, setWorkstationValidationState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [artifactActionMessage, setArtifactActionMessage] = useState<string | null>(null);
   const [artifactActionError, setArtifactActionError] = useState<string | null>(null);
+  const [artifactPreview, setArtifactPreview] = useState<ArtifactPreview | null>(null);
+  const [artifactPreviewState, setArtifactPreviewState] = useState<"idle" | "loading" | "ready" | "error">("idle");
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const isInitialLoad = data.loadState === "loading" && !data.refreshedAt;
@@ -1616,6 +1637,13 @@ export function App() {
     return () => {
       active = false;
     };
+  }, [selectedProject?.id]);
+
+  useEffect(() => {
+    setArtifactPreview(null);
+    setArtifactPreviewState("idle");
+    setArtifactActionMessage(null);
+    setArtifactActionError(null);
   }, [selectedProject?.id]);
 
   useEffect(() => {
@@ -1983,6 +2011,21 @@ export function App() {
       setArtifactActionMessage(`${label} copied.`);
     } catch (error) {
       setArtifactActionError(error instanceof Error ? error.message : `Unable to copy ${label.toLowerCase()}`);
+    }
+  }
+
+  async function previewArtifact(projectId: string, artifactId: number) {
+    setArtifactActionMessage(null);
+    setArtifactActionError(null);
+    setArtifactPreviewState("loading");
+    try {
+      const payload = await fetchJson<ArtifactPreview>(`${API.projectState}/projects/${projectId}/artifacts/${artifactId}/preview`);
+      setArtifactPreview(payload);
+      setArtifactPreviewState("ready");
+    } catch (error) {
+      setArtifactPreview(null);
+      setArtifactPreviewState("error");
+      setArtifactActionError(error instanceof Error ? error.message : "Unable to preview artifact");
     }
   }
 
@@ -3924,7 +3967,7 @@ export function App() {
                   <p className="section-kicker">Projects</p>
                   <h2>Project Detail</h2>
                 </div>
-                <span className="count-pill">{projectDetail?.artifact_inventory.length ?? 0} artifacts</span>
+                <span className="count-pill">{projectDetail?.review_summary.artifact_count ?? projectDetail?.artifact_inventory.length ?? 0} artifacts</span>
               </div>
               <div className="segmented-list">
                 {data.projects.slice(0, 8).map((project) => (
@@ -3961,6 +4004,10 @@ export function App() {
                     <p className="panel-note">
                       {projectDetail ? `${projectDetail.revisions.length} revisions · ${projectDetail.qc_reports.length} qc reports · ${projectDetail.mix_plans.length} mix plans` : "Project detail is loading."}
                     </p>
+                    <div className="summary-pill-row">
+                      {projectDetail ? <span className="summary-pill">{projectDetail.review_summary.passing_qc_count} qc pass</span> : null}
+                      {projectDetail ? <span className="summary-pill">{projectDetail.review_summary.failing_qc_count} qc review</span> : null}
+                    </div>
                   </div>
                 </div>
                 <div className="panel-span-4">
@@ -3979,7 +4026,10 @@ export function App() {
                 {projectDetailState === "loading" ? <p className="empty-state">Loading project timeline…</p> : null}
                 {projectDetail?.artifact_inventory.slice(0, 10).map((entry, index) => {
                   const artifact = entry.artifact ?? {};
-                  const artifactPath = (artifact.path as string | undefined) ?? (artifact.manifest_path as string | undefined);
+                  const artifactPath =
+                    entry.artifact_path ??
+                    (artifact.path as string | undefined) ??
+                    (artifact.manifest_path as string | undefined);
                   return (
                     <div key={`${entry.source}-${entry.job_id ?? entry.task_id ?? index}`} className="table-row compact-row">
                       <div className="row-main">
@@ -3991,6 +4041,23 @@ export function App() {
                       </div>
                       <div className="row-meta">
                         <span className="muted">{entry.created_at ? summarizeTime(entry.created_at) : "n/a"}</span>
+                        {selectedProject?.id ? (
+                          <>
+                            <button className="action-button" type="button" onClick={() => previewArtifact(selectedProject.id, entry.artifact_id)}>
+                              preview
+                            </button>
+                            {artifactPath ? (
+                              <a
+                                className="action-button"
+                                href={`${API.projectState}/projects/${selectedProject.id}/artifacts/${entry.artifact_id}/download`}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                download
+                              </a>
+                            ) : null}
+                          </>
+                        ) : null}
                         {artifactPath ? (
                           <button className="action-button" type="button" onClick={() => copyArtifactValue(artifactPath, "Artifact path")}>
                             copy path
@@ -4008,6 +4075,14 @@ export function App() {
                 {projectDetail && !projectDetail.artifact_inventory.length ? (
                   <p className="empty-state">This project does not have artifact history yet. Approvals and worker executions will start filling it in.</p>
                 ) : null}
+                {artifactPreview ? (
+                  <div className="approval-preview-block top-gap">
+                    <strong>{artifactPreview.file_name}</strong>
+                    <div className="muted">{artifactPreview.path}</div>
+                    <pre className="code-preview">{artifactPreview.content}</pre>
+                  </div>
+                ) : null}
+                {artifactPreviewState === "loading" ? <p className="empty-state">Loading artifact preview…</p> : null}
                 {artifactActionMessage ? <p className="feedback ok">{artifactActionMessage}</p> : null}
                 {artifactActionError ? <p className="feedback bad">{artifactActionError}</p> : null}
               </div>
@@ -4022,7 +4097,7 @@ export function App() {
                   <h2>Project Review Stack</h2>
                 </div>
                 <span className="count-pill">
-                  {projectDetail ? `${projectDetail.session_manifests.length} manifests · ${projectDetail.qc_reports.length} qc · ${projectDetail.mix_plans.length} plans` : "loading"}
+                  {projectDetail ? `${projectDetail.review_summary.passing_qc_count}/${projectDetail.review_summary.qc_report_count} qc pass · ${projectDetail.review_summary.artifact_count} artifacts` : "loading"}
                 </span>
               </div>
               <div className="workspace-grid nested-grid">
@@ -4090,6 +4165,21 @@ export function App() {
                     </div>
                   ))}
                   {projectDetail && !projectDetail.mix_plans.length && !projectDetail.revisions.length ? <p className="empty-state">No mix plans or revisions yet.</p> : null}
+                </div>
+                <div className="panel-span-12">
+                  <div className="mini-card">
+                    <span className="metric-label">Review summary</span>
+                    <strong>
+                      {projectDetail
+                        ? `${projectDetail.review_summary.revision_count} revisions · ${projectDetail.review_summary.mix_plan_count} mix plans · ${projectDetail.review_summary.failing_qc_count} qc issues`
+                        : "Loading review summary"}
+                    </strong>
+                    <div className="summary-pill-row">
+                      {projectDetail?.review_summary.latest_revision_status ? <span className="summary-pill">revision {projectDetail.review_summary.latest_revision_status}</span> : null}
+                      {projectDetail?.review_summary.latest_mix_plan_status ? <span className="summary-pill">mix plan {projectDetail.review_summary.latest_mix_plan_status}</span> : null}
+                      {projectDetail ? <span className="summary-pill">{projectDetail.review_summary.artifact_count} artifacts</span> : null}
+                    </div>
+                  </div>
                 </div>
               </div>
             </article>
