@@ -63,6 +63,7 @@ Execution targets:
 Newly surfaced implementation gaps:
 - listening and render review are still mostly preview-time objects rather than persisted review records
 - Windows worker support now has explicit path translation and validation scaffolding, but still needs live workstation validation and runtime adapter proof
+- workstation setup now includes validation plus a dry-run planning smoke, but the remaining gap is DAW-specific live smoke coverage for Pro Tools/SoundFlow and WaveLab
 
 ## Definition of done
 

@@ -16,20 +16,23 @@ from tasks.mix_plan import build_mix_plan
 from tasks.execution_plan import build_execution_plan
 from tasks.render_plan import build_render_plan
 from tasks.session_manifest import build_session_manifest
-from workstation import detect_workstation_profile, validate_workstation_setup
+from workstation import build_workstation_smoke_report, detect_workstation_profile, validate_workstation_setup
 
 _client: httpx.AsyncClient | None = None
 _runner: asyncio.Task | None = None
+_worker: StudioWorkerRunner | None = None
 _settings = load_settings()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _client, _runner
+    global _client, _runner, _worker
     _client = httpx.AsyncClient(timeout=30.0)
-    worker = StudioWorkerRunner(_client, _settings)
-    _runner = asyncio.create_task(worker.run_forever())
+    _worker = StudioWorkerRunner(_client, _settings)
+    _runner = asyncio.create_task(_worker.run_forever())
     yield
+    if _worker is not None:
+        _worker.request_drain()
     if _runner is not None:
         _runner.cancel()
         with suppress(asyncio.CancelledError):
@@ -96,6 +99,7 @@ async def health():
 @app.get("/status")
 async def status():
     workstation = detect_workstation_profile(_settings)
+    runtime = _worker.runtime_state() if _worker is not None else {"drain_requested": False, "current_task_id": None, "last_status": "booting"}
     return {
         "status": "ok",
         "worker_slug": _settings.worker_slug,
@@ -108,6 +112,7 @@ async def status():
         "dry_run_daw": _settings.dry_run_daw,
         "configured_workstation": _settings.workstation_profile,
         "workstation": workstation,
+        "runtime": runtime,
         "daw_ready_count": sum(1 for daw in workstation["daws"] if daw["automation_ready"]),
         "daw_detected_count": sum(1 for daw in workstation["daws"] if daw["installed"]),
         "preview_surfaces": ["session-manifest", "mix-plan", "render-plan", "listening-report", "execution-plan"],
@@ -128,6 +133,32 @@ async def workstation_plugins():
 @app.get("/workstation/validate")
 async def workstation_validate():
     return validate_workstation_setup(_settings)
+
+
+@app.post("/workstation/dry-run-smoke")
+async def workstation_dry_run_smoke():
+    return build_workstation_smoke_report(_settings)
+
+
+@app.get("/runtime")
+async def runtime_state():
+    if _worker is None:
+        return {"status": "booting", "worker_slug": _settings.worker_slug, "runtime": {"drain_requested": False, "current_task_id": None, "last_status": "booting"}}
+    return {"status": "ok", "worker_slug": _settings.worker_slug, "runtime": _worker.runtime_state()}
+
+
+@app.post("/runtime/drain")
+async def runtime_drain():
+    if _worker is None:
+        return {"status": "booting", "worker_slug": _settings.worker_slug, "runtime": {"drain_requested": False, "current_task_id": None, "last_status": "booting"}}
+    return {"status": "ok", "worker_slug": _settings.worker_slug, "runtime": _worker.request_drain()}
+
+
+@app.post("/runtime/resume")
+async def runtime_resume():
+    if _worker is None:
+        return {"status": "booting", "worker_slug": _settings.worker_slug, "runtime": {"drain_requested": False, "current_task_id": None, "last_status": "booting"}}
+    return {"status": "ok", "worker_slug": _settings.worker_slug, "runtime": _worker.clear_drain()}
 
 
 @app.post("/session-manifest/preview")

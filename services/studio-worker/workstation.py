@@ -6,8 +6,15 @@ import os
 import platform
 import shutil
 import socket
+import tempfile
 from pathlib import Path
 from typing import Iterable
+
+from tasks.execution_plan import build_execution_plan
+from tasks.listening_report import build_listening_report
+from tasks.mix_plan import build_mix_plan
+from tasks.render_plan import build_render_plan
+from tasks.session_manifest import build_session_manifest
 
 
 PLUGIN_ROOTS_BY_PLATFORM = {
@@ -349,4 +356,115 @@ def validate_workstation_setup(settings) -> dict:
             (check["label"] for check in checks if check["status"] != "ready"),
             "Workstation is ready for operator-reviewed execution.",
         ),
+    }
+
+
+def build_workstation_smoke_report(settings) -> dict:
+    profile = detect_workstation_profile(settings)
+    validation = validate_workstation_setup(settings)
+
+    with tempfile.TemporaryDirectory(prefix="studio-worker-smoke-") as temp_root:
+        project_root = Path(temp_root) / "smoke-project"
+        stems_dir = project_root / "stems"
+        session_dir = project_root / "session"
+        references_dir = project_root / "references"
+        stems_dir.mkdir(parents=True, exist_ok=True)
+        session_dir.mkdir(parents=True, exist_ok=True)
+        references_dir.mkdir(parents=True, exist_ok=True)
+
+        (stems_dir / "lead_vox.wav").write_text("dry-run-audio")
+        (stems_dir / "drum_bus.wav").write_text("dry-run-audio")
+        (references_dir / "reference-note.txt").write_text("Trusted low-end and vocal-forward target.")
+        (session_dir / "smoke-session.rpp").write_text(
+            '<REAPER_PROJECT 0.1 "7.0/x64" 0 0 0\n'
+            '  TEMPO 128 4 4\n'
+            '  <TRACK\n'
+            '    NAME "Lead Vox"\n'
+            '  >\n'
+            '  <TRACK\n'
+            '    NAME "Drum Bus"\n'
+            '  >\n'
+            '  MARKER 1 8.0 "Hook"\n'
+        )
+
+        session_manifest = build_session_manifest({"project_root": str(project_root)})
+        mix_plan = build_mix_plan(
+            {
+                "workstation": profile,
+                "session_manifest": session_manifest,
+                "priorities": ["vocals", "low-end translation", "impact"],
+                "references": ["operator-reference"],
+                "client_notes": "Smoke-run only; verify workstation planning chain.",
+                "genre": "pop",
+            }
+        )
+        render_plan = build_render_plan(
+            {
+                "project_slug": "smoke-project",
+                "target": "internal-review",
+                "include_stems": True,
+                "include_instrumental": True,
+            }
+        )
+        listening_report = build_listening_report(
+            {
+                "target": "review-mix",
+                "references": ["operator-reference"],
+                "issues": ["smoke-run only"],
+                "qc_summary": {"target": "streaming", "hard_fail_count": 0, "warning_count": 1},
+                "reference_summary": {"alignment": "preview", "lufs_delta": -0.4, "true_peak_delta": -0.2},
+            }
+        )
+        execution_plan = build_execution_plan(
+            {
+                "workstation": profile,
+                "session_manifest": session_manifest,
+                "mix_plan": mix_plan,
+                "render_plan": render_plan,
+                "listening_report": listening_report,
+            }
+        )
+
+    summary = {
+        "session_ready": session_manifest.get("readiness", {}).get("ready_for_planning", False),
+        "mix_phase_count": len(mix_plan.get("phases") or []),
+        "render_profile_count": render_plan.get("profile_count", 0),
+        "listening_issue_count": listening_report.get("summary", {}).get("issue_count", 0),
+        "execution_ready_for_review": execution_plan.get("ready_for_operator_review", False),
+        "warning_count": len(execution_plan.get("dependency_warnings") or []),
+    }
+    result = "pass" if validation["ready"] and summary["execution_ready_for_review"] else "review"
+
+    return {
+        "status": "ok",
+        "result": result,
+        "host": profile["host"],
+        "platform": profile["platform"],
+        "dry_run_daw": profile["dry_run_daw"],
+        "summary": summary,
+        "recommended_next_step": validation["recommended_next_step"],
+        "validation": validation,
+        "session_manifest": {
+            "stem_count": session_manifest.get("stem_count", 0),
+            "reference_count": session_manifest.get("reference_count", 0),
+            "session_type": session_manifest.get("session_details", {}).get("session_type", "generic"),
+            "track_count": session_manifest.get("session_details", {}).get("track_count", 0),
+        },
+        "mix_plan": {
+            "phase_count": len(mix_plan.get("phases") or []),
+            "risk_summary": mix_plan.get("risk_summary") or [],
+        },
+        "render_plan": {
+            "profile_count": render_plan.get("profile_count", 0),
+            "review_candidate_slug": render_plan.get("review_candidate_slug"),
+        },
+        "listening_report": {
+            "next_actions": listening_report.get("next_actions") or [],
+            "focus_flags": listening_report.get("summary", {}).get("focus_flags", []),
+        },
+        "execution_plan": {
+            "blockers": execution_plan.get("blockers") or [],
+            "dependency_warnings": execution_plan.get("dependency_warnings") or [],
+            "recommended_next_step": execution_plan.get("recommended_next_step"),
+        },
     }

@@ -33,6 +33,9 @@ class StudioWorkerRunner:
         self.client = client
         self.settings = settings
         self._heartbeat_count = 0
+        self._drain_requested = False
+        self._current_task_id: str | None = None
+        self._last_status = "starting"
 
     def cancel_marker_path(self, task_id: str) -> Path:
         root = Path(tempfile.gettempdir()) / "ai-audio-studio"
@@ -45,6 +48,22 @@ class StudioWorkerRunner:
             "configured": self.settings.workstation_profile,
             "detected": detected,
         }
+
+    def runtime_state(self) -> dict:
+        return {
+            "worker_slug": self.settings.worker_slug,
+            "drain_requested": self._drain_requested,
+            "current_task_id": self._current_task_id,
+            "last_status": self._last_status,
+        }
+
+    def request_drain(self) -> dict:
+        self._drain_requested = True
+        return self.runtime_state()
+
+    def clear_drain(self) -> dict:
+        self._drain_requested = False
+        return self.runtime_state()
 
     async def sync_plugin_inventory(self) -> None:
         snapshot = self.workstation_snapshot()
@@ -81,6 +100,7 @@ class StudioWorkerRunner:
 
     async def heartbeat(self, status: str = "idle") -> None:
         self._heartbeat_count += 1
+        self._last_status = status
         await self.client.post(
             f"{self.settings.project_state_url}/workers/{self.settings.worker_slug}/heartbeat",
             headers=headers(self.settings),
@@ -173,9 +193,14 @@ class StudioWorkerRunner:
         await self.register_worker()
         while True:
             try:
+                if self._drain_requested:
+                    await self.heartbeat("draining")
+                    await asyncio.sleep(self.settings.poll_interval_seconds)
+                    continue
                 await self.heartbeat("idle")
                 task = await self.claim_next_task()
                 if task:
+                    self._current_task_id = task["id"]
                     await self.heartbeat("busy")
                     try:
                         result, cancelled = await self.execute_task_with_control(task)
@@ -189,6 +214,8 @@ class StudioWorkerRunner:
                         if cancelled or (current and current.get("status") == "cancelled"):
                             continue
                         await self.complete_task(task["id"], result)
+                    finally:
+                        self._current_task_id = None
             except Exception:
                 with suppress(Exception):
                     await self.heartbeat("error")

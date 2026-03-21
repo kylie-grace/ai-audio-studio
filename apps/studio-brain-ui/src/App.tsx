@@ -466,6 +466,57 @@ type WorkstationValidation = {
   recommended_next_step: string;
 };
 
+type WorkstationSmokeReport = {
+  status: string;
+  result: "pass" | "review";
+  host: string;
+  platform: string;
+  dry_run_daw: boolean;
+  summary: {
+    session_ready: boolean;
+    mix_phase_count: number;
+    render_profile_count: number;
+    listening_issue_count: number;
+    execution_ready_for_review: boolean;
+    warning_count: number;
+  };
+  recommended_next_step: string;
+  validation: WorkstationValidation;
+  session_manifest: {
+    stem_count: number;
+    reference_count: number;
+    session_type: string;
+    track_count: number;
+  };
+  mix_plan: {
+    phase_count: number;
+    risk_summary: string[];
+  };
+  render_plan: {
+    profile_count: number;
+    review_candidate_slug?: string;
+  };
+  listening_report: {
+    next_actions: string[];
+    focus_flags?: string[];
+  };
+  execution_plan: {
+    blockers: string[];
+    dependency_warnings?: Array<{ slug: string; severity: string; detail: string }>;
+    recommended_next_step?: string;
+  };
+};
+
+type WorkstationRuntimeStatus = {
+  status: string;
+  worker_slug: string;
+  runtime: {
+    drain_requested: boolean;
+    current_task_id?: string | null;
+    last_status: string;
+  };
+};
+
 type BootstrapStatus = {
   status: string;
   workflow_count: number;
@@ -1492,6 +1543,15 @@ export function App() {
   const [workstationPluginsState, setWorkstationPluginsState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [workstationValidation, setWorkstationValidation] = useState<WorkstationValidation | null>(null);
   const [workstationValidationState, setWorkstationValidationState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [workstationRuntime, setWorkstationRuntime] = useState<WorkstationRuntimeStatus | null>(null);
+  const [workstationRuntimeState, setWorkstationRuntimeState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [workstationRuntimePending, setWorkstationRuntimePending] = useState<"drain" | "resume" | null>(null);
+  const [workstationRuntimeMessage, setWorkstationRuntimeMessage] = useState<string | null>(null);
+  const [workstationRuntimeError, setWorkstationRuntimeError] = useState<string | null>(null);
+  const [workstationSmoke, setWorkstationSmoke] = useState<WorkstationSmokeReport | null>(null);
+  const [workstationSmokePending, setWorkstationSmokePending] = useState(false);
+  const [workstationSmokeMessage, setWorkstationSmokeMessage] = useState<string | null>(null);
+  const [workstationSmokeError, setWorkstationSmokeError] = useState<string | null>(null);
   const [artifactActionMessage, setArtifactActionMessage] = useState<string | null>(null);
   const [artifactActionError, setArtifactActionError] = useState<string | null>(null);
   const [artifactPreview, setArtifactPreview] = useState<ArtifactPreview | null>(null);
@@ -1705,6 +1765,34 @@ export function App() {
     };
   }, [selectedWorker?.slug]);
 
+  async function refreshWorkstationValidation() {
+    setWorkstationValidationState("loading");
+    try {
+      const payload = await fetchJson<WorkstationValidation>(`${API.studioWorker}/workstation/validate`);
+      setWorkstationValidation(payload);
+      setWorkstationValidationState("ready");
+      return payload;
+    } catch (error) {
+      setWorkstationValidation(null);
+      setWorkstationValidationState("error");
+      throw error;
+    }
+  }
+
+  async function refreshWorkstationRuntime() {
+    setWorkstationRuntimeState("loading");
+    try {
+      const payload = await fetchJson<WorkstationRuntimeStatus>(`${API.studioWorker}/runtime`);
+      setWorkstationRuntime(payload);
+      setWorkstationRuntimeState("ready");
+      return payload;
+    } catch (error) {
+      setWorkstationRuntime(null);
+      setWorkstationRuntimeState("error");
+      throw error;
+    }
+  }
+
   useEffect(() => {
     let active = true;
 
@@ -1723,6 +1811,29 @@ export function App() {
     }
 
     void loadWorkstationValidation();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadWorkstationRuntime() {
+      setWorkstationRuntimeState("loading");
+      try {
+        const payload = await fetchJson<WorkstationRuntimeStatus>(`${API.studioWorker}/runtime`);
+        if (!active) return;
+        setWorkstationRuntime(payload);
+        setWorkstationRuntimeState("ready");
+      } catch {
+        if (!active) return;
+        setWorkstationRuntime(null);
+        setWorkstationRuntimeState("error");
+      }
+    }
+
+    void loadWorkstationRuntime();
     return () => {
       active = false;
     };
@@ -1767,6 +1878,57 @@ export function App() {
       if (nextData.services.some((service) => service.key === current)) return current;
       return nextData.services[0]?.key ?? current;
     });
+  }
+
+  async function runWorkstationSmoke() {
+    setWorkstationSmokePending(true);
+    setWorkstationSmokeMessage(null);
+    setWorkstationSmokeError(null);
+    try {
+      const response = await fetch(`${API.studioWorker}/workstation/dry-run-smoke`, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error(`Smoke run failed with ${response.status}`);
+      }
+      const payload = (await response.json()) as WorkstationSmokeReport;
+      setWorkstationSmoke(payload);
+      setWorkstationSmokeMessage(
+        payload.result === "pass"
+          ? "Workstation dry-run smoke passed. Preview chain is ready for operator-reviewed execution."
+          : "Workstation dry-run smoke completed with review items. Inspect blockers and warnings before live DAW actions.",
+      );
+      await refreshWorkstationValidation();
+    } catch (error) {
+      setWorkstationSmokeError(error instanceof Error ? error.message : "Unable to run workstation smoke.");
+    } finally {
+      setWorkstationSmokePending(false);
+    }
+  }
+
+  async function updateWorkstationRuntime(action: "drain" | "resume") {
+    setWorkstationRuntimePending(action);
+    setWorkstationRuntimeMessage(null);
+    setWorkstationRuntimeError(null);
+    try {
+      const response = await fetch(`${API.studioWorker}/runtime/${action}`, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error(`Runtime ${action} failed with ${response.status}`);
+      }
+      const payload = (await response.json()) as WorkstationRuntimeStatus;
+      setWorkstationRuntime(payload);
+      setWorkstationRuntimeMessage(action === "drain" ? "Worker is now draining and will stop claiming new tasks." : "Worker polling resumed.");
+      await refreshWorkstationValidation();
+      await refreshWorkstationRuntime();
+    } catch (error) {
+      setWorkstationRuntimeError(error instanceof Error ? error.message : `Unable to ${action} worker runtime.`);
+    } finally {
+      setWorkstationRuntimePending(null);
+    }
   }
 
   async function handleApproval(jobId: string, decision: "approve" | "reject") {
@@ -3483,9 +3645,41 @@ export function App() {
                   <p className="section-kicker">Workstation</p>
                   <h2>Setup Validation</h2>
                 </div>
-                <span className={`status-pill ${workstationValidation?.ready ? "ok" : "warn"}`}>
-                  {workstationValidation ? (workstationValidation.ready ? "ready" : "needs review") : "unavailable"}
-                </span>
+                <div className="header-actions">
+                  <button
+                    type="button"
+                    className="action-button"
+                    onClick={() => void refreshWorkstationValidation()}
+                    disabled={workstationValidationState === "loading"}
+                  >
+                    {workstationValidationState === "loading" ? "Refreshing…" : "Refresh validation"}
+                  </button>
+                  <button
+                    type="button"
+                    className={`action-button ${workstationSmoke?.result === "pass" ? "ok" : ""}`}
+                    onClick={() => void runWorkstationSmoke()}
+                    disabled={workstationSmokePending}
+                  >
+                    {workstationSmokePending ? "Running smoke…" : "Run dry-run smoke"}
+                  </button>
+                  <button
+                    type="button"
+                    className="action-button"
+                    onClick={() => void updateWorkstationRuntime(workstationRuntime?.runtime.drain_requested ? "resume" : "drain")}
+                    disabled={workstationRuntimePending !== null}
+                  >
+                    {workstationRuntimePending === "drain"
+                      ? "Draining…"
+                      : workstationRuntimePending === "resume"
+                        ? "Resuming…"
+                        : workstationRuntime?.runtime.drain_requested
+                          ? "Resume worker"
+                          : "Drain worker"}
+                  </button>
+                  <span className={`status-pill ${workstationValidation?.ready ? "ok" : "warn"}`}>
+                    {workstationValidation ? (workstationValidation.ready ? "ready" : "needs review") : "unavailable"}
+                  </span>
+                </div>
               </div>
               <div className="workspace-grid nested-grid">
                 <div className="panel-span-4">
@@ -3493,6 +3687,36 @@ export function App() {
                     <span className="metric-label">Recommended next step</span>
                     <strong>{workstationValidation?.recommended_next_step ?? "Waiting for worker validation."}</strong>
                     <p className="panel-note">{workstationValidation?.host ?? "No workstation host reported yet."}</p>
+                  </div>
+                  <div className="mini-card top-gap">
+                    <span className="metric-label">Dry-run smoke</span>
+                    <strong>
+                      {workstationSmoke
+                        ? workstationSmoke.result === "pass"
+                          ? "pass"
+                          : "review"
+                        : "not run yet"}
+                    </strong>
+                    <p className="panel-note">
+                      {workstationSmoke
+                        ? `${workstationSmoke.session_manifest.track_count} tracks · ${workstationSmoke.render_plan.profile_count} render profiles · ${workstationSmoke.execution_plan.blockers.length} blockers`
+                        : "Runs a safe planning-chain rehearsal against the current workstation without touching a real session."}
+                    </p>
+                  </div>
+                  <div className="mini-card top-gap">
+                    <span className="metric-label">Worker runtime</span>
+                    <strong>
+                      {workstationRuntime
+                        ? workstationRuntime.runtime.drain_requested
+                          ? "draining"
+                          : workstationRuntime.runtime.last_status
+                        : "unavailable"}
+                    </strong>
+                    <p className="panel-note">
+                      {workstationRuntime
+                        ? `${workstationRuntime.worker_slug} · ${workstationRuntime.runtime.current_task_id ? `active task ${workstationRuntime.runtime.current_task_id}` : "no active task"}`
+                        : "Runtime status has not been loaded yet."}
+                    </p>
                   </div>
                 </div>
                 <div className="panel-span-8">
@@ -3516,6 +3740,67 @@ export function App() {
                   </div>
                 </div>
               </div>
+              {workstationSmoke ? (
+                <div className="workspace-grid nested-grid top-gap">
+                  <div className="panel-span-4">
+                    <div className="mini-card">
+                      <span className="metric-label">Smoke summary</span>
+                      <strong>{workstationSmoke.summary.execution_ready_for_review ? "planning chain ready" : "review before live use"}</strong>
+                      <p className="panel-note">
+                        {workstationSmoke.summary.mix_phase_count} mix phases · {workstationSmoke.summary.warning_count} dependency warnings ·
+                        {" "}
+                        {workstationSmoke.summary.listening_issue_count} listening issues tracked
+                      </p>
+                    </div>
+                  </div>
+                  <div className="panel-span-8">
+                    <div className="table-stack">
+                      <div className="table-row">
+                        <div className="row-main">
+                          <strong>Session rehearsal</strong>
+                          <div className="muted">
+                            {workstationSmoke.session_manifest.session_type} · {workstationSmoke.session_manifest.stem_count} stems ·
+                            {" "}
+                            {workstationSmoke.session_manifest.reference_count} references
+                          </div>
+                        </div>
+                        <div className="row-meta">
+                          <span className={`status-pill ${workstationSmoke.summary.session_ready ? "ok" : "warn"}`}>
+                            {workstationSmoke.summary.session_ready ? "ready" : "review"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="table-row">
+                        <div className="row-main">
+                          <strong>Execution review</strong>
+                          <div className="muted">{workstationSmoke.execution_plan.recommended_next_step ?? workstationSmoke.recommended_next_step}</div>
+                        </div>
+                        <div className="row-meta">
+                          <span className={`status-pill ${workstationSmoke.summary.execution_ready_for_review ? "ok" : "warn"}`}>
+                            {workstationSmoke.summary.execution_ready_for_review ? "operator-ready" : "needs review"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="table-row">
+                        <div className="row-main">
+                          <strong>Next actions</strong>
+                          <div className="muted">
+                            {(workstationSmoke.listening_report.next_actions ?? []).slice(0, 2).join(" · ") || "No listening follow-up required."}
+                          </div>
+                        </div>
+                        <div className="row-meta">
+                          <span className="status-pill warn">{workstationSmoke.execution_plan.blockers.length} blockers</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              {workstationSmokeMessage ? <p className="feedback ok">{workstationSmokeMessage}</p> : null}
+              {workstationSmokeError ? <p className="feedback bad">{workstationSmokeError}</p> : null}
+              {workstationRuntimeState === "error" ? <p className="feedback bad">Worker runtime controls are not available yet.</p> : null}
+              {workstationRuntimeMessage ? <p className="feedback ok">{workstationRuntimeMessage}</p> : null}
+              {workstationRuntimeError ? <p className="feedback bad">{workstationRuntimeError}</p> : null}
             </article>
           </section>
 

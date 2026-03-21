@@ -11,6 +11,7 @@ Current worker capabilities:
 - `revision-parser`
 - `delivery-packager`
 - workstation discovery and DAW readiness reporting
+- workstation dry-run smoke rehearsal for the planning chain
 - preview generation for session manifests, mix plans, render plans, listening reports, and execution plans
 - cross-platform path translation for differing control-plane and worker mounts
 - plugin inventory scans for `macos` and scaffolded scan roots for `windows`
@@ -87,6 +88,9 @@ bash scripts/start_host_studio_worker.sh infra/env.example
 - Studio worker health: `http://<studio-mac-ip>:8190/health`
 - Workstation profile: `http://<studio-mac-ip>:8190/workstation/profile`
 - Workstation validation: `http://<studio-mac-ip>:8190/workstation/validate`
+- Workstation dry-run smoke: `POST http://<studio-mac-ip>:8190/workstation/dry-run-smoke`
+- Worker runtime status: `http://<studio-mac-ip>:8190/runtime`
+- Worker drain / resume: `POST http://<studio-mac-ip>:8190/runtime/drain` and `POST http://<studio-mac-ip>:8190/runtime/resume`
 - Session manifest preview: `POST http://<studio-mac-ip>:8190/session-manifest/preview`
 - Mix plan preview: `POST http://<studio-mac-ip>:8190/mix-plan/preview`
 - Render plan preview: `POST http://<studio-mac-ip>:8190/render-plan/preview`
@@ -108,4 +112,6 @@ bash scripts/start_host_studio_worker.sh infra/env.example
 - `execute-soundflow` and `execute-reascript` now support workstation readiness reporting, generated DAW-specific revision artifacts, Reaper session introspection, preview execution-loop planning, and disposable working-copy staging before execution
 - for host-mode REAPER automation, `execute-reascript` can now dispatch to the configured REAPER binary when `STUDIO_WORKER_DRY_RUN_DAW=false`
 - Set `STUDIO_WORKER_DRY_RUN_DAW=true` to validate DAW execution queueing before a real studio Mac is available
+- The control room `Setup Validation` panel can now run a one-click dry-run smoke that stages a disposable session manifest, mix plan, listening review, render plan, and execution-plan rehearsal without touching a live project
+- The same panel can now drain or resume the worker so maintenance can pause new task claims without killing in-flight process state
 - `windows` workers are now scaffolded in path translation, plugin scanning, and workstation validation, but still need live DAW runtime validation before being treated as production-ready

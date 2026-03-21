@@ -7,7 +7,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "../..")
 SERVICE_ROOT = os.path.join(ROOT, "services/studio-worker")
 sys.path.insert(0, SERVICE_ROOT)
 
-from workstation import detect_workstation_profile, validate_workstation_setup  # type: ignore  # noqa: E402
+from workstation import build_workstation_smoke_report, detect_workstation_profile, validate_workstation_setup  # type: ignore  # noqa: E402
 import workstation as workstation_module  # type: ignore  # noqa: E402
 from tasks.execution_plan import build_execution_plan  # type: ignore  # noqa: E402
 from tasks.session_manifest import build_session_manifest  # type: ignore  # noqa: E402
@@ -121,6 +121,38 @@ def test_validate_workstation_setup_reports_path_and_daw_checks(tmp_path: Path):
     assert report["status"] == "ok"
     assert any(check["slug"] == "shared-projects-path" and check["status"] == "ready" for check in report["checks"])
     assert any(check["slug"] == "dry-run-mode" for check in report["checks"])
+
+
+def test_build_workstation_smoke_report_exercises_preview_chain(tmp_path: Path):
+    projects = tmp_path / "projects"
+    deliveries = tmp_path / "deliveries"
+    reaper = tmp_path / "REAPER"
+    projects.mkdir()
+    deliveries.mkdir()
+    reaper.write_text("binary")
+    settings = SimpleNamespace(
+        reaper_binary_path=str(reaper),
+        protools_app_path=None,
+        soundflow_cli_path=None,
+        wavelab_app_path=None,
+        dry_run_daw=True,
+        worker_platform="macos",
+        worker_api_base_url=None,
+        shared_projects_path=str(projects),
+        delivery_path=str(deliveries),
+        path_translation_json="{}",
+    )
+
+    report = build_workstation_smoke_report(settings)
+
+    assert report["status"] == "ok"
+    assert report["result"] in {"pass", "review"}
+    assert report["summary"]["session_ready"] is True
+    assert report["session_manifest"]["stem_count"] == 2
+    assert report["mix_plan"]["phase_count"] >= 3
+    assert report["render_plan"]["profile_count"] >= 1
+    assert "dry-run-enabled" in report["execution_plan"]["blockers"]
+    assert report["recommended_next_step"]
 
 
 def test_build_session_manifest_lists_stems_and_references(tmp_path: Path):

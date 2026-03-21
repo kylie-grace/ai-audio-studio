@@ -19,6 +19,7 @@
 - Add alert fan-out through webhook, email, and n8n from one configuration surface.
 - Improve first-run UX so a studio owner can get from fresh clone to usable dashboard, starter workflows, and baseline studio configuration with a clear guided path.
 - Make hostname and certificate trust setup feel like a standard onboarding step rather than hidden ops knowledge.
+- Keep turning workstation setup into guided operator actions: validation, dry-run smoke rehearsal, and then bounded live execution checks from the control room.
 
 ## Productionizing
 - Finish DAW adapters beyond dry run, with SoundFlow and ReaScript execution validated on a real studio Mac.
@@ -28,6 +29,7 @@
   - `Wavelab` where scripting is viable for mastering-oriented execution and delivery prep
 - Keep using the new DAW preview loop as the operator-safe staging path: workstation profile, session introspection, execution-plan preview, render plan, and QC/reference comparison.
 - Add plugin/dependency awareness so planning and approval surfaces warn when the workstation is missing expected DAW/plugin prerequisites.
+- Extend the new workstation dry-run smoke into richer bounded checks per DAW target, especially SoundFlow/Pro Tools and WaveLab once those runtimes are present.
 - Keep the worker cross-platform posture honest:
   - `macos` is the validated runtime path today
   - `windows` path translation, plugin scan roots, and workstation validation are now scaffolded
