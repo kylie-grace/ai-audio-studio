@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from adapter_contracts import ArtifactRef, ExecutionResult, RenderedArtifact
+from adapters.base import prepare_execution_workspace
 
 
 class SoundFlowAdapter:
@@ -26,14 +27,21 @@ class SoundFlowAdapter:
     def execute(self, payload: dict) -> ExecutionResult:
         self.validate_environment(payload)
         rendered = self.render(payload)
+        workspace = prepare_execution_workspace(Path(payload["session_path"]), Path(rendered.path), "soundflow", payload)
+        artifacts = [
+            ArtifactRef(path=str(workspace["manifest_path"]), kind="execution-manifest", label="soundflow-execution-manifest"),
+            ArtifactRef(path=str(workspace["session_copy"]), kind="session-copy", label="soundflow-working-session"),
+            ArtifactRef(path=str(workspace["script_copy"]), kind="script-copy", label="soundflow-working-script"),
+        ]
         if payload.get("dry_run"):
-            log_path = Path(rendered.path).with_suffix(".soundflow.log")
+            log_path = workspace["run_dir"] / "soundflow-execution.log"
             log_path.write_text("Dry-run SoundFlow execution completed.\n")
+            artifacts.append(ArtifactRef(path=str(log_path), kind="execution-log", label="soundflow-dry-run-log"))
             return ExecutionResult(
                 status="complete",
                 message="Dry-run SoundFlow execution completed",
-                payload={"dry_run": True, "script_path": rendered.path},
-                artifacts=[ArtifactRef(path=str(log_path), kind="execution-log", label="soundflow-dry-run-log")],
+                payload={**workspace["manifest"], "dry_run": True},
+                artifacts=artifacts,
             )
         raise NotImplementedError(
             f"SoundFlow execution is scaffolded but not enabled yet for {rendered.path}"

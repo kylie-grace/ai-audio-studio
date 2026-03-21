@@ -34,6 +34,8 @@ What is working now:
 - DB-backed `openclaw` rule seeding, starter packs, playbooks, alert config, and bootstrap status
 - optional `studio-worker` path for local-worker or split-worker execution
 - DAW preview loop for workstation readiness, session introspection, mix plans, render plans, listening summaries, and execution-plan staging
+- dry-run DAW execution now stages disposable working copies and execution manifests before touching generated scripts
+- host-side REAPER smoke dispatch is now validated on this Mac via `scripts/reaper_host_smoke_test.py`
 - idempotent one-shot n8n workflow bootstrap against the running `n8n` service
 - service `/status` endpoints across the major automation and production modules
 - control-room service drilldowns with live status snapshots and saved tuning summaries

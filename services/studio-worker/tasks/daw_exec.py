@@ -15,4 +15,12 @@ def execute_soundflow(payload: dict, settings) -> dict:
 
 def execute_reascript(payload: dict, settings) -> dict:
     adapter = ReaScriptAdapter()
-    return asdict(adapter.execute({**payload, "dry_run": settings.dry_run_daw}))
+    return asdict(
+        adapter.execute(
+            {
+                **payload,
+                "dry_run": settings.dry_run_daw,
+                "reaper_binary_path": getattr(settings, "reaper_binary_path", None),
+            }
+        )
+    )

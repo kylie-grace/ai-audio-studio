@@ -66,6 +66,7 @@ docker compose --env-file infra/.env -f infra/docker-compose.worker.yml ps
 - Execution plan preview: `POST http://<studio-mac-ip>:8190/execution-plan/preview`
 - Registered workers: `http://<mac-mini-ip>:8080/workers`
 - Worker tasks: `http://<mac-mini-ip>:8080/workers/tasks/list`
+- Host-side Reaper smoke test: `python3 scripts/reaper_host_smoke_test.py`
 
 ## Behavior
 
@@ -74,5 +75,6 @@ docker compose --env-file infra/.env -f infra/docker-compose.worker.yml ps
 - It claims one queued task at a time
 - On success it posts structured result data back to the Mac mini
 - On failure it marks the task and linked job failed
-- `execute-soundflow` and `execute-reascript` now support workstation readiness reporting, generated DAW-specific revision artifacts, Reaper session introspection, and preview execution-loop planning, while live execution still remains gated behind real workstation validation
+- `execute-soundflow` and `execute-reascript` now support workstation readiness reporting, generated DAW-specific revision artifacts, Reaper session introspection, preview execution-loop planning, and disposable working-copy staging before execution
+- for host-mode REAPER automation, `execute-reascript` can now dispatch to the configured REAPER binary when `STUDIO_WORKER_DRY_RUN_DAW=false`
 - Set `STUDIO_WORKER_DRY_RUN_DAW=true` to validate DAW execution queueing before a real studio Mac is available
