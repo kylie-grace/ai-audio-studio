@@ -114,6 +114,18 @@ class FakePool:
                 id="worker-1",
                 slug="fresh-worker",
                 display_name="Fresh Worker",
+                platform="macos",
+                api_base_url="http://fresh-worker.local:8190",
+                capabilities=["execute-reascript"],
+                watched_paths={},
+                workstation_profile={
+                    "configured": {"default_daw": "reaper", "supported_daws": ["reaper"]},
+                    "detected": {"ready": True},
+                },
+                workstation_status={
+                    "configured": {"default_daw": "reaper", "supported_daws": ["reaper"]},
+                    "detected": {"ready": True},
+                },
                 status="idle",
                 last_seen_at=now,
             ),
@@ -121,6 +133,18 @@ class FakePool:
                 id="worker-2",
                 slug="stale-worker",
                 display_name="Stale Worker",
+                platform="macos",
+                api_base_url="http://stale-worker.local:8190",
+                capabilities=["execute-soundflow"],
+                watched_paths={},
+                workstation_profile={
+                    "configured": {"default_daw": "protools", "supported_daws": ["protools"]},
+                    "detected": {"ready": False},
+                },
+                workstation_status={
+                    "configured": {"default_daw": "protools", "supported_daws": ["protools"]},
+                    "detected": {"ready": False},
+                },
                 status="idle",
                 last_seen_at=now.replace(minute=max(now.minute - 10, 0)),
             ),
@@ -286,6 +310,17 @@ class FakePool:
             if worker:
                 worker["status"] = "idle"
                 worker["last_seen_at"] = args[0]
+            return "UPDATE 1"
+        if "UPDATE worker_nodes" in query and "workstation_status=$6::jsonb" in query:
+            worker = next((row for row in self.worker_nodes if row["slug"] == args[7]), None)
+            if worker:
+                worker["status"] = args[0]
+                worker["host"] = args[1]
+                worker["api_base_url"] = args[2]
+                worker["capabilities"] = json.loads(args[3])
+                worker["watched_paths"] = json.loads(args[4])
+                worker["workstation_status"] = json.loads(args[5])
+                worker["last_seen_at"] = args[6]
             return "UPDATE 1"
         if "UPDATE worker_tasks" in query and "SET status='cancelled'" in query:
             task = next(row for row in self.worker_tasks if row["id"] == args[2])
@@ -507,6 +542,20 @@ def test_release_worker_task_requires_operator_token_when_configured():
 
     assert response.status_code == 403
     assert "operator token" in response.json()["detail"]
+
+
+def test_list_workstations_returns_live_workstation_profile_and_status():
+    pool = FakePool()
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.get("/workers/workstations")
+
+    assert response.status_code == 200
+    payload = response.json()
+    fresh = next(item for item in payload if item["slug"] == "fresh-worker")
+    assert fresh["workstation_profile"]["configured"]["default_daw"] == "reaper"
+    assert fresh["workstation_status"]["detected"]["ready"] is True
 
 
 def test_release_claimed_worker_task_resets_task_and_worker():

@@ -254,6 +254,67 @@ type RuntimeRecovery = {
   };
 };
 
+type WorkstationProfile = {
+  host: string;
+  platform: string;
+  os_version: string;
+  deployment_mode: string;
+  dry_run_daw: boolean;
+  shared_projects_path: string;
+  delivery_path: string;
+  daws: Array<{
+    slug: string;
+    installed: boolean;
+    binary_path?: string | null;
+    automation_ready: boolean;
+    execution_mode: string;
+    notes: string;
+  }>;
+  capabilities: Record<string, boolean>;
+  permissions: Record<string, boolean>;
+  blockers: string[];
+  ready: boolean;
+};
+
+type SessionManifestPreview = {
+  project_root: string;
+  stems_dir: string;
+  session_path: string;
+  reference_count: number;
+  stem_count: number;
+  stems: Array<{ name: string; path: string; extension: string; size_bytes: number }>;
+  references: Array<{ name: string; path: string }>;
+  session_files: Array<{ name: string; path: string }>;
+  readiness: {
+    has_stems: boolean;
+    has_session_files: boolean;
+    ready_for_planning: boolean;
+  };
+};
+
+type MixPlanPreview = {
+  status: string;
+  genre: string;
+  reference_count: number;
+  session_summary: {
+    stem_count: number;
+    reference_count: number;
+    ready_for_planning: boolean;
+  };
+  priorities: string[];
+  client_notes: string;
+  phases: Array<{ slug: string; title: string; actions: string[] }>;
+  risk_summary: string[];
+};
+
+type ListeningReportPreview = {
+  status: string;
+  target: string;
+  reference_count: number;
+  checks: Array<{ slug: string; status: string; detail: string }>;
+  next_actions: string[];
+};
+
 type BootstrapStatus = {
   status: string;
   workflow_count: number;
@@ -394,6 +455,10 @@ type DashboardData = {
   runtimeRecovery: RuntimeRecovery;
   bootstrapStatus: BootstrapStatus;
   workspace: WorkspaceStatus;
+  workstationProfile: WorkstationProfile | null;
+  sessionManifestPreview: SessionManifestPreview | null;
+  mixPlanPreview: MixPlanPreview | null;
+  listeningReportPreview: ListeningReportPreview | null;
   loadState: "loading" | "ready" | "error";
   error: string | null;
 };
@@ -892,6 +957,16 @@ async function fetchJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function fetchOptionalJson<T>(path: string, init?: RequestInit): Promise<T | null> {
+  try {
+    const response = await fetch(path, { headers: { Accept: "application/json" }, ...init });
+    if (!response.ok) return null;
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchServiceState(path: string): Promise<{ state: ServiceState; detail: string }> {
   try {
     const data = await fetchJson<Record<string, unknown>>(path);
@@ -1018,6 +1093,39 @@ async function loadDashboardData(): Promise<DashboardData> {
       fetchJson<WorkspaceStatus>(`${API.crm}/workspace-settings/status`),
     ]);
 
+  const previewProjectRoot = workspace.settings.shared_paths.projects || "/data/projects";
+  const [workstationProfile, sessionManifestPreview, mixPlanPreview, listeningReportPreview] = await Promise.all([
+    fetchOptionalJson<WorkstationProfile>(`${API.studioWorker}/workstation/profile`),
+    fetchOptionalJson<SessionManifestPreview>(`${API.studioWorker}/session-manifest/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ project_root: previewProjectRoot }),
+    }),
+    fetchOptionalJson<MixPlanPreview>(`${API.studioWorker}/mix-plan/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        session_manifest: {
+          project_root: previewProjectRoot,
+          stem_count: 0,
+          reference_count: 0,
+          readiness: { ready_for_planning: false },
+        },
+        priorities: workspace.settings.module_settings.mix_planner.default_focus,
+        client_notes: "Preview plan generated from saved studio posture.",
+      }),
+    }),
+    fetchOptionalJson<ListeningReportPreview>(`${API.studioWorker}/listening-report/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        target: "review-mix",
+        references: workspace.settings.style_seed.source_paths,
+        issues: [],
+      }),
+    }),
+  ]);
+
   return {
     refreshedAt: new Date().toLocaleTimeString(),
     services,
@@ -1037,6 +1145,10 @@ async function loadDashboardData(): Promise<DashboardData> {
     runtimeRecovery,
     bootstrapStatus,
     workspace,
+    workstationProfile,
+    sessionManifestPreview,
+    mixPlanPreview,
+    listeningReportPreview,
     loadState: "ready",
     error: null,
   };
@@ -1104,6 +1216,10 @@ export function App() {
       missing_fields: ["studio_name", "shared_paths.projects", "style_seed.raw_text"],
       style_profile_count: 0,
     },
+    workstationProfile: null,
+    sessionManifestPreview: null,
+    mixPlanPreview: null,
+    listeningReportPreview: null,
     loadState: "loading",
     error: null,
   });
@@ -1183,6 +1299,7 @@ export function App() {
   const visibleRules = data.rules.slice(0, 10);
   const latestStyleProfile = data.styleProfiles[0] ?? null;
   const voicePreview = studioVoicePreview(workspaceSettings, latestStyleProfile);
+  const workstationProfile = data.workstationProfile;
 
   useEffect(() => {
     const storedName = window.localStorage.getItem(OPERATOR_NAME_KEY);
@@ -1723,6 +1840,80 @@ export function App() {
       detail: displayedFrontDoor,
     },
   ];
+  const workerCapabilities = Array.from(new Set(data.workers.flatMap((worker) => asArray(worker.capabilities))));
+  const healthyStudioWorker = data.workers.find((worker) => worker.slug === workspaceSettings.worker.worker_slug)
+    ?? data.workers.find((worker) => worker.status === "idle" || worker.status === "busy")
+    ?? data.workers[0]
+    ?? null;
+  const workstationReadiness = [
+    {
+      label: "Shared projects mount",
+      state: workspaceSettings.shared_paths.projects ? "ready" : "watch",
+      detail: workspaceSettings.shared_paths.projects || "Set a shared projects path in workspace settings.",
+    },
+    {
+      label: "Execution node",
+      state: healthyStudioWorker ? "ready" : workspaceSettings.worker.enabled ? "watch" : "ready",
+      detail: healthyStudioWorker
+        ? `${healthyStudioWorker.display_name} · ${healthyStudioWorker.status}`
+        : workspaceSettings.worker.enabled
+          ? "Worker posture is enabled but no node has registered yet."
+          : "Single-machine mode is active. A remote worker remains optional.",
+    },
+    {
+      label: "Default DAW",
+      state: workerCapabilities.includes("execute-soundflow") || workerCapabilities.includes("execute-reascript") ? "ready" : "watch",
+      detail: `${workspaceSettings.module_settings.revision_parser.default_daw} · ${workerCapabilities.length ? workerCapabilities.join(", ") : "no execution capabilities registered"}`,
+    },
+    {
+      label: "Delivery path",
+      state: workspaceSettings.shared_paths.deliveries ? "ready" : "watch",
+      detail: workspaceSettings.shared_paths.deliveries || "Set a delivery path for package outputs and reports.",
+    },
+  ];
+  const dawCapabilityCards = [
+    {
+      name: "SoundFlow Execution",
+      state: workerCapabilities.includes("execute-soundflow") ? "ready" : "watch",
+      detail: workerCapabilities.includes("execute-soundflow")
+        ? "A registered worker can claim Pro Tools execution tasks."
+        : "Ready for Pro Tools automation once a worker or local execution node advertises execute-soundflow.",
+    },
+    {
+      name: "ReaScript Execution",
+      state: workerCapabilities.includes("execute-reascript") ? "ready" : "watch",
+      detail: workerCapabilities.includes("execute-reascript")
+        ? "A registered worker can claim Reaper execution tasks."
+        : "Ready for Reaper automation once a worker or local execution node advertises execute-reascript.",
+    },
+    {
+      name: "Session Prep Surface",
+      state: workerCapabilities.includes("session-prep") || data.services.some((service) => service.key === "session-prep" && service.state === "healthy") ? "ready" : "watch",
+      detail: "Session import and prep checks are available for future manifest surfacing.",
+    },
+    {
+      name: "Mix Planning Surface",
+      state: data.services.some((service) => service.key === "mix-planner" && service.state === "healthy") ? "ready" : "watch",
+      detail: "Mix planner is online and ready for future live plan snapshots in the control room.",
+    },
+  ];
+  const dawFoundationPlaceholders = [
+    {
+      title: "Session Manifest",
+      state: data.services.some((service) => service.key === "session-prep" && service.state === "healthy") ? "placeholder-ready" : "blocked",
+      detail: "Surface stem counts, prep issues, session paths, and prep report links from session-prep here.",
+    },
+    {
+      title: "Mix Plan",
+      state: data.services.some((service) => service.key === "mix-planner" && service.state === "healthy") ? "placeholder-ready" : "blocked",
+      detail: "Expose current mix priorities, focus areas, and project planning notes once the mix-plan API is wired to the dashboard.",
+    },
+    {
+      title: "Listening Reports",
+      state: data.services.some((service) => service.key === "audio-qc" && service.state === "healthy") ? "placeholder-ready" : "blocked",
+      detail: "Reserve this panel for QC summaries, listening notes, and client-facing review artifacts.",
+    },
+  ];
   const workflowPlaybooks: Array<{
     id: WorkflowId;
     label: string;
@@ -1944,6 +2135,84 @@ export function App() {
             <article className="panel panel-span-12">
               <div className="panel-header">
                 <div>
+                  <p className="section-kicker">DAW Foundation</p>
+                  <h2>Workstation Readiness</h2>
+                </div>
+                <span className="count-pill">{workerCapabilities.length} capabilities</span>
+              </div>
+              <div className="foundation-grid">
+                <div className="foundation-column">
+                  <div className="panel-header compact-header">
+                    <div>
+                      <span className="metric-label">Readiness</span>
+                      <strong>Workstation posture</strong>
+                    </div>
+                  </div>
+                  <div className="readiness-mini-grid">
+                    {workstationReadiness.map((item) => (
+                      <div key={item.label} className={`mini-card foundation-card ${item.state}`}>
+                        <div className="workflow-header">
+                          <span className="metric-label">{item.label}</span>
+                          <span className={`status-pill ${item.state === "ready" ? "ok" : "warn"}`}>
+                            {item.state === "ready" ? "ready" : "watch"}
+                          </span>
+                        </div>
+                        <strong>{item.label}</strong>
+                        <p className="panel-note">{item.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="foundation-column">
+                  <div className="panel-header compact-header">
+                    <div>
+                      <span className="metric-label">Capabilities</span>
+                      <strong>DAW execution surfaces</strong>
+                    </div>
+                  </div>
+                  <div className="module-grid">
+                    {dawCapabilityCards.map((item) => (
+                      <div key={item.name} className={`mini-card module-card foundation-capability-card ${item.state}`}>
+                        <span className="metric-label">daw capability</span>
+                        <strong>{item.name}</strong>
+                        <p className="panel-note">{item.detail}</p>
+                        <span className={`status-pill ${item.state === "ready" ? "ok" : "warn"}`}>
+                          {item.state === "ready" ? "available" : "needs worker"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="foundation-column">
+                  <div className="panel-header compact-header">
+                    <div>
+                      <span className="metric-label">Next Surfaces</span>
+                      <strong>Production placeholders</strong>
+                    </div>
+                  </div>
+                  <div className="placeholder-grid">
+                    {dawFoundationPlaceholders.map((item) => (
+                      <div key={item.title} className={`mini-card placeholder-card ${item.state}`}>
+                        <div className="workflow-header">
+                          <span className="metric-label">{item.title}</span>
+                          <span className={`status-pill ${item.state === "placeholder-ready" ? "ok" : "warn"}`}>
+                            {item.state === "placeholder-ready" ? "ready to wire" : "blocked"}
+                          </span>
+                        </div>
+                        <strong>{item.title}</strong>
+                        <p className="panel-note">{item.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section className="workspace-grid">
+            <article className="panel panel-span-12">
+              <div className="panel-header">
+                <div>
                   <p className="section-kicker">Readiness</p>
                   <h2>Workspace Readiness</h2>
                 </div>
@@ -2009,6 +2278,119 @@ export function App() {
                     <span className={`status-pill ${statusTone(service.state)}`}>{serviceLabel(service)}</span>
                   </button>
                 ))}
+              </div>
+            </article>
+          </section>
+
+          <section className="workspace-grid">
+            <article className="panel panel-span-12">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">DAW Foundation</p>
+                  <h2>Workstation Readiness</h2>
+                </div>
+                <span className={`status-pill ${workstationProfile?.ready ? "ok" : "warn"}`}>
+                  {workstationProfile ? (workstationProfile.ready ? "ready to stage" : "needs setup") : "worker offline"}
+                </span>
+              </div>
+              <div className="workspace-grid nested-grid">
+                <div className="panel-span-4">
+                  <div className="mini-card">
+                    <span className="metric-label">Workstation posture</span>
+                    <strong>{workstationProfile?.deployment_mode ?? "unavailable"}</strong>
+                    <p className="panel-note">{workstationProfile?.host ?? "No studio-worker profile is reachable yet."}</p>
+                    <div className="summary-pill-row">
+                      <span className="summary-pill">{workstationProfile?.platform ?? "macos"}</span>
+                      <span className="summary-pill">{workstationProfile?.dry_run_daw ? "dry run" : "live execution"}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="panel-span-4">
+                  <div className="mini-card">
+                    <span className="metric-label">Session manifest preview</span>
+                    <strong>
+                      {data.sessionManifestPreview ? `${data.sessionManifestPreview.stem_count} stems · ${data.sessionManifestPreview.reference_count} refs` : "preview unavailable"}
+                    </strong>
+                    <p className="panel-note">{data.sessionManifestPreview?.project_root ?? workspaceSettings.shared_paths.projects}</p>
+                    <div className="summary-pill-row">
+                      <span className="summary-pill">
+                        {data.sessionManifestPreview?.readiness.ready_for_planning ? "ready for planning" : "waiting for session data"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="panel-span-4">
+                  <div className="mini-card">
+                    <span className="metric-label">Mix and listening previews</span>
+                    <strong>
+                      {data.mixPlanPreview ? `${data.mixPlanPreview.phases.length} plan phases` : "plan unavailable"}
+                    </strong>
+                    <p className="panel-note">
+                      {data.listeningReportPreview ? `${data.listeningReportPreview.checks.length} listening heuristics staged.` : "Listening preview unavailable."}
+                    </p>
+                    <div className="summary-pill-row">
+                      {(data.mixPlanPreview?.priorities ?? []).slice(0, 3).map((item) => (
+                        <span key={item} className="summary-pill">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="workspace-grid nested-grid top-gap">
+                <div className="panel-span-4 table-stack">
+                  {(workstationProfile?.daws ?? []).length ? (
+                    workstationProfile!.daws.map((daw) => (
+                      <div key={daw.slug} className="table-row">
+                        <div className="row-main">
+                          <strong>{daw.slug}</strong>
+                          <div className="muted">{daw.notes}</div>
+                          {daw.binary_path ? <div className="muted">{daw.binary_path}</div> : null}
+                        </div>
+                        <div className="row-meta">
+                          <span className={`status-pill ${daw.automation_ready ? "ok" : daw.installed ? "warn" : "bad"}`}>
+                            {daw.automation_ready ? "automation ready" : daw.installed ? "installed" : "missing"}
+                          </span>
+                          <span className="muted">{daw.execution_mode}</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="empty-state">No workstation profile yet. The control plane can still build plans before a real DAW node is attached.</p>
+                  )}
+                </div>
+                <div className="panel-span-4 table-stack">
+                  {data.mixPlanPreview ? (
+                    data.mixPlanPreview.phases.map((phase) => (
+                      <div key={phase.slug} className="table-row">
+                        <div className="row-main">
+                          <strong>{phase.title}</strong>
+                          <div className="muted">{phase.actions.join(" · ")}</div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="empty-state">Mix-plan previews will appear here once the worker preview endpoint is reachable.</p>
+                  )}
+                </div>
+                <div className="panel-span-4 table-stack">
+                  {data.listeningReportPreview ? (
+                    data.listeningReportPreview.checks.map((check) => (
+                      <div key={check.slug} className="table-row">
+                        <div className="row-main">
+                          <strong>{check.slug}</strong>
+                          <div className="muted">{check.detail}</div>
+                        </div>
+                        <div className="row-meta">
+                          <span className={`status-pill ${check.status === "attention" ? "bad" : "warn"}`}>{check.status}</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="empty-state">Listening heuristics will appear here once preview generation is available.</p>
+                  )}
+                </div>
               </div>
             </article>
           </section>

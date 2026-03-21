@@ -11,7 +11,7 @@ from typing import Optional
 
 import asyncpg
 from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .style_profiles import (
     DEFAULT_STYLE_PROFILE_NAME,
@@ -114,6 +114,12 @@ class WorkspaceWorkerBody(BaseModel):
     enabled: bool = False
     worker_slug: str = ""
     worker_api_base_url: str = ""
+    display_name: str = ""
+    platform: str = "macos"
+    default_daw: str = "reaper"
+    supported_daws: list[str] = Field(default_factory=lambda: ["reaper"])
+    adapter_capabilities: list[str] = Field(default_factory=lambda: ["execute-reascript"])
+    notes: str = ""
 
 
 class LeadIntakeSettingsBody(BaseModel):
@@ -269,6 +275,33 @@ def combined_style_seed(raw_text: str, file_paths: list[str]) -> tuple[str, str]
 
     source_type = "hybrid" if raw_text.strip() and file_paths else "files" if file_paths else "pasted"
     return combined, source_type
+
+
+def serialize_workstation_config(settings: dict) -> list[dict]:
+    worker = settings.get("worker") or {}
+    if not any(
+        [
+            worker.get("worker_slug"),
+            worker.get("worker_api_base_url"),
+            worker.get("display_name"),
+            worker.get("supported_daws"),
+        ]
+    ):
+        return []
+    return [
+        {
+            "slug": worker.get("worker_slug") or "",
+            "enabled": bool(worker.get("enabled", False)),
+            "api_base_url": worker.get("worker_api_base_url") or "",
+            "display_name": worker.get("display_name") or "",
+            "platform": worker.get("platform") or "macos",
+            "default_daw": worker.get("default_daw") or "reaper",
+            "supported_daws": worker.get("supported_daws") or [],
+            "adapter_capabilities": worker.get("adapter_capabilities") or [],
+            "notes": worker.get("notes") or "",
+            "status_source": "workspace-settings",
+        }
+    ]
 
 
 @app.get("/health")
@@ -459,6 +492,14 @@ async def get_workspace_settings():
     pool = await get_pool()
     row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
     return serialize_workspace_settings(row)
+
+
+@app.get("/workstations")
+async def list_workstations():
+    pool = await get_pool()
+    row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    settings = serialize_workspace_settings(row)
+    return serialize_workstation_config(settings)
 
 
 @app.get("/workspace-settings/status")

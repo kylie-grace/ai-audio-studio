@@ -23,6 +23,32 @@ def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _default_adapter_capabilities() -> list[str]:
+    adapters = _split_csv(os.environ.get("WORKSTATION_ADAPTER_CAPABILITIES", ""))
+    if adapters:
+        return adapters
+    worker_caps = set(_split_csv(os.environ.get("WORKER_CAPABILITIES", "")))
+    inferred: list[str] = []
+    if "execute-soundflow" in worker_caps:
+        inferred.append("execute-soundflow")
+    if "execute-reascript" in worker_caps:
+        inferred.append("execute-reascript")
+    return inferred or ["execute-reascript"]
+
+
+def _default_supported_daws() -> list[str]:
+    daws = _split_csv(os.environ.get("WORKSTATION_SUPPORTED_DAWS", ""))
+    if daws:
+        return daws
+    adapters = set(_default_adapter_capabilities())
+    inferred: list[str] = []
+    if "execute-soundflow" in adapters:
+        inferred.append("protools")
+    if "execute-reascript" in adapters:
+        inferred.append("reaper")
+    return inferred or ["reaper"]
+
+
 def default_module_settings() -> dict[str, Any]:
     return {
         "lead_intake": {
@@ -107,6 +133,12 @@ def default_workspace_settings() -> dict[str, Any]:
             "enabled": False,
             "worker_slug": os.environ.get("WORKER_SLUG", ""),
             "worker_api_base_url": os.environ.get("WORKER_API_BASE_URL", ""),
+            "display_name": os.environ.get("WORKER_DISPLAY_NAME", ""),
+            "platform": os.environ.get("WORKER_PLATFORM", "macos"),
+            "default_daw": os.environ.get("WORKSTATION_DEFAULT_DAW", "reaper"),
+            "supported_daws": _default_supported_daws(),
+            "adapter_capabilities": _default_adapter_capabilities(),
+            "notes": os.environ.get("WORKSTATION_NOTES", "").strip(),
         },
         "module_settings": default_module_settings(),
         "onboarding_complete": False,

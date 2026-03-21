@@ -14,6 +14,7 @@ from tasks.delivery_packager import execute_package_delivery
 from tasks.daw_exec import execute_reascript, execute_soundflow
 from tasks.revision_plan import generate_revision_artifacts
 from tasks.session_prep import execute_prepare_session
+from workstation import detect_workstation_profile
 
 TASK_TYPES = ["prepare-session", "parse-revisions", "package-delivery", "execute-soundflow", "execute-reascript"]
 
@@ -30,6 +31,13 @@ class StudioWorkerRunner:
         self.client = client
         self.settings = settings
 
+    def workstation_snapshot(self) -> dict:
+        detected = detect_workstation_profile(self.settings)
+        return {
+            "configured": self.settings.workstation_profile,
+            "detected": detected,
+        }
+
     async def register_worker(self) -> None:
         await self.client.post(
             f"{self.settings.project_state_url}/workers/register",
@@ -45,6 +53,7 @@ class StudioWorkerRunner:
                     "shared_projects": self.settings.shared_projects_path,
                     "delivery_root": self.settings.delivery_path,
                 },
+                "workstation_profile": self.workstation_snapshot(),
             },
         )
 
@@ -61,6 +70,7 @@ class StudioWorkerRunner:
                     "shared_projects": self.settings.shared_projects_path,
                     "delivery_root": self.settings.delivery_path,
                 },
+                "workstation_status": self.workstation_snapshot(),
             },
         )
 

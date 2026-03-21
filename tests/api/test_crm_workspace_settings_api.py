@@ -146,6 +146,11 @@ def test_get_workspace_settings_status_returns_serialized_status(client):
                 "enabled": True,
                 "worker_slug": "studio-mac",
                 "worker_api_base_url": "http://studio-mac.local:8190",
+                "display_name": "Studio Mac",
+                "platform": "macos",
+                "default_daw": "protools",
+                "supported_daws": ["protools", "reaper"],
+                "adapter_capabilities": ["execute-soundflow", "execute-reascript"],
             }
         ),
         module_settings=json.dumps(
@@ -179,6 +184,7 @@ def test_get_workspace_settings_status_returns_serialized_status(client):
     assert payload["readiness_summary"]["ready_count"] >= 4
     assert any(check["slug"] == "worker-posture" and check["status"] == "ready" for check in payload["readiness_checks"])
     assert payload["settings"]["worker"]["worker_slug"] == "studio-mac"
+    assert payload["settings"]["worker"]["default_daw"] == "protools"
     assert payload["settings"]["alert_destinations"]["email_to"] == ["ops@example.test"]
     assert payload["settings"]["module_settings"]["lead_intake"]["minimum_fit_score"] == 66
 
@@ -240,3 +246,49 @@ def test_list_projects_returns_lead_counts(client):
     payload = response.json()
     assert payload[0]["slug"] == "demo-artist"
     assert payload[0]["lead_count"] == 2
+
+
+def test_list_workstations_returns_persisted_worker_configuration(client):
+    app, _ = client
+    workspace_row = FakeRow(
+        studio_name="North Loop",
+        deployment_mode="control_plane_plus_worker",
+        public_base_url="https://studio-brain.local",
+        https_mode="caddy_internal",
+        operator_name="owner",
+        shared_paths=json.dumps({}),
+        style_seed=json.dumps({}),
+        alert_destinations=json.dumps({}),
+        integrations=json.dumps({}),
+        worker_config=json.dumps(
+            {
+                "enabled": True,
+                "worker_slug": "studio-mac",
+                "worker_api_base_url": "http://studio-mac.local:8190",
+                "display_name": "Studio Mac",
+                "platform": "macos",
+                "default_daw": "protools",
+                "supported_daws": ["protools", "reaper"],
+                "adapter_capabilities": ["execute-soundflow", "execute-reascript"],
+                "notes": "Primary mix workstation",
+            }
+        ),
+        module_settings=json.dumps({}),
+        onboarding_complete=True,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    async def fake_get_pool():
+        return FakePool(workspace_row=workspace_row, style_profile_count=1)
+
+    main.get_pool = fake_get_pool
+
+    with TestClient(app) as test_client:
+        response = test_client.get("/workstations")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["slug"] == "studio-mac"
+    assert payload[0]["default_daw"] == "protools"
+    assert payload[0]["adapter_capabilities"] == ["execute-soundflow", "execute-reascript"]

@@ -5,12 +5,19 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import asyncpg
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
+SERVICE_ROOT = Path(__file__).resolve().parents[2] / "services" / "studio-worker"
+if str(SERVICE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICE_ROOT))
+
+from tasks.revision_plan import write_revision_artifacts  # type: ignore  # noqa: E402
 
 _pool: asyncpg.Pool | None = None
 
@@ -146,11 +153,10 @@ async def parse_revisions(body: ParseRevisionsBody):
         )
         return {"job_id": str(job["id"]), "task_id": str(task["id"]), "status": "queued-for-worker"}
     changes = parse_changes(body.raw_notes)
+    executable_changes = [change for change in changes if change["confidence"] >= 0.85]
     project_dir = Path(os.environ.get("SHARED_PROJECTS_PATH", "/data/projects")) / project["slug"] / "session"
     project_dir.mkdir(parents=True, exist_ok=True)
-    script_path = project_dir / f"{body.daw}_revision_script.txt"
-    executable_changes = [change for change in changes if change["confidence"] >= 0.85]
-    script_path.write_text(json.dumps(executable_changes, indent=2))
+    artifact_paths = write_revision_artifacts(project_dir, body.daw, executable_changes, body.session_path)
     job = await pool.fetchrow(
         """INSERT INTO jobs
            (project_id, module, action, trigger_type, trigger_payload, status, approval_required, requested_by)
@@ -168,7 +174,7 @@ async def parse_revisions(body: ParseRevisionsBody):
         job["id"],
         body.raw_notes,
         json.dumps(changes),
-        str(script_path) if body.daw == "protools" else None,
-        str(script_path) if body.daw == "reaper" else None,
+        artifact_paths["script_path"] if body.daw == "protools" else None,
+        artifact_paths["script_path"] if body.daw == "reaper" else None,
     )
     return {"job_id": str(job["id"]), "revision_id": str(revision["id"]), "changes": changes}

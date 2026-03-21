@@ -113,6 +113,12 @@ def test_default_workspace_settings_prefers_authorized_actor_and_env_integration
         "enabled": False,
         "worker_slug": "studio-mac",
         "worker_api_base_url": "http://studio-mac.local:8190",
+        "display_name": "",
+        "platform": "macos",
+        "default_daw": "reaper",
+        "supported_daws": ["reaper"],
+        "adapter_capabilities": ["execute-reascript"],
+        "notes": "",
     }
 
 
@@ -129,7 +135,7 @@ def test_serialize_workspace_settings_decodes_json_and_timestamps():
             "style_seed": '{"name":"Default Studio Tone","raw_text":"Warm and direct."}',
             "alert_destinations": '{"email_to":["ops@example.test"],"webhook_url":"https://hooks.example.test/studio"}',
             "integrations": '{"n8n":true,"gmail_readonly":true,"gmail_send":false,"instagram":false,"facebook":false}',
-            "worker_config": '{"enabled":true,"worker_slug":"studio-mac","worker_api_base_url":"http://studio-mac.local:8190"}',
+            "worker_config": '{"enabled":true,"worker_slug":"studio-mac","worker_api_base_url":"http://studio-mac.local:8190","display_name":"Studio Mac","default_daw":"protools","supported_daws":["protools","reaper"],"adapter_capabilities":["execute-soundflow","execute-reascript"]}',
             "module_settings": '{"lead_intake":{"enabled":true,"minimum_fit_score":72,"response_sla_hours":12,"auto_create_projects":true}}',
             "onboarding_complete": True,
             "created_at": now,
@@ -142,6 +148,8 @@ def test_serialize_workspace_settings_decodes_json_and_timestamps():
     assert serialized["alert_destinations"]["email_to"] == ["ops@example.test"]
     assert serialized["integrations"]["gmail_readonly"] is True
     assert serialized["worker"]["enabled"] is True
+    assert serialized["worker"]["display_name"] == "Studio Mac"
+    assert serialized["worker"]["default_daw"] == "protools"
     assert serialized["module_settings"]["lead_intake"]["minimum_fit_score"] == 72
     assert serialized["created_at"] == now.isoformat()
     assert serialized["updated_at"] == now.isoformat()

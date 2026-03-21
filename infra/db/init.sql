@@ -205,9 +205,11 @@ CREATE TABLE IF NOT EXISTS worker_nodes (
     host           TEXT,
     api_base_url   TEXT,
     status         TEXT NOT NULL DEFAULT 'idle',
-    -- offline | idle | busy | error
+    -- offline | idle | busy | error | retired
     capabilities   JSONB NOT NULL DEFAULT '[]',
     watched_paths  JSONB NOT NULL DEFAULT '{}',
+    workstation_profile JSONB NOT NULL DEFAULT '{}',
+    workstation_status  JSONB NOT NULL DEFAULT '{}',
     last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()

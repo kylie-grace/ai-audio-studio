@@ -7,9 +7,14 @@ from contextlib import asynccontextmanager, suppress
 
 import httpx
 from fastapi import FastAPI
+from pydantic import BaseModel
 
 from config import load_settings
 from runner import StudioWorkerRunner
+from tasks.listening_report import build_listening_report
+from tasks.mix_plan import build_mix_plan
+from tasks.session_manifest import build_session_manifest
+from workstation import detect_workstation_profile
 
 _client: httpx.AsyncClient | None = None
 _runner: asyncio.Task | None = None
@@ -34,6 +39,27 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Studio Worker", lifespan=lifespan)
 
 
+class SessionManifestBody(BaseModel):
+    project_root: str
+    stems_dir: str | None = None
+    session_path: str | None = None
+    references_dir: str | None = None
+
+
+class MixPlanPreviewBody(BaseModel):
+    session_manifest: dict = {}
+    priorities: list[str] = []
+    references: list[str] = []
+    client_notes: str = ""
+    genre: str = "general"
+
+
+class ListeningReportPreviewBody(BaseModel):
+    target: str = "review-mix"
+    references: list[str] = []
+    issues: list[str] = []
+
+
 @app.get("/health")
 async def health():
     return {
@@ -41,11 +67,13 @@ async def health():
         "worker_slug": _settings.worker_slug,
         "capabilities": _settings.capabilities,
         "project_state_url": _settings.project_state_url,
+        "configured_workstation": _settings.workstation_profile,
     }
 
 
 @app.get("/status")
 async def status():
+    workstation = detect_workstation_profile(_settings)
     return {
         "status": "ok",
         "worker_slug": _settings.worker_slug,
@@ -55,4 +83,30 @@ async def status():
         "project_state_url": _settings.project_state_url,
         "shared_projects_path": _settings.shared_projects_path,
         "delivery_path": _settings.delivery_path,
+        "dry_run_daw": _settings.dry_run_daw,
+        "configured_workstation": _settings.workstation_profile,
+        "workstation": workstation,
+        "daw_ready_count": sum(1 for daw in workstation["daws"] if daw["automation_ready"]),
+        "daw_detected_count": sum(1 for daw in workstation["daws"] if daw["installed"]),
+        "preview_surfaces": ["session-manifest", "mix-plan", "listening-report"],
     }
+
+
+@app.get("/workstation/profile")
+async def workstation_profile():
+    return detect_workstation_profile(_settings)
+
+
+@app.post("/session-manifest/preview")
+async def session_manifest_preview(body: SessionManifestBody):
+    return build_session_manifest(body.model_dump())
+
+
+@app.post("/mix-plan/preview")
+async def mix_plan_preview(body: MixPlanPreviewBody):
+    return build_mix_plan(body.model_dump())
+
+
+@app.post("/listening-report/preview")
+async def listening_report_preview(body: ListeningReportPreviewBody):
+    return build_listening_report(body.model_dump())

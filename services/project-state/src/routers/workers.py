@@ -32,6 +32,8 @@ def serialize_worker(row) -> dict:
     data = dict(row)
     data["capabilities"] = decode_jsonb(data.get("capabilities"))
     data["watched_paths"] = decode_jsonb(data.get("watched_paths"))
+    data["workstation_profile"] = decode_jsonb(data.get("workstation_profile"))
+    data["workstation_status"] = decode_jsonb(data.get("workstation_status"))
     return data
 
 
@@ -53,6 +55,8 @@ def _serialize_runtime_worker(row) -> dict:
         "status": row["status"],
         "host": row.get("host"),
         "api_base_url": row.get("api_base_url"),
+        "workstation_profile": decode_jsonb(row.get("workstation_profile")),
+        "workstation_status": decode_jsonb(row.get("workstation_status")),
         "last_seen_at": _iso(row.get("last_seen_at")),
     }
 
@@ -83,6 +87,7 @@ class RegisterWorkerBody(BaseModel):
     api_base_url: str | None = None
     capabilities: list[str] = Field(default_factory=list)
     watched_paths: dict[str, str] = Field(default_factory=dict)
+    workstation_profile: dict = Field(default_factory=dict)
 
 
 class HeartbeatBody(BaseModel):
@@ -91,6 +96,7 @@ class HeartbeatBody(BaseModel):
     api_base_url: str | None = None
     capabilities: list[str] | None = None
     watched_paths: dict[str, str] | None = None
+    workstation_status: dict | None = None
 
 
 class EnqueueWorkerTaskBody(BaseModel):
@@ -140,6 +146,26 @@ async def list_workers():
     return [serialize_worker(row) for row in rows]
 
 
+@router.get("/workstations")
+async def list_workstations():
+    pool = await get_pool()
+    rows = await pool.fetch("SELECT * FROM worker_nodes WHERE status <> 'retired' ORDER BY slug ASC")
+    return [
+        {
+            "slug": row["slug"],
+            "display_name": row["display_name"],
+            "platform": row["platform"],
+            "worker_status": row["status"],
+            "api_base_url": row.get("api_base_url"),
+            "capabilities": decode_jsonb(row.get("capabilities")),
+            "workstation_profile": decode_jsonb(row.get("workstation_profile")),
+            "workstation_status": decode_jsonb(row.get("workstation_status")),
+            "last_seen_at": _iso(row.get("last_seen_at")),
+        }
+        for row in rows
+    ]
+
+
 @router.get("/{slug}")
 async def get_worker(slug: str):
     pool = await get_pool()
@@ -155,8 +181,8 @@ async def register_worker(body: RegisterWorkerBody, x_worker_token: str | None =
     pool = await get_pool()
     row = await pool.fetchrow(
         """INSERT INTO worker_nodes
-           (slug, display_name, platform, host, api_base_url, status, capabilities, watched_paths, last_seen_at)
-           VALUES ($1,$2,$3,$4,$5,'idle',$6::jsonb,$7::jsonb,$8)
+           (slug, display_name, platform, host, api_base_url, status, capabilities, watched_paths, workstation_profile, last_seen_at)
+           VALUES ($1,$2,$3,$4,$5,'idle',$6::jsonb,$7::jsonb,$8::jsonb,$9)
            ON CONFLICT (slug) DO UPDATE SET
              display_name=EXCLUDED.display_name,
              platform=EXCLUDED.platform,
@@ -165,6 +191,7 @@ async def register_worker(body: RegisterWorkerBody, x_worker_token: str | None =
              status='idle',
              capabilities=EXCLUDED.capabilities,
              watched_paths=EXCLUDED.watched_paths,
+             workstation_profile=EXCLUDED.workstation_profile,
              last_seen_at=EXCLUDED.last_seen_at,
              updated_at=now()
            RETURNING *""",
@@ -175,6 +202,7 @@ async def register_worker(body: RegisterWorkerBody, x_worker_token: str | None =
         body.api_base_url,
         json.dumps(body.capabilities),
         json.dumps(body.watched_paths),
+        json.dumps(body.workstation_profile),
         datetime.now(timezone.utc),
     )
     return serialize_worker(row)
@@ -189,6 +217,7 @@ async def heartbeat(slug: str, body: HeartbeatBody, x_worker_token: str | None =
         raise HTTPException(status_code=404, detail="Worker not found")
     capabilities = body.capabilities if body.capabilities is not None else list(row["capabilities"])
     watched_paths = body.watched_paths if body.watched_paths is not None else dict(row["watched_paths"])
+    workstation_status = body.workstation_status if body.workstation_status is not None else decode_jsonb(row.get("workstation_status")) or {}
     await pool.execute(
         """UPDATE worker_nodes
            SET status=$1,
@@ -196,14 +225,16 @@ async def heartbeat(slug: str, body: HeartbeatBody, x_worker_token: str | None =
                api_base_url=COALESCE($3, api_base_url),
                capabilities=$4::jsonb,
                watched_paths=$5::jsonb,
-               last_seen_at=$6,
+               workstation_status=$6::jsonb,
+               last_seen_at=$7,
                updated_at=now()
-           WHERE slug=$7""",
+           WHERE slug=$8""",
         body.status,
         body.host,
         body.api_base_url,
         json.dumps(capabilities),
         json.dumps(watched_paths),
+        json.dumps(workstation_status),
         datetime.now(timezone.utc),
         slug,
     )
