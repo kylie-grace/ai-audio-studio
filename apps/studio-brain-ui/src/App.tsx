@@ -633,6 +633,48 @@ function zoneAccent(zone: string): string {
   }
 }
 
+function servicePrimaryTab(service: ServiceRecord): TabId {
+  if (service.key === "project-state" || service.key === "studio-worker") return "operations";
+  if (service.key === "crm-api") return "context";
+  if (service.key === "openclaw" || service.key === "n8n" || service.zone === "Automation Modules") return "automation";
+  if (service.zone === "Execution Node") return "operations";
+  if (service.zone === "AI Runtime" || service.zone === "Production Services") return "overview";
+  return "overview";
+}
+
+function serviceDependencyHints(service: ServiceRecord): string[] {
+  switch (service.key) {
+    case "project-state":
+      return ["postgres", "control-plane health", "approval and queue persistence"];
+    case "crm-api":
+      return ["postgres", "workspace settings", "style profiles"];
+    case "openclaw":
+      return ["project-state", "ollama", "starter packs and rules"];
+    case "n8n":
+      return ["postgres", "workflow bootstrap", "webhook layer"];
+    case "ollama":
+      return ["local model serving", "OpenClaw", "automation modules"];
+    case "studio-worker":
+      return ["project-state queue", "shared paths", "optional DAW execution"];
+    default:
+      if (service.zone === "Automation Modules") return ["OpenClaw posture", "Ollama", "project-state approvals"];
+      if (service.zone === "Production Services") return ["project-state", "shared paths", "production pipeline"];
+      return ["control plane", "shared fabric", "operator posture"];
+  }
+}
+
+function serviceRecommendedAction(service: ServiceRecord): string {
+  if (service.state === "offline") return "Resolve health first, then refresh the control room.";
+  if (service.key === "openclaw") return "Review starter packs and rule posture in Automation.";
+  if (service.key === "n8n") return "Use Automation to confirm bootstrap and playbook coverage.";
+  if (service.key === "project-state") return "Check approvals, task backlog, and runtime recovery in Operations.";
+  if (service.key === "crm-api") return "Review workspace settings and context posture in Settings or Context.";
+  if (service.key === "studio-worker") return "Check worker registrations and task recovery in Operations.";
+  if (service.zone === "Automation Modules") return "Confirm automation posture and operator-safe starter packs.";
+  if (service.zone === "Production Services") return "Confirm runtime health and packaging path readiness.";
+  return "Review platform posture and service ownership in Overview.";
+}
+
 async function loadDashboardData(): Promise<DashboardData> {
   const [services, workers, rules, rulePacks, starterPacks, playbooks, tasks, approvals, styleProfiles, alerts, runtimeAlerts, runtimeRecovery, bootstrapStatus, workspace] =
     await Promise.all([
@@ -767,6 +809,9 @@ export function App() {
   const [taskActionMessage, setTaskActionMessage] = useState<string | null>(null);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [selectedServiceKey, setSelectedServiceKey] = useState<string>("project-state");
+  const [serviceInspectorMessage, setServiceInspectorMessage] = useState<string | null>(null);
+  const [serviceInspectorError, setServiceInspectorError] = useState<string | null>(null);
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const optionalOfflineCount = data.services.filter((service) => service.optional && service.state === "offline").length;
@@ -778,6 +823,8 @@ export function App() {
   const configuredAlertCount = data.alerts.configured_channel_count;
   const activeAlertCount = data.runtimeAlerts.active_alerts.length;
   const serviceZones = groupByZone(data.services);
+  const selectedService =
+    data.services.find((service) => service.key === selectedServiceKey) ?? data.services[0] ?? null;
   const zoneSummaries = serviceZones.map(([zone, services]) => ({
     zone,
     services,
@@ -851,8 +898,12 @@ export function App() {
       try {
         const nextData = await loadDashboardData();
         if (!active) return;
-        setData(nextData);
-      } catch (error) {
+      setData(nextData);
+      setSelectedServiceKey((current) => {
+        if (nextData.services.some((service) => service.key === current)) return current;
+        return nextData.services[0]?.key ?? current;
+      });
+    } catch (error) {
         if (!active) return;
         setData((current) => ({
           ...current,
@@ -874,6 +925,10 @@ export function App() {
   async function refreshData() {
     const nextData = await loadDashboardData();
     setData(nextData);
+    setSelectedServiceKey((current) => {
+      if (nextData.services.some((service) => service.key === current)) return current;
+      return nextData.services[0]?.key ?? current;
+    });
   }
 
   async function handleApproval(jobId: string, decision: "approve" | "reject") {
@@ -1103,6 +1158,20 @@ export function App() {
       setTaskActionError(error instanceof Error ? error.message : `Unable to ${action} task`);
     } finally {
       setPendingTaskActionId(null);
+    }
+  }
+
+  async function copyServiceField(value: string, label: string) {
+    setServiceInspectorMessage(null);
+    setServiceInspectorError(null);
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard access is not available in this browser context.");
+      }
+      await navigator.clipboard.writeText(value);
+      setServiceInspectorMessage(`${label} copied.`);
+    } catch (error) {
+      setServiceInspectorError(error instanceof Error ? error.message : `Unable to copy ${label.toLowerCase()}.`);
     }
   }
 
@@ -1358,7 +1427,12 @@ export function App() {
                     </div>
                     <div className="table-stack">
                       {services.map((service) => (
-                        <div key={service.key} className="table-row service-row">
+                        <button
+                          key={service.key}
+                          type="button"
+                          className={`table-row service-row service-button ${selectedService?.key === service.key ? "is-selected" : ""}`}
+                          onClick={() => setSelectedServiceKey(service.key)}
+                        >
                           <div className="row-main">
                             <strong>{service.name}</strong>
                             <div className="muted">{service.role}</div>
@@ -1374,7 +1448,7 @@ export function App() {
                             </span>
                             <span className="muted">{service.detail}</span>
                           </div>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </section>
@@ -1385,10 +1459,128 @@ export function App() {
             <aside className="panel panel-span-4">
               <div className="panel-header">
                 <div>
-                  <p className="section-kicker">Fabric</p>
-                  <h2>Support Surface</h2>
+                  <p className="section-kicker">Inspector</p>
+                  <h2>Service Drilldown</h2>
                 </div>
-                <span className="count-pill">{supportSurface.length}</span>
+                <span className={`status-pill ${selectedService ? statusTone(selectedService.state) : "warn"}`}>
+                  {selectedService ? serviceLabel(selectedService) : "none"}
+                </span>
+              </div>
+              {selectedService ? (
+                <div className="service-inspector">
+                  <div className={`mini-card service-identity-card module-${zoneAccent(selectedService.zone)}`}>
+                    <span className="metric-label">{selectedService.zone}</span>
+                    <strong>{selectedService.name}</strong>
+                    <p className="panel-note">{selectedService.role}</p>
+                    <div className="meta-inline">
+                      <span>{selectedService.note}</span>
+                      <span>managed in {serviceManagedIn(selectedService)}</span>
+                    </div>
+                  </div>
+                  <div className="mini-card">
+                    <span className="metric-label">Recommended next move</span>
+                    <strong>{servicePrimaryTab(selectedService)}</strong>
+                    <p className="panel-note">{serviceRecommendedAction(selectedService)}</p>
+                  </div>
+                  <div className="mini-card">
+                    <span className="metric-label">Dependencies</span>
+                    <div className="summary-pill-row">
+                      {serviceDependencyHints(selectedService).map((item) => (
+                        <span key={item} className="summary-pill">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="action-deck">
+                    <button
+                      className="action-button ok"
+                      type="button"
+                      onClick={() => setActiveTab(servicePrimaryTab(selectedService))}
+                    >
+                      open {primaryTabs.find((tab) => tab.id === servicePrimaryTab(selectedService))?.label.toLowerCase()}
+                    </button>
+                    <button className="action-button" type="button" onClick={() => refreshData()}>
+                      refresh state
+                    </button>
+                    <button className="action-button" type="button" onClick={() => copyServiceField(selectedService.url, `${selectedService.name} URL`)}>
+                      copy url
+                    </button>
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={() => copyServiceField(selectedService.healthUrl, `${selectedService.name} health path`)}
+                    >
+                      copy health path
+                    </button>
+                  </div>
+                  {serviceInspectorMessage ? <p className="feedback ok">{serviceInspectorMessage}</p> : null}
+                  {serviceInspectorError ? <p className="feedback bad">{serviceInspectorError}</p> : null}
+                </div>
+              ) : null}
+              <div className="divider" />
+              <div className="panel-header compact-header">
+                <div>
+                  <p className="section-kicker">Platform Actions</p>
+                  <h2>Safe Operator Controls</h2>
+                </div>
+              </div>
+              <div className="table-stack">
+                <div className="table-row">
+                  <div className="row-main">
+                    <strong>Refresh control room</strong>
+                    <div className="muted">Re-poll the full stack and re-evaluate service health and readiness.</div>
+                  </div>
+                  <div className="row-meta">
+                    <button className="action-button" type="button" onClick={() => refreshData()}>
+                      refresh
+                    </button>
+                  </div>
+                </div>
+                <div className="table-row">
+                  <div className="row-main">
+                    <strong>Test alert routing</strong>
+                    <div className="muted">Verify email and webhook alert delivery without waiting for a real incident.</div>
+                  </div>
+                  <div className="row-meta">
+                    <button className="action-button" type="button" disabled={alertActionPending !== null} onClick={() => runAlertAction("test")}>
+                      {alertActionPending === "test" ? "testing" : "test alert"}
+                    </button>
+                  </div>
+                </div>
+                <div className="table-row">
+                  <div className="row-main">
+                    <strong>Reseed defaults</strong>
+                    <div className="muted">Reapply starter rules, starter packs, and shipped playbooks.</div>
+                  </div>
+                  <div className="row-meta">
+                    <button className="action-button" type="button" disabled={maintenancePending !== null} onClick={reseedAutomationDefaults}>
+                      {maintenancePending === "reseed" ? "reseeding" : "reseed"}
+                    </button>
+                  </div>
+                </div>
+                <div className="table-row">
+                  <div className="row-main">
+                    <strong>Edit workspace</strong>
+                    <div className="muted">Jump to Settings to update onboarding, deployment posture, context, and worker config.</div>
+                  </div>
+                  <div className="row-meta">
+                    <button className="action-button ok" type="button" onClick={() => setActiveTab("settings")}>
+                      settings
+                    </button>
+                  </div>
+                </div>
+              </div>
+              {maintenanceMessage ? <p className="feedback ok">{maintenanceMessage}</p> : null}
+              {maintenanceError ? <p className="feedback bad">{maintenanceError}</p> : null}
+              {alertActionMessage ? <p className="feedback ok">{alertActionMessage}</p> : null}
+              {alertActionError ? <p className="feedback bad">{alertActionError}</p> : null}
+              <div className="divider" />
+              <div className="panel-header compact-header">
+                <div>
+                  <p className="section-kicker">Support Surface</p>
+                  <h2>Stack Fabric</h2>
+                </div>
               </div>
               <div className="support-stack">
                 {supportSurface.map((item) => (
@@ -1397,39 +1589,6 @@ export function App() {
                     <div className="muted">{item.detail}</div>
                   </div>
                 ))}
-              </div>
-              <div className="divider" />
-              <div className="panel-header compact-header">
-                <div>
-                  <p className="section-kicker">Control Logic</p>
-                  <h2>Where To Manage Things</h2>
-                </div>
-              </div>
-              <div className="table-stack">
-                <div className="table-row">
-                  <div className="row-main">
-                    <strong>Overview</strong>
-                    <div className="muted">Platform health, support fabric, full service ownership map.</div>
-                  </div>
-                </div>
-                <div className="table-row">
-                  <div className="row-main">
-                    <strong>Operations</strong>
-                    <div className="muted">Approvals, alert response, runtime recovery, workers, and task controls.</div>
-                  </div>
-                </div>
-                <div className="table-row">
-                  <div className="row-main">
-                    <strong>Automation</strong>
-                    <div className="muted">OpenClaw, n8n, rule packs, starter packs, and automation module posture.</div>
-                  </div>
-                </div>
-                <div className="table-row">
-                  <div className="row-main">
-                    <strong>Context / Settings</strong>
-                    <div className="muted">CRM, voice context, shared paths, integrations, and worker configuration.</div>
-                  </div>
-                </div>
               </div>
             </aside>
           </section>
