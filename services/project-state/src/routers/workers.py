@@ -365,6 +365,15 @@ async def list_worker_tasks(status: str | None = None):
     return [serialize_worker_task(row) for row in rows]
 
 
+@router.get("/tasks/{task_id}")
+async def get_worker_task(task_id: str):
+    pool = await get_pool()
+    row = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Worker task not found")
+    return serialize_worker_task(row)
+
+
 @router.get("/runtime/recovery")
 async def runtime_recovery_snapshot():
     pool = await get_pool()

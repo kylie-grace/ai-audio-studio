@@ -52,8 +52,13 @@ def test_execute_reascript_live_dispatches_reaper_command(tmp_path: Path):
     marker.write_text("{}")
     settings = SimpleNamespace(dry_run_daw=False, reaper_binary_path=str(reaper))
 
-    with patch("adapters.reascript.subprocess.run") as mock_run:
-        mock_run.return_value = SimpleNamespace(returncode=0, stdout="ok", stderr="")
+    fake_process = SimpleNamespace(
+        returncode=0,
+        poll=lambda: 0,
+        communicate=lambda: ("ok", ""),
+    )
+
+    with patch("adapters.reascript.subprocess.Popen", return_value=fake_process) as mock_popen:
         result = execute_reascript(
             {
                 "session_path": str(session),
@@ -67,3 +72,4 @@ def test_execute_reascript_live_dispatches_reaper_command(tmp_path: Path):
     assert result["payload"]["dry_run"] is False
     assert result["payload"]["dispatch_command"][0] == str(reaper)
     assert Path(result["payload"]["working_session_path"]).exists()
+    mock_popen.assert_called_once()

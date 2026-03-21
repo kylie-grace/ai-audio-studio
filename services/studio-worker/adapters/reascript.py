@@ -35,6 +35,7 @@ class ReaScriptAdapter:
         self.validate_environment(payload)
         rendered = self.render(payload)
         workspace = prepare_execution_workspace(Path(payload["session_path"]), Path(rendered.path), "reascript", payload)
+        cancel_marker = Path(payload["cancel_marker_path"]) if payload.get("cancel_marker_path") else None
         artifacts = [
             ArtifactRef(path=str(workspace["manifest_path"]), kind="execution-manifest", label="reascript-execution-manifest"),
             ArtifactRef(path=str(workspace["session_copy"]), kind="session-copy", label="reascript-working-session"),
@@ -58,13 +59,27 @@ class ReaScriptAdapter:
             str(workspace["session_copy"]),
             str(workspace["script_copy"]),
         ]
-        completed = subprocess.run(command, capture_output=True, text=True, check=False, timeout=30)
+        if cancel_marker and cancel_marker.exists():
+            raise RuntimeError("Execution cancelled by operator before REAPER dispatch")
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        while process.poll() is None:
+            if cancel_marker and cancel_marker.exists():
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                raise RuntimeError("Execution cancelled by operator during REAPER dispatch")
+            time.sleep(0.25)
+        stdout, stderr = process.communicate()
         completion_marker = payload.get("completion_marker_path")
         marker_timeout_seconds = float(payload.get("marker_timeout_seconds", 10))
         if completion_marker:
             marker_path = Path(completion_marker)
             deadline = time.time() + marker_timeout_seconds
             while time.time() < deadline:
+                if cancel_marker and cancel_marker.exists():
+                    raise RuntimeError("Execution cancelled by operator while waiting for REAPER completion marker")
                 if marker_path.exists():
                     break
                 time.sleep(0.25)
@@ -73,13 +88,13 @@ class ReaScriptAdapter:
         log_path = workspace["run_dir"] / "reascript-execution.log"
         log_path.write_text(
             f"command: {' '.join(command)}\n"
-            f"returncode: {completed.returncode}\n"
-            f"stdout:\n{completed.stdout}\n"
-            f"stderr:\n{completed.stderr}\n"
+            f"returncode: {process.returncode}\n"
+            f"stdout:\n{stdout}\n"
+            f"stderr:\n{stderr}\n"
         )
         artifacts.append(ArtifactRef(path=str(log_path), kind="execution-log", label="reascript-execution-log"))
-        if completed.returncode != 0:
-            raise RuntimeError(f"REAPER command failed with exit code {completed.returncode}")
+        if process.returncode != 0:
+            raise RuntimeError(f"REAPER command failed with exit code {process.returncode}")
         return ExecutionResult(
             status="complete",
             message="ReaScript execution dispatched to REAPER",

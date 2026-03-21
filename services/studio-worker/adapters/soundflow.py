@@ -144,6 +144,7 @@ class SoundFlowAdapter:
     def execute(self, payload: dict) -> ExecutionResult:
         self.validate_environment(payload)
         rendered = self.render(payload)
+        cancel_marker = Path(payload["cancel_marker_path"]) if payload.get("cancel_marker_path") else None
         workspace = prepare_execution_workspace(
             Path(payload["session_path"]), Path(rendered.path), "soundflow", payload
         )
@@ -177,17 +178,29 @@ class SoundFlowAdapter:
             # SoundFlow CLI: SoundFlow --run-script <path>
             dispatch_method = "soundflow-cli"
             command = [soundflow_cli, "--run-script", str(js_path)]
-            completed = subprocess.run(command, capture_output=True, text=True, check=False, timeout=60)
+            if cancel_marker and cancel_marker.exists():
+                raise RuntimeError("Execution cancelled by operator before SoundFlow dispatch")
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            while process.poll() is None:
+                if cancel_marker and cancel_marker.exists():
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                    raise RuntimeError("Execution cancelled by operator during SoundFlow dispatch")
+                time.sleep(0.25)
+            stdout, stderr = process.communicate()
             log_lines = [
                 f"method: {dispatch_method}",
                 f"command: {' '.join(command)}",
-                f"returncode: {completed.returncode}",
-                f"stdout:\n{completed.stdout}",
-                f"stderr:\n{completed.stderr}",
+                f"returncode: {process.returncode}",
+                f"stdout:\n{stdout}",
+                f"stderr:\n{stderr}",
             ]
-            if completed.returncode != 0:
+            if process.returncode != 0:
                 raise RuntimeError(
-                    f"SoundFlow CLI failed (exit {completed.returncode}): {completed.stderr[:300]}"
+                    f"SoundFlow CLI failed (exit {process.returncode}): {stderr[:300]}"
                 )
         else:
             # Fallback: osascript — bring Pro Tools forward, notify per step
@@ -197,20 +210,32 @@ class SoundFlowAdapter:
             ascript_path = workspace["run_dir"] / "soundflow-fallback.applescript"
             ascript_path.write_text(ascript)
             command = ["osascript", str(ascript_path)]
-            completed = subprocess.run(command, capture_output=True, text=True, check=False, timeout=60)
+            if cancel_marker and cancel_marker.exists():
+                raise RuntimeError("Execution cancelled by operator before osascript dispatch")
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            while process.poll() is None:
+                if cancel_marker and cancel_marker.exists():
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                    raise RuntimeError("Execution cancelled by operator during osascript dispatch")
+                time.sleep(0.25)
+            stdout, stderr = process.communicate()
             log_lines = [
                 f"method: {dispatch_method}",
                 f"command: {' '.join(command)}",
-                f"returncode: {completed.returncode}",
-                f"stdout:\n{completed.stdout}",
-                f"stderr:\n{completed.stderr}",
+                f"returncode: {process.returncode}",
+                f"stdout:\n{stdout}",
+                f"stderr:\n{stderr}",
                 f"\nNote: SoundFlow CLI not found at '{soundflow_cli}'. "
                 f"Install SoundFlow and set SOUNDFLOW_CLI_PATH for full Pro Tools fader automation.",
             ]
             artifacts.append(ArtifactRef(path=str(ascript_path), kind="applescript", label="soundflow-applescript-fallback"))
-            if completed.returncode != 0:
+            if process.returncode != 0:
                 raise RuntimeError(
-                    f"osascript fallback failed (exit {completed.returncode}): {completed.stderr[:300]}"
+                    f"osascript fallback failed (exit {process.returncode}): {stderr[:300]}"
                 )
 
         log_path.write_text("\n".join(log_lines))

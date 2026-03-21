@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import socket
 from contextlib import suppress
+from pathlib import Path
+import tempfile
 
 import httpx
 
@@ -31,6 +33,11 @@ class StudioWorkerRunner:
         self.client = client
         self.settings = settings
         self._heartbeat_count = 0
+
+    def cancel_marker_path(self, task_id: str) -> Path:
+        root = Path(tempfile.gettempdir()) / "ai-audio-studio"
+        root.mkdir(parents=True, exist_ok=True)
+        return root / f"cancel-{task_id}.marker"
 
     def workstation_snapshot(self) -> dict:
         detected = detect_workstation_profile(self.settings)
@@ -107,6 +114,34 @@ class StudioWorkerRunner:
             return execute_reascript(payload, self.settings)
         raise ValueError(f"Unsupported task type: {task_type}")
 
+    async def fetch_task(self, task_id: str) -> dict | None:
+        response = await self.client.get(f"{self.settings.project_state_url}/workers/tasks/{task_id}")
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json()
+
+    async def execute_task_with_control(self, task: dict) -> tuple[dict | None, bool]:
+        payload = decode_jsonb(task["payload"]) or {}
+        cancel_marker = self.cancel_marker_path(task["id"])
+        if cancel_marker.exists():
+            cancel_marker.unlink()
+        controlled_task = {**task, "payload": {**payload, "task_id": task["id"], "cancel_marker_path": str(cancel_marker)}}
+        future = asyncio.create_task(asyncio.to_thread(self.execute_task, controlled_task))
+        cancelled = False
+        try:
+            while not future.done():
+                current = await self.fetch_task(task["id"])
+                if current and current.get("status") == "cancelled":
+                    cancel_marker.write_text("cancelled\n")
+                    cancelled = True
+                    await self.heartbeat("cancelling")
+                await asyncio.sleep(1)
+            return await future, cancelled
+        finally:
+            with suppress(FileNotFoundError):
+                cancel_marker.unlink()
+
     async def claim_next_task(self) -> dict | None:
         response = await self.client.post(
             f"{self.settings.project_state_url}/workers/tasks/claim",
@@ -143,10 +178,16 @@ class StudioWorkerRunner:
                 if task:
                     await self.heartbeat("busy")
                     try:
-                        result = self.execute_task(task)
+                        result, cancelled = await self.execute_task_with_control(task)
                     except Exception as exc:
+                        current = await self.fetch_task(task["id"])
+                        if current and current.get("status") == "cancelled":
+                            continue
                         await self.fail_task(task["id"], str(exc))
                     else:
+                        current = await self.fetch_task(task["id"])
+                        if cancelled or (current and current.get("status") == "cancelled"):
+                            continue
                         await self.complete_task(task["id"], result)
             except Exception:
                 with suppress(Exception):
