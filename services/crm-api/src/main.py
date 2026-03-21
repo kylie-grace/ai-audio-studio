@@ -119,6 +119,10 @@ class WorkspaceWorkerBody(BaseModel):
     default_daw: str = "reaper"
     supported_daws: list[str] = Field(default_factory=lambda: ["reaper"])
     adapter_capabilities: list[str] = Field(default_factory=lambda: ["execute-reascript"])
+    dry_run_daw: bool = False
+    reaper_binary_path: str = ""
+    protools_app_path: str = ""
+    soundflow_cli_path: str = ""
     notes: str = ""
 
 

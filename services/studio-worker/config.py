@@ -92,6 +92,14 @@ def _adapter_capabilities(capabilities: list[str], worker_config: dict) -> list[
     return [capability for capability in capabilities if capability in {"execute-soundflow", "execute-reascript"}]
 
 
+def _bool_or_default(value, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return default
+
+
 def load_settings() -> Settings:
     workspace = load_workspace_settings()
     shared_paths = workspace.get("shared_paths") or {}
@@ -105,17 +113,20 @@ def load_settings() -> Settings:
         "Studio Worker",
     ) or "Studio Worker"
     supported_daws = _infer_supported_daws(capabilities, worker_config)
-    dry_run_daw = os.environ.get("STUDIO_WORKER_DRY_RUN_DAW", "false").lower() in {"1", "true", "yes", "on"}
+    dry_run_daw = _bool_or_default(os.environ.get("STUDIO_WORKER_DRY_RUN_DAW"), _bool_or_default(worker_config.get("dry_run_daw"), False))
     reaper_binary_path = _first_present(
         os.environ.get("REAPER_BINARY_PATH"),
+        worker_config.get("reaper_binary_path"),
         "/Applications/REAPER.app/Contents/MacOS/REAPER" if Path("/Applications/REAPER.app/Contents/MacOS/REAPER").exists() else None,
     )
     protools_app_path = _first_present(
         os.environ.get("PROTOOLS_APP_PATH"),
+        worker_config.get("protools_app_path"),
         "/Applications/Pro Tools.app" if Path("/Applications/Pro Tools.app").exists() else None,
     )
     soundflow_cli_path = _first_present(
         os.environ.get("SOUNDFLOW_CLI_PATH"),
+        worker_config.get("soundflow_cli_path"),
         "/Applications/SoundFlow.app/Contents/MacOS/SoundFlow" if Path("/Applications/SoundFlow.app/Contents/MacOS/SoundFlow").exists() else None,
     )
 

@@ -493,6 +493,16 @@ type WorkspaceSettings = {
     enabled: boolean;
     worker_slug: string;
     worker_api_base_url: string;
+    display_name: string;
+    platform: string;
+    default_daw: string;
+    supported_daws: string[];
+    adapter_capabilities: string[];
+    dry_run_daw: boolean;
+    reaper_binary_path: string;
+    protools_app_path: string;
+    soundflow_cli_path: string;
+    notes: string;
   };
   module_settings: ModuleSettings;
   onboarding_complete: boolean;
@@ -861,6 +871,16 @@ function defaultWorkspaceSettings(): WorkspaceSettings {
       enabled: false,
       worker_slug: "studio-mac",
       worker_api_base_url: "",
+      display_name: "Studio Worker",
+      platform: "macos",
+      default_daw: "reaper",
+      supported_daws: ["reaper"],
+      adapter_capabilities: ["execute-reascript"],
+      dry_run_daw: false,
+      reaper_binary_path: "",
+      protools_app_path: "",
+      soundflow_cli_path: "",
+      notes: "",
     },
     module_settings: {
       lead_intake: {
@@ -1717,6 +1737,13 @@ export function App() {
           ...workspaceDraft.worker,
           worker_slug: workspaceDraft.worker.worker_slug.trim(),
           worker_api_base_url: workspaceDraft.worker.worker_api_base_url.trim(),
+          display_name: workspaceDraft.worker.display_name.trim(),
+          supported_daws: workspaceDraft.worker.supported_daws.map((item) => item.trim()).filter(Boolean),
+          adapter_capabilities: workspaceDraft.worker.adapter_capabilities.map((item) => item.trim()).filter(Boolean),
+          reaper_binary_path: workspaceDraft.worker.reaper_binary_path.trim(),
+          protools_app_path: workspaceDraft.worker.protools_app_path.trim(),
+          soundflow_cli_path: workspaceDraft.worker.soundflow_cli_path.trim(),
+          notes: workspaceDraft.worker.notes.trim(),
         },
       };
       const response = await fetch(`${API.crm}/workspace-settings/bootstrap`, {
@@ -1850,7 +1877,7 @@ export function App() {
     }
   }
 
-  async function handleTaskRecovery(taskId: string, action: "release" | "requeue") {
+  async function handleTaskRecovery(taskId: string, action: "release" | "requeue" | "cancel") {
     setPendingTaskActionId(taskId);
     setTaskActionMessage(null);
     setTaskActionError(null);
@@ -1868,7 +1895,9 @@ export function App() {
         const payload = await response.json().catch(() => null);
         throw new Error(payload?.detail ?? `${action} failed with ${response.status}`);
       }
-      setTaskActionMessage(`${action === "release" ? "Released" : "Requeued"} worker task ${taskId}.`);
+      setTaskActionMessage(
+        `${action === "release" ? "Released" : action === "requeue" ? "Requeued" : "Cancelled"} worker task ${taskId}.`,
+      );
       await refreshData();
     } catch (error) {
       setTaskActionError(error instanceof Error ? error.message : `Unable to ${action} task`);
@@ -3339,7 +3368,7 @@ export function App() {
                       <div className="row-meta">
                         <span className={`status-pill ${statusTone(task.status)}`}>{task.status}</span>
                         <span className="muted">{summarizeTime(task.created_at)}</span>
-                        {task.status === "claimed" || task.status === "failed" ? (
+                        {task.status === "queued" || task.status === "claimed" || task.status === "failed" ? (
                           <div className="action-row">
                             {task.status === "claimed" ? (
                               <button
@@ -3348,6 +3377,15 @@ export function App() {
                                 onClick={() => handleTaskRecovery(task.id, "release")}
                               >
                                 {pendingTaskActionId === task.id ? "working" : "release"}
+                              </button>
+                            ) : null}
+                            {task.status === "queued" || task.status === "claimed" ? (
+                              <button
+                                className="action-button bad"
+                                disabled={!operatorName || pendingTaskActionId === task.id}
+                                onClick={() => handleTaskRecovery(task.id, "cancel")}
+                              >
+                                {pendingTaskActionId === task.id ? "working" : "cancel"}
                               </button>
                             ) : null}
                             {task.status === "failed" ? (
@@ -4278,6 +4316,125 @@ export function App() {
                         worker: { ...current.worker, worker_api_base_url: event.target.value },
                       }))}
                     disabled={!workspaceDraft.worker.enabled}
+                  />
+                </label>
+                <label className="field">
+                  <span className="metric-label">Display name</span>
+                  <input
+                    value={workspaceDraft.worker.display_name}
+                    onChange={(event) =>
+                      setWorkspaceDraft((current) => ({
+                        ...current,
+                        worker: { ...current.worker, display_name: event.target.value },
+                      }))}
+                    disabled={!workspaceDraft.worker.enabled}
+                  />
+                </label>
+                <label className="field">
+                  <span className="metric-label">Default DAW</span>
+                  <select
+                    value={workspaceDraft.worker.default_daw}
+                    onChange={(event) =>
+                      setWorkspaceDraft((current) => ({
+                        ...current,
+                        worker: { ...current.worker, default_daw: event.target.value },
+                      }))}
+                    disabled={!workspaceDraft.worker.enabled}
+                  >
+                    <option value="reaper">Reaper</option>
+                    <option value="protools">Pro Tools</option>
+                  </select>
+                </label>
+                <label className="toggle-chip">
+                  <input
+                    type="checkbox"
+                    checked={workspaceDraft.worker.dry_run_daw}
+                    onChange={(event) =>
+                      setWorkspaceDraft((current) => ({
+                        ...current,
+                        worker: { ...current.worker, dry_run_daw: event.target.checked },
+                      }))}
+                    disabled={!workspaceDraft.worker.enabled}
+                  />
+                  <span>Keep DAW execution in dry run</span>
+                </label>
+                <label className="field">
+                  <span className="metric-label">Supported DAWs</span>
+                  <input
+                    value={workspaceDraft.worker.supported_daws.join(", ")}
+                    onChange={(event) =>
+                      setWorkspaceDraft((current) => ({
+                        ...current,
+                        worker: {
+                          ...current.worker,
+                          supported_daws: event.target.value.split(",").map((item) => item.trim()).filter(Boolean),
+                        },
+                      }))}
+                    disabled={!workspaceDraft.worker.enabled}
+                  />
+                </label>
+                <label className="field">
+                  <span className="metric-label">Adapter capabilities</span>
+                  <input
+                    value={workspaceDraft.worker.adapter_capabilities.join(", ")}
+                    onChange={(event) =>
+                      setWorkspaceDraft((current) => ({
+                        ...current,
+                        worker: {
+                          ...current.worker,
+                          adapter_capabilities: event.target.value.split(",").map((item) => item.trim()).filter(Boolean),
+                        },
+                      }))}
+                    disabled={!workspaceDraft.worker.enabled}
+                  />
+                </label>
+                <label className="field">
+                  <span className="metric-label">Reaper binary path</span>
+                  <input
+                    value={workspaceDraft.worker.reaper_binary_path}
+                    onChange={(event) =>
+                      setWorkspaceDraft((current) => ({
+                        ...current,
+                        worker: { ...current.worker, reaper_binary_path: event.target.value },
+                      }))}
+                    disabled={!workspaceDraft.worker.enabled}
+                  />
+                </label>
+                <label className="field">
+                  <span className="metric-label">Pro Tools app path</span>
+                  <input
+                    value={workspaceDraft.worker.protools_app_path}
+                    onChange={(event) =>
+                      setWorkspaceDraft((current) => ({
+                        ...current,
+                        worker: { ...current.worker, protools_app_path: event.target.value },
+                      }))}
+                    disabled={!workspaceDraft.worker.enabled}
+                  />
+                </label>
+                <label className="field">
+                  <span className="metric-label">SoundFlow CLI path</span>
+                  <input
+                    value={workspaceDraft.worker.soundflow_cli_path}
+                    onChange={(event) =>
+                      setWorkspaceDraft((current) => ({
+                        ...current,
+                        worker: { ...current.worker, soundflow_cli_path: event.target.value },
+                      }))}
+                    disabled={!workspaceDraft.worker.enabled}
+                  />
+                </label>
+                <label className="field">
+                  <span className="metric-label">Operator notes</span>
+                  <textarea
+                    value={workspaceDraft.worker.notes}
+                    onChange={(event) =>
+                      setWorkspaceDraft((current) => ({
+                        ...current,
+                        worker: { ...current.worker, notes: event.target.value },
+                      }))}
+                    disabled={!workspaceDraft.worker.enabled}
+                    rows={4}
                   />
                 </label>
               </article>

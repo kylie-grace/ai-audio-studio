@@ -58,6 +58,8 @@ def test_worker_settings_use_workspace_defaults(monkeypatch):
                     "default_daw": "protools",
                     "supported_daws": ["protools", "reaper"],
                     "adapter_capabilities": ["execute-soundflow", "execute-reascript"],
+                    "dry_run_daw": True,
+                    "reaper_binary_path": "/Applications/REAPER.app/Contents/MacOS/REAPER",
                 },
             }
         ),
@@ -72,6 +74,8 @@ def test_worker_settings_use_workspace_defaults(monkeypatch):
     assert settings.delivery_path == "/Volumes/StudioShare/deliveries"
     assert settings.workstation_profile["default_daw"] == "protools"
     assert settings.workstation_profile["supported_daws"] == ["protools", "reaper"]
+    assert settings.dry_run_daw is True
+    assert settings.reaper_binary_path == "/Applications/REAPER.app/Contents/MacOS/REAPER"
 
 
 def test_env_overrides_workspace_defaults(monkeypatch):

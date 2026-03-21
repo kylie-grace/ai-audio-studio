@@ -118,6 +118,10 @@ def test_default_workspace_settings_prefers_authorized_actor_and_env_integration
         "default_daw": "reaper",
         "supported_daws": ["reaper"],
         "adapter_capabilities": ["execute-reascript"],
+        "dry_run_daw": False,
+        "reaper_binary_path": "",
+        "protools_app_path": "",
+        "soundflow_cli_path": "",
         "notes": "",
     }
 
