@@ -1,0 +1,110 @@
+{
+  "name": "Alerts Runtime Digest",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "studio/alerts",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook_AlertsRuntimeDigest",
+      "name": "Inbound Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        280
+      ],
+      "webhookId": "studio-alerts"
+    },
+    {
+      "parameters": {
+        "url": "http://project-state:8080/alerts/summary",
+        "options": {}
+      },
+      "id": "Http_RuntimeAlertSummary",
+      "name": "Fetch Runtime Alert Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "jsonOutput": "={\"received_event\": $(\"Inbound Alert Webhook\").item.json.body ?? {}, \"runtime_summary\": $json, \"received_at\": $now}"
+      },
+      "id": "Set_RuntimeAlertDigest",
+      "name": "Assemble Runtime Alert Digest",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        740,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "Respond_RuntimeAlertDigest",
+      "name": "Respond Runtime Alert Digest",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1000,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "Inbound Alert Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fetch Runtime Alert Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Runtime Alert Summary": {
+      "main": [
+        [
+          {
+            "node": "Assemble Runtime Alert Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Runtime Alert Digest": {
+      "main": [
+        [
+          {
+            "node": "Respond Runtime Alert Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "versionId": "starter-alerts-runtime-digest",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

@@ -12,7 +12,9 @@ WORKFLOW_DIR = Path(__file__).resolve().parents[2] / "infra" / "n8n" / "workflow
 def test_expected_workflow_pack_exists():
     files = sorted(path.name for path in WORKFLOW_DIR.glob("*.json"))
     assert files == [
+        "alerts-runtime-digest.json",
         "content-source-new-brief.json",
+        "control-room-status-digest.json",
         "inbox-source-new-message.json",
         "lead-source-new-lead.json",
         "qc-source-qc-pass.json",

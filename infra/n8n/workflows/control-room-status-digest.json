@@ -1,0 +1,110 @@
+{
+  "name": "Control Room Status Digest",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "studio/control-room/status-digest",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook_ControlRoomStatusDigest",
+      "name": "Control Room Status Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        280
+      ],
+      "webhookId": "studio-control-room-status-digest"
+    },
+    {
+      "parameters": {
+        "url": "http://crm-api:8090/workspace-settings/status",
+        "options": {}
+      },
+      "id": "Http_WorkspaceStatus",
+      "name": "Fetch Workspace Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "jsonOutput": "={\"request\": $(\"Control Room Status Trigger\").item.json.body ?? {}, \"workspace_status\": $json, \"generated_at\": $now}"
+      },
+      "id": "Set_ControlRoomStatusDigest",
+      "name": "Assemble Control Room Digest",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        740,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "Respond_ControlRoomStatusDigest",
+      "name": "Respond Control Room Digest",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1000,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "Control Room Status Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Workspace Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Workspace Status": {
+      "main": [
+        [
+          {
+            "node": "Assemble Control Room Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Control Room Digest": {
+      "main": [
+        [
+          {
+            "node": "Respond Control Room Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "versionId": "starter-control-room-status-digest",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

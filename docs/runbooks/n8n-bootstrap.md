@@ -12,8 +12,13 @@ Bring up n8n with importable workflow templates so operators do not have to desi
 - `infra/n8n/workflows/session-source-import-stems.json`
 - `infra/n8n/workflows/revision-source-notes-received.json`
 - `infra/n8n/workflows/qc-source-qc-pass.json`
+- `infra/n8n/workflows/alerts-runtime-digest.json`
+- `infra/n8n/workflows/control-room-status-digest.json`
 
-Each workflow terminates at `openclaw /dispatch/by-trigger`, which then applies the seeded rule packs and starter playbooks.
+The source/event workflows terminate at `openclaw /dispatch/by-trigger`, which then applies the seeded rule packs and starter playbooks.
+The two operator-support workflows expose:
+- `studio/alerts` for the conventional n8n alert receiver path used by OpenClaw
+- `studio/control-room/status-digest` for a pullable workspace/control-room status digest
 
 ## Import
 
@@ -27,7 +32,7 @@ bash scripts/bootstrap_n8n.sh infra/.env
 3. The helper waits for the running `n8n` service to be healthy, then executes the importer inside that container.
 4. If any workflows already exist in the n8n database, the helper exits cleanly and leaves them untouched.
 5. Open n8n at `http://localhost:5678` or `http://<mac-ip>:5678`.
-6. Confirm the `Lead Source New Lead`, `Inbox Source New Message`, `Content Source New Brief`, `Session Source Import Stems`, `Revision Source Notes Received`, and `QC Source QC Pass` workflows exist.
+6. Confirm the `Lead Source New Lead`, `Inbox Source New Message`, `Content Source New Brief`, `Session Source Import Stems`, `Revision Source Notes Received`, `QC Source QC Pass`, `Alerts Runtime Digest`, and `Control Room Status Digest` workflows exist.
 7. Adjust webhook paths, credentials, or upstream trigger sources only if your studio needs custom external integrations.
 8. Activate the workflows only after validating OpenClaw health and dashboard visibility.
 
