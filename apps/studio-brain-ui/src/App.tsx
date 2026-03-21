@@ -160,6 +160,25 @@ type RuntimeAlertSummary = {
   active_alerts: RuntimeAlert[];
 };
 
+type RuntimeRecovery = {
+  stale_workers: Array<{
+    slug: string;
+    display_name: string;
+    status: string;
+    host?: string | null;
+    api_base_url?: string | null;
+    last_seen_at: string | null;
+  }>;
+  failed_tasks: WorkerTask[];
+  claimed_tasks: Array<WorkerTask & { lease_expires_at?: string | null; lease_state?: "active" | "expired" }>;
+  summary: {
+    failed_task_count: number;
+    claimed_task_count: number;
+    expired_claim_count: number;
+    stale_worker_count: number;
+  };
+};
+
 type BootstrapStatus = {
   status: string;
   workflow_count: number;
@@ -239,6 +258,7 @@ type DashboardData = {
   styleProfiles: StyleProfile[];
   alerts: AlertConfig;
   runtimeAlerts: RuntimeAlertSummary;
+  runtimeRecovery: RuntimeRecovery;
   bootstrapStatus: BootstrapStatus;
   workspace: WorkspaceStatus;
   loadState: "loading" | "ready" | "error";
@@ -554,7 +574,7 @@ function groupByZone(services: ServiceRecord[]) {
 }
 
 async function loadDashboardData(): Promise<DashboardData> {
-  const [services, workers, rules, rulePacks, starterPacks, playbooks, tasks, approvals, styleProfiles, alerts, runtimeAlerts, bootstrapStatus, workspace] =
+  const [services, workers, rules, rulePacks, starterPacks, playbooks, tasks, approvals, styleProfiles, alerts, runtimeAlerts, runtimeRecovery, bootstrapStatus, workspace] =
     await Promise.all([
       Promise.all(
         serviceCatalog.map(async (service) => ({
@@ -572,6 +592,7 @@ async function loadDashboardData(): Promise<DashboardData> {
       fetchJson<StyleProfile[]>(`${API.crm}/style-profiles?scope=studio`),
       fetchJson<AlertConfig>(`${API.openclaw}/alerts/config`),
       fetchJson<RuntimeAlertSummary>(`${API.projectState}/alerts/summary`),
+      fetchJson<RuntimeRecovery>(`${API.projectState}/workers/runtime/recovery`),
       fetchJson<BootstrapStatus>(`${API.openclaw}/bootstrap/status`),
       fetchJson<WorkspaceStatus>(`${API.crm}/workspace-settings/status`),
     ]);
@@ -589,6 +610,7 @@ async function loadDashboardData(): Promise<DashboardData> {
     styleProfiles,
     alerts,
     runtimeAlerts,
+    runtimeRecovery,
     bootstrapStatus,
     workspace,
     loadState: "ready",
@@ -624,6 +646,17 @@ export function App() {
       expired_worker_leases: 0,
       stale_workers: [],
       active_alerts: [],
+    },
+    runtimeRecovery: {
+      stale_workers: [],
+      failed_tasks: [],
+      claimed_tasks: [],
+      summary: {
+        failed_task_count: 0,
+        claimed_task_count: 0,
+        expired_claim_count: 0,
+        stale_worker_count: 0,
+      },
     },
     bootstrapStatus: {
       status: "pending",
@@ -1793,6 +1826,87 @@ export function App() {
       </section>
 
       <section className="workspace-grid">
+        <article className="panel panel-span-12">
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Recovery</p>
+              <h2>Runtime Recovery</h2>
+            </div>
+            <div className="header-actions">
+              <span className="count-pill">{data.runtimeRecovery.summary.failed_task_count} failed</span>
+              <span className="status-pill warn">{data.runtimeRecovery.summary.claimed_task_count} claimed</span>
+              <span className="status-pill bad">{data.runtimeRecovery.summary.expired_claim_count} expired</span>
+            </div>
+          </div>
+          <div className="recovery-grid">
+            <div className="mini-card recovery-card">
+              <span className="metric-label">Failed tasks ready to requeue</span>
+              <strong>{data.runtimeRecovery.summary.failed_task_count}</strong>
+              <p className="panel-note">
+                Failed execution can be requeued directly from the task feed once the underlying issue is understood.
+              </p>
+              <div className="table-stack top-gap">
+                {data.runtimeRecovery.failed_tasks.slice(0, 3).map((task) => (
+                  <div key={task.id} className="table-row">
+                    <div className="row-main">
+                      <strong>{task.task_type}</strong>
+                      <div className="muted">{task.error_message ?? "Worker task failed."}</div>
+                    </div>
+                    <div className="row-meta">
+                      <span className="status-pill bad">failed</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mini-card recovery-card">
+              <span className="metric-label">Claimed tasks</span>
+              <strong>{data.runtimeRecovery.summary.claimed_task_count}</strong>
+              <p className="panel-note">
+                Claimed work is normal while a worker is active. Expired leases indicate stranded execution and should
+                be released or requeued.
+              </p>
+              <div className="table-stack top-gap">
+                {data.runtimeRecovery.claimed_tasks.slice(0, 3).map((task) => (
+                  <div key={task.id} className="table-row">
+                    <div className="row-main">
+                      <strong>{task.task_type}</strong>
+                      <div className="muted">{task.claimed_by ?? task.worker_slug ?? "unassigned"}</div>
+                    </div>
+                    <div className="row-meta">
+                      <span className={`status-pill ${task.lease_state === "expired" ? "bad" : "warn"}`}>
+                        {task.lease_state ?? "claimed"}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mini-card recovery-card">
+              <span className="metric-label">Stale workers</span>
+              <strong>{data.runtimeRecovery.summary.stale_worker_count}</strong>
+              <p className="panel-note">
+                Stale workers usually point to a stopped local worker loop, a dead second Mac, or a networking issue.
+              </p>
+              <div className="table-stack top-gap">
+                {data.runtimeRecovery.stale_workers.slice(0, 3).map((worker) => (
+                  <div key={worker.slug} className="table-row">
+                    <div className="row-main">
+                      <strong>{worker.display_name}</strong>
+                      <div className="muted">{worker.slug}</div>
+                    </div>
+                    <div className="row-meta">
+                      <span className="status-pill warn">stale</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </article>
+
         <article className="panel panel-span-5">
           <div className="panel-header">
             <div>

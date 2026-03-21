@@ -403,8 +403,18 @@ code {
   gap: 12px;
 }
 
+.recovery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .readiness-card strong {
   font-size: 1.02rem;
+}
+
+.recovery-card strong {
+  font-size: 1.06rem;
 }
 
 .stat-strip {
@@ -788,6 +798,7 @@ code {
   .command-grid,
   .alert-summary-grid,
   .readiness-grid,
+  .recovery-grid,
   .stat-strip,
   .onboarding-grid,
   .settings-snapshot-grid {

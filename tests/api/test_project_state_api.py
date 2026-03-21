@@ -178,6 +178,12 @@ class FakePool:
             return [row for row in self.jobs.values() if row["status"] == "awaiting-approval"]
         if "SELECT slug, display_name, status, last_seen_at FROM worker_nodes" in query:
             return list(self.worker_nodes)
+        if "SELECT * FROM worker_nodes ORDER BY slug ASC" in query:
+            return list(self.worker_nodes)
+        if "SELECT * FROM worker_tasks WHERE status='failed'" in query:
+            return [row for row in self.worker_tasks if row.get("status") == "failed"]
+        if "SELECT * FROM worker_tasks WHERE status='claimed'" in query:
+            return [row for row in self.worker_tasks if row.get("status") == "claimed"]
         if "SELECT * FROM audit_log" in query:
             return list(self.audit_log)
         raise AssertionError(f"Unhandled fetch query: {query}")
@@ -489,6 +495,57 @@ def test_alert_summary_reports_waiting_jobs_and_stale_workers():
         "stale-worker",
         "expired-worker-lease",
     }
+
+
+def test_runtime_recovery_snapshot_groups_stale_failed_and_claimed_work():
+    pool = FakePool()
+    now = datetime.now(timezone.utc)
+    pool.worker_tasks.append(
+        FakeRow(
+            id="task-failed",
+            status="failed",
+            created_at=now,
+            completed_at=now,
+            payload={},
+            result={},
+            error_message="boom",
+        )
+    )
+    pool.worker_tasks.append(
+        FakeRow(
+            id="task-claimed",
+            status="claimed",
+            created_at=now,
+            claimed_by="fresh-worker",
+            lease_expires_at=now,
+            payload={},
+            result={},
+        )
+    )
+    pool.worker_tasks.append(
+        FakeRow(
+            id="task-expired",
+            status="claimed",
+            created_at=now,
+            claimed_by="fresh-worker",
+            lease_expires_at=now.replace(year=now.year - 1),
+            payload={},
+            result={},
+        )
+    )
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.get("/workers/runtime/recovery")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["failed_task_count"] == 1
+    assert payload["summary"]["claimed_task_count"] == 2
+    assert payload["summary"]["expired_claim_count"] == 1
+    assert payload["summary"]["stale_worker_count"] == 1
+    assert payload["failed_tasks"][0]["id"] == "task-failed"
+    assert any(task["lease_state"] == "expired" for task in payload["claimed_tasks"])
 
 
 def test_direct_audit_write_requires_internal_caller():

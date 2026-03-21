@@ -42,6 +42,21 @@ def serialize_worker_task(row) -> dict:
     return data
 
 
+def _iso(value):
+    return value.isoformat() if hasattr(value, "isoformat") else value
+
+
+def _serialize_runtime_worker(row) -> dict:
+    return {
+        "slug": row["slug"],
+        "display_name": row["display_name"],
+        "status": row["status"],
+        "host": row.get("host"),
+        "api_base_url": row.get("api_base_url"),
+        "last_seen_at": _iso(row.get("last_seen_at")),
+    }
+
+
 def require_worker_token(token: str | None) -> None:
     if WORKER_API_TOKEN and token != WORKER_API_TOKEN:
         raise HTTPException(status_code=403, detail="Missing or invalid worker token.")
@@ -207,6 +222,51 @@ async def list_worker_tasks(status: str | None = None):
     else:
         rows = await pool.fetch("SELECT * FROM worker_tasks ORDER BY created_at DESC")
     return [serialize_worker_task(row) for row in rows]
+
+
+@router.get("/runtime/recovery")
+async def runtime_recovery_snapshot():
+    pool = await get_pool()
+    now = datetime.now(timezone.utc)
+    stale_cutoff = now - timedelta(minutes=5)
+
+    workers = await pool.fetch("SELECT * FROM worker_nodes ORDER BY slug ASC")
+    failed_tasks = await pool.fetch(
+        "SELECT * FROM worker_tasks WHERE status='failed' ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 20"
+    )
+    claimed_tasks = await pool.fetch(
+        "SELECT * FROM worker_tasks WHERE status='claimed' ORDER BY lease_expires_at ASC NULLS LAST, created_at DESC LIMIT 20"
+    )
+
+    stale_workers = [
+        _serialize_runtime_worker(row)
+        for row in workers
+        if row.get("last_seen_at") is None or row["last_seen_at"] < stale_cutoff
+    ]
+
+    serialized_claimed = []
+    expired_claim_count = 0
+    for row in claimed_tasks:
+        item = serialize_worker_task(row)
+        lease_expires_at = row.get("lease_expires_at")
+        is_expired = bool(lease_expires_at and lease_expires_at < now)
+        if is_expired:
+            expired_claim_count += 1
+        item["lease_expires_at"] = _iso(lease_expires_at)
+        item["lease_state"] = "expired" if is_expired else "active"
+        serialized_claimed.append(item)
+
+    return {
+        "stale_workers": stale_workers,
+        "failed_tasks": [serialize_worker_task(row) for row in failed_tasks],
+        "claimed_tasks": serialized_claimed,
+        "summary": {
+            "failed_task_count": len(failed_tasks),
+            "claimed_task_count": len(claimed_tasks),
+            "expired_claim_count": expired_claim_count,
+            "stale_worker_count": len(stale_workers),
+        },
+    }
 
 
 @router.post("/tasks", status_code=201)
