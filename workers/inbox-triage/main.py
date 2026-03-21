@@ -107,7 +107,17 @@ async def webhook_inbox_triage(body: InboxBody):
            (module, action, trigger_type, trigger_payload, status, approval_required, requested_by)
            VALUES ('inbox-triage','draft-inbox-reply','webhook',$1::jsonb,'awaiting-approval',true,'worker:inbox-triage')
            RETURNING *""",
-        json.dumps({"thread_id": body.thread_id, "message_id": body.message_id}),
+        json.dumps(
+            {
+                "thread_id": body.thread_id,
+                "message_id": body.message_id,
+                "subject": body.subject,
+                "from": body.from_,
+                "body_text": body.body_text,
+                "labels": body.labels,
+                "received_at": body.received_at,
+            }
+        ),
     )
     draft = await pool.fetchrow(
         """INSERT INTO inbox_drafts

@@ -28,7 +28,9 @@ async def alert_summary():
         "SELECT COUNT(*) FROM worker_tasks WHERE status = 'claimed' AND lease_expires_at IS NOT NULL AND lease_expires_at < $1",
         now,
     )
-    workers = await pool.fetch("SELECT slug, display_name, status, last_seen_at FROM worker_nodes ORDER BY slug ASC")
+    workers = await pool.fetch(
+        "SELECT slug, display_name, status, last_seen_at FROM worker_nodes WHERE status <> 'retired' ORDER BY slug ASC"
+    )
 
     stale_cutoff = now - timedelta(minutes=5)
     stale_workers = [

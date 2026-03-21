@@ -46,6 +46,94 @@ class RejectBody(BaseModel):
     reason: str
 
 
+async def _build_approval_preview(pool, job) -> dict:
+    trigger_payload = _decode_jsonb(job.get("trigger_payload")) or {}
+    preview: dict[str, object] = {
+        "trigger_type": job.get("trigger_type"),
+        "requested_by": job.get("requested_by"),
+        "trigger_payload": trigger_payload,
+    }
+
+    if job.get("project_id"):
+        project = await pool.fetchrow("SELECT * FROM projects WHERE id=$1", job["project_id"])
+        if project is not None:
+            preview["project"] = {
+                "id": str(project["id"]),
+                "slug": project["slug"],
+                "client_name": project["client_name"],
+                "service_type": project["service_type"],
+                "status": project["status"],
+            }
+
+    if job["module"] == "lead-intake":
+        lead_id = trigger_payload.get("lead_id")
+        if lead_id:
+            lead = await pool.fetchrow("SELECT * FROM leads WHERE id=$1", lead_id)
+            if lead is not None:
+                preview["kind"] = "lead-reply"
+                preview["title"] = f"Lead reply for {preview.get('project', {}).get('client_name', 'new lead')}"
+                preview["lead"] = {
+                    "id": str(lead["id"]),
+                    "source": lead["source"],
+                    "raw_input": lead["raw_input"],
+                    "normalized": _decode_jsonb(lead["normalized"]),
+                    "fit_score": lead["fit_score"],
+                    "urgency_score": lead["urgency_score"],
+                    "draft_reply": lead["draft_reply"],
+                }
+    elif job["module"] == "inbox-triage":
+        draft = await pool.fetchrow(
+            "SELECT * FROM inbox_drafts WHERE job_id=$1 ORDER BY created_at DESC LIMIT 1",
+            job["id"],
+        )
+        if draft is not None:
+            preview["kind"] = "inbox-reply"
+            preview["title"] = draft["draft_subject"] or "Inbox reply draft"
+            preview["draft"] = {
+                "thread_id": draft["source_thread"],
+                "message_type": draft["message_type"],
+                "classification": draft["classification"],
+                "urgency": draft["urgency"],
+                "draft_subject": draft["draft_subject"],
+                "draft_body": draft["draft_body"],
+            }
+    elif job["module"] in {"social-drafting", "content-pipeline"}:
+        rows = await pool.fetch(
+            "SELECT * FROM social_drafts WHERE job_id=$1 ORDER BY platform ASC, created_at ASC",
+            job["id"],
+        )
+        if rows:
+            preview["kind"] = "social-drafts"
+            preview["title"] = "Social draft review"
+            preview["drafts"] = [
+                {
+                    "platform": row["platform"],
+                    "caption": row["caption"],
+                    "hashtags": row["hashtags"],
+                    "variant_short": row["variant_short"],
+                    "status": row["status"],
+                }
+                for row in rows
+            ]
+    elif job["module"] == "revision-parser":
+        revision = await pool.fetchrow(
+            "SELECT * FROM revisions WHERE job_id=$1 ORDER BY created_at DESC LIMIT 1",
+            job["id"],
+        )
+        if revision is not None:
+            preview["kind"] = "revision-plan"
+            preview["title"] = "Revision execution approval"
+            preview["revision"] = {
+                "raw_notes": revision["raw_notes"],
+                "parsed_changes": _decode_jsonb(revision["parsed_changes"]),
+                "soundflow_script": revision["soundflow_script"],
+                "reascript_path": revision["reascript_path"],
+                "status": revision["status"],
+            }
+
+    return preview
+
+
 async def _queue_revision_execution_if_applicable(pool, job, approver: str, approved_at: datetime) -> None:
     if job["module"] != "revision-parser":
         return
@@ -118,7 +206,12 @@ async def list_approval_queue():
     rows = await pool.fetch(
         "SELECT * FROM jobs WHERE status = 'awaiting-approval' ORDER BY created_at ASC"
     )
-    return [dict(r) for r in rows]
+    items = []
+    for row in rows:
+        item = dict(row)
+        item["preview"] = await _build_approval_preview(pool, row)
+        items.append(item)
+    return items
 
 
 @router.post("/{job_id}/approve")

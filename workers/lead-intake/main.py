@@ -205,7 +205,14 @@ async def webhook_lead_intake(body: LeadIntakeBody):
            VALUES ($1,'lead-intake','draft-lead-reply','webhook',$2::jsonb,'awaiting-approval',true,'worker:lead-intake')
            RETURNING *""",
         project["id"],
-        json.dumps({"lead_id": str(lead["id"]), "source": body.source}),
+        json.dumps(
+            {
+                "lead_id": str(lead["id"]),
+                "source": body.source,
+                "artist_name": normalized["artist_name"],
+                "service_requested": normalized["service_requested"],
+            }
+        ),
     )
     await pool.execute(
         """INSERT INTO audit_log (job_id, project_id, actor, action, tier, payload)

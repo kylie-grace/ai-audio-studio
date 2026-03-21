@@ -329,6 +329,17 @@ async def get_project(project_id: str):
     return {**dict(row), "lead_count": lead_count}
 
 
+@app.get("/projects")
+async def list_projects(limit: int = Query(50, le=200)):
+    pool = await get_pool()
+    rows = await pool.fetch("SELECT * FROM projects ORDER BY updated_at DESC, created_at DESC LIMIT $1", limit)
+    projects = []
+    for row in rows:
+        lead_count = await pool.fetchval("SELECT COUNT(*) FROM leads WHERE project_id=$1", row["id"])
+        projects.append({**dict(row), "lead_count": lead_count})
+    return projects
+
+
 @app.post("/leads", status_code=201)
 async def create_lead(body: CreateLeadBody):
     pool = await get_pool()

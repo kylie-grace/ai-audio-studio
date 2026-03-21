@@ -42,4 +42,8 @@ def serialize_style_profile(row) -> dict:
     data = dict(row)
     data["file_paths"] = decode_jsonb(data.get("file_paths"))
     data["extracted_guidance"] = decode_jsonb(data.get("extracted_guidance"))
+    if data.get("created_at") and hasattr(data["created_at"], "isoformat"):
+        data["created_at"] = data["created_at"].isoformat()
+    if data.get("updated_at") and hasattr(data["updated_at"], "isoformat"):
+        data["updated_at"] = data["updated_at"].isoformat()
     return data

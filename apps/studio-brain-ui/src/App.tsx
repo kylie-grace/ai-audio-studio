@@ -91,6 +91,77 @@ type ApprovalItem = {
   created_at: string;
   requested_by?: string | null;
   project_id?: string | null;
+  preview?: {
+    kind?: string;
+    title?: string;
+    trigger_type?: string;
+    requested_by?: string | null;
+    trigger_payload?: Record<string, unknown>;
+    project?: {
+      id?: string;
+      slug?: string;
+      client_name?: string;
+      service_type?: string;
+      status?: string;
+    };
+    lead?: {
+      id?: string;
+      source?: string;
+      raw_input?: string;
+      normalized?: Record<string, unknown>;
+      fit_score?: number;
+      urgency_score?: number;
+      draft_reply?: string;
+    };
+    draft?: {
+      thread_id?: string;
+      message_type?: string;
+      classification?: string;
+      urgency?: string;
+      draft_subject?: string;
+      draft_body?: string;
+    };
+    drafts?: Array<{
+      platform?: string;
+      caption?: string;
+      hashtags?: string[];
+      variant_short?: string;
+      status?: string;
+    }>;
+    revision?: {
+      raw_notes?: string;
+      parsed_changes?: Array<Record<string, unknown>>;
+      soundflow_script?: string | null;
+      reascript_path?: string | null;
+      status?: string;
+    };
+  };
+};
+
+type ProjectRecord = {
+  id: string;
+  slug: string;
+  client_name: string;
+  client_email?: string | null;
+  service_type: string;
+  status: string;
+  budget_signal?: string | null;
+  timeline?: string | null;
+  notes?: string | null;
+  lead_count?: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type AuditEntry = {
+  id?: number | string;
+  job_id?: string | null;
+  project_id?: string | null;
+  actor: string;
+  action: string;
+  tier: number;
+  payload?: Record<string, unknown> | null;
+  created_at: string;
 };
 
 type StyleProfile = {
@@ -98,10 +169,14 @@ type StyleProfile = {
   name: string;
   scope: string;
   source_type: string;
+  raw_text?: string;
+  file_paths?: string[];
   extracted_guidance?: {
     summary?: string;
     tone_markers?: string[];
+    preferred_phrases?: string[];
   } | null;
+  updated_at?: string;
 };
 
 type AlertChannel = {
@@ -302,6 +377,17 @@ type DashboardData = {
   playbooks: Playbook[];
   tasks: WorkerTask[];
   approvals: ApprovalItem[];
+  projects: ProjectRecord[];
+  leads: Array<{
+    id: string;
+    project_id?: string | null;
+    source: string;
+    fit_score?: number | null;
+    urgency_score?: number | null;
+    draft_reply?: string | null;
+    created_at?: string;
+  }>;
+  auditLog: AuditEntry[];
   styleProfiles: StyleProfile[];
   alerts: AlertConfig;
   runtimeAlerts: RuntimeAlertSummary;
@@ -347,6 +433,23 @@ const API = {
   deliveryPackager: "/api/delivery-packager",
   mixPlanner: "/api/mix-planner",
   studioWorker: "/api/studio-worker",
+};
+
+const serviceProxyBase: Record<string, string> = {
+  "project-state": API.projectState,
+  "crm-api": API.crm,
+  openclaw: API.openclaw,
+  n8n: API.n8n,
+  ollama: API.ollama,
+  "content-pipeline": API.contentPipeline,
+  "audio-qc": API.audioQc,
+  "lead-intake": API.leadIntake,
+  "inbox-triage": API.inboxTriage,
+  "session-prep": API.sessionPrep,
+  "revision-parser": API.revisionParser,
+  "delivery-packager": API.deliveryPackager,
+  "mix-planner": API.mixPlanner,
+  "studio-worker": API.studioWorker,
 };
 
 const serviceStatusApi: Record<string, string> = {
@@ -655,7 +758,15 @@ function asArray(value: unknown): string[] {
 function summarizeTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString([], {
+  const deltaMs = Date.now() - date.getTime();
+  const deltaMinutes = Math.round(deltaMs / 60000);
+  if (deltaMinutes < 1) return "just now";
+  if (deltaMinutes < 60) return `${deltaMinutes} min ago`;
+  const deltaHours = Math.round(deltaMinutes / 60);
+  if (deltaHours < 12) return `${deltaHours} hr ago`;
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
     hour: "numeric",
     minute: "2-digit",
   });
@@ -685,6 +796,31 @@ function serviceStatusHighlights(payload: ServiceStatusPayload | null): Array<{ 
       label: key.replace(/_/g, " "),
       value: formatStatusValue(value),
     }));
+}
+
+function bootstrapStatusLabel(status: string) {
+  if (status === "skipped") return "workflows present";
+  return status.replace(/-/g, " ");
+}
+
+function n8nWorkflowUrl(baseUrl: string, workflowSlug: string) {
+  return `${baseUrl}/home/workflows?search=${encodeURIComponent(workflowSlug)}`;
+}
+
+function studioVoicePreview(workspace: WorkspaceSettings, profile: StyleProfile | null) {
+  const studioName = workspace.studio_name || "the studio";
+  const toneMarkers = profile?.extracted_guidance?.tone_markers ?? [];
+  const preferredPhrases = profile?.extracted_guidance?.preferred_phrases ?? [];
+  if (preferredPhrases.length) {
+    return `Hi, this is ${studioName}. ${preferredPhrases.slice(0, 2).join(". ")}.`;
+  }
+  if (toneMarkers.length) {
+    return `Hi, this is ${studioName}. We keep communication ${toneMarkers.slice(0, 3).join(", ")} while staying clear on next steps.`;
+  }
+  if (workspace.style_seed.raw_text.trim()) {
+    return workspace.style_seed.raw_text.trim().slice(0, 180);
+  }
+  return "Add a tone seed or rescan saved sources so the studio voice can be previewed here.";
 }
 
 function serviceSettingsSummary(service: ServiceRecord, settings: ModuleSettings): string[] {
@@ -856,7 +992,7 @@ function workflowTone(state: "ready" | "watch" | "action"): "ok" | "warn" | "bad
 }
 
 async function loadDashboardData(): Promise<DashboardData> {
-  const [services, workers, rules, rulePacks, starterPacks, playbooks, tasks, approvals, styleProfiles, alerts, runtimeAlerts, runtimeRecovery, bootstrapStatus, workspace] =
+  const [services, workers, rules, rulePacks, starterPacks, playbooks, tasks, approvals, projects, leads, auditLog, styleProfiles, alerts, runtimeAlerts, runtimeRecovery, bootstrapStatus, workspace] =
     await Promise.all([
       Promise.all(
         serviceCatalog.map(async (service) => ({
@@ -871,6 +1007,9 @@ async function loadDashboardData(): Promise<DashboardData> {
       fetchJson<Playbook[]>(`${API.openclaw}/playbooks`),
       fetchJson<WorkerTask[]>(`${API.projectState}/workers/tasks/list`),
       fetchJson<ApprovalItem[]>(`${API.projectState}/approval-queue/`),
+      fetchJson<ProjectRecord[]>(`${API.crm}/projects`),
+      fetchJson<DashboardData["leads"]>(`${API.crm}/leads`),
+      fetchJson<AuditEntry[]>(`${API.projectState}/audit-log/?limit=12`),
       fetchJson<StyleProfile[]>(`${API.crm}/style-profiles?scope=studio`),
       fetchJson<AlertConfig>(`${API.openclaw}/alerts/config`),
       fetchJson<RuntimeAlertSummary>(`${API.projectState}/alerts/summary`),
@@ -889,6 +1028,9 @@ async function loadDashboardData(): Promise<DashboardData> {
     playbooks,
     tasks,
     approvals,
+    projects,
+    leads,
+    auditLog,
     styleProfiles,
     alerts,
     runtimeAlerts,
@@ -905,8 +1047,8 @@ export function App() {
     refreshedAt: null,
     services: serviceCatalog.map((service) => ({
       ...service,
-      state: "offline",
-      detail: "pending",
+      state: "degraded",
+      detail: "loading",
     })),
     workers: [],
     rules: [],
@@ -915,6 +1057,9 @@ export function App() {
     playbooks: [],
     tasks: [],
     approvals: [],
+    projects: [],
+    leads: [],
+    auditLog: [],
     styleProfiles: [],
     alerts: {
       configured_channel_count: 0,
@@ -972,7 +1117,6 @@ export function App() {
   const [workspaceDraft, setWorkspaceDraft] = useState<WorkspaceSettings>(defaultWorkspaceSettings());
   const [workspaceDraftHydrated, setWorkspaceDraftHydrated] = useState(false);
   const [operatorNameHydrated, setOperatorNameHydrated] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState(0);
   const [editingWorkspaceSetup, setEditingWorkspaceSetup] = useState(false);
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [onboardingMessage, setOnboardingMessage] = useState<string | null>(null);
@@ -997,6 +1141,7 @@ export function App() {
   const [styleRescanPending, setStyleRescanPending] = useState(false);
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
+  const isInitialLoad = data.loadState === "loading" && !data.refreshedAt;
   const optionalOfflineCount = data.services.filter((service) => service.optional && service.state === "offline").length;
   const activeTaskCount = data.tasks.filter((task) => task.status === "queued" || task.status === "claimed").length;
   const failedTaskCount = data.tasks.filter((task) => task.status === "failed").length;
@@ -1033,6 +1178,11 @@ export function App() {
   const moduleSettings = workspaceSettings.module_settings;
   const moduleEnabledCount = Object.values(moduleSettings).filter((module) => module.enabled).length;
   const selectedServiceHighlights = serviceStatusHighlights(selectedServiceStatus);
+  const selectedServiceProxyUrl = selectedService ? `${frontDoorUrl}${serviceProxyBase[selectedService.key] ?? ""}` : frontDoorUrl;
+  const visibleApprovals = data.approvals.slice(0, 8);
+  const visibleRules = data.rules.slice(0, 10);
+  const latestStyleProfile = data.styleProfiles[0] ?? null;
+  const voicePreview = studioVoicePreview(workspaceSettings, latestStyleProfile);
 
   useEffect(() => {
     const storedName = window.localStorage.getItem(OPERATOR_NAME_KEY);
@@ -1055,6 +1205,10 @@ export function App() {
       window.localStorage.removeItem(OPERATOR_TOKEN_KEY);
     }
   }, [operatorToken]);
+
+  useEffect(() => {
+    document.title = `${data.workspace.settings.studio_name || "Studio Brain"} - Control Room`;
+  }, [data.workspace.settings.studio_name]);
 
   useEffect(() => {
     if (!workspaceDraftHydrated) {
@@ -1244,7 +1398,6 @@ export function App() {
         ...payload,
       }));
       setEditingWorkspaceSetup(false);
-      setOnboardingStep(0);
       await refreshData();
     } catch (error) {
       setOnboardingError(error instanceof Error ? error.message : "Unable to save workspace settings");
@@ -1384,6 +1537,33 @@ export function App() {
     }
   }
 
+  async function retireWorker(workerSlug: string) {
+    setPendingTaskActionId(workerSlug);
+    setTaskActionMessage(null);
+    setTaskActionError(null);
+    try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "X-Actor": operatorName,
+      };
+      if (operatorToken) headers["X-Operator-Token"] = operatorToken;
+      const response = await fetch(`${API.projectState}/workers/${workerSlug}/retire`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? `Retire failed with ${response.status}`);
+      }
+      setTaskActionMessage(`Retired worker ${workerSlug} and cleaned up its queued work.`);
+      await refreshData();
+    } catch (error) {
+      setTaskActionError(error instanceof Error ? error.message : "Unable to retire worker");
+    } finally {
+      setPendingTaskActionId(null);
+    }
+  }
+
   async function copyServiceField(value: string, label: string) {
     setServiceInspectorMessage(null);
     setServiceInspectorError(null);
@@ -1427,8 +1607,7 @@ export function App() {
 
   const onboardingRequired = data.workspace.onboarding_required;
   const onboardingMissingCount = data.workspace.missing_fields.length;
-  const onboardingStepLabels = ["Studio", "Paths", "Style", "Alerts", "Integrations"];
-  const onboardingStepCount = onboardingStepLabels.length;
+  const onboardingStepCount = 7;
   const settingsPills = [
     workspaceSettings.studio_name || "unnamed studio",
     workspaceSettings.operator_name || "operator missing",
@@ -1550,6 +1729,7 @@ export function App() {
     tab: TabId;
     state: "ready" | "watch" | "action";
     count: string;
+    unit: string;
     summary: string;
     detail: string;
   }> = [
@@ -1559,6 +1739,7 @@ export function App() {
       tab: "overview",
       state: healthyCount === data.services.length && !activeAlertCount ? "ready" : healthyCount >= data.services.length - 2 ? "watch" : "action",
       count: `${healthyCount}/${data.services.length}`,
+      unit: "services healthy",
       summary: "Check front door, platform health, and workspace readiness.",
       detail: `${activeAlertCount} active alerts · ${readinessSummary.partial_count} partial checks`,
     },
@@ -1568,6 +1749,7 @@ export function App() {
       tab: "operations",
       state: data.approvals.length ? "action" : "ready",
       count: `${data.approvals.length}`,
+      unit: "items waiting",
       summary: "Clear the approval queue and keep operator identity pinned.",
       detail: `${data.runtimeAlerts.approvals_waiting} waiting approvals`,
     },
@@ -1577,6 +1759,7 @@ export function App() {
       tab: "operations",
       state: data.runtimeRecovery.summary.failed_task_count || data.runtimeRecovery.summary.expired_claim_count ? "action" : data.runtimeRecovery.summary.stale_worker_count ? "watch" : "ready",
       count: `${data.runtimeRecovery.summary.failed_task_count + data.runtimeRecovery.summary.expired_claim_count}`,
+      unit: "runtime issues",
       summary: "Investigate failed tasks, expired claims, and stale workers.",
       detail: `${data.runtimeRecovery.summary.stale_worker_count} stale workers · ${data.runtimeRecovery.summary.claimed_task_count} claimed`,
     },
@@ -1586,6 +1769,7 @@ export function App() {
       tab: "automation",
       state: activeStarterPack ? "ready" : "watch",
       count: `${enabledRuleCount}`,
+      unit: "rules active",
       summary: "Confirm starter packs, rule posture, and playbook coverage.",
       detail: `${data.playbooks.length} playbooks · ${data.bootstrapStatus.workflow_count} starter workflows`,
     },
@@ -1595,6 +1779,7 @@ export function App() {
       tab: "settings",
       state: data.workspace.onboarding_required || readinessSummary.needs_attention_count ? "action" : readinessSummary.partial_count ? "watch" : "ready",
       count: `${data.workspace.missing_fields.length}`,
+      unit: "items missing",
       summary: "Adjust onboarding, shared paths, context, alerts, and worker posture.",
       detail: `${integrationFlags} integrations enabled · ${alertEmailCount} alert destinations`,
     },
@@ -1647,6 +1832,7 @@ export function App() {
               <span className={`status-pill ${workflowTone(workflow.state)}`}>{workflow.state}</span>
             </div>
             <strong>{workflow.count}</strong>
+            <span className="workflow-unit">{workflow.unit}</span>
             <p className="panel-note">{workflow.summary}</p>
             <div className="workflow-footer">
               <span>{workflow.detail}</span>
@@ -1665,12 +1851,27 @@ export function App() {
             onClick={() => setActiveTab(tab.id)}
           >
             <span className="tab-label">{tab.label}</span>
-            <span className="tab-summary">{tab.summary}</span>
+            {activeTab === tab.id ? <span className="tab-summary">{tab.summary}</span> : null}
           </button>
         ))}
       </nav>
 
-      {activeTab === "overview" ? (
+      {isInitialLoad ? (
+        <section className="loading-shell" aria-label="Loading control room">
+          <div className="loading-grid">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <article key={index} className="panel loading-card">
+                <div className="loading-bar loading-bar-short" />
+                <div className="loading-bar loading-bar-medium" />
+                <div className="loading-bar" />
+                <div className="loading-bar loading-bar-medium" />
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {!isInitialLoad && activeTab === "overview" ? (
         <div className="tab-panel">
           <section className="command-grid">
             <article className="panel command-card accent-gold">
@@ -1797,17 +1998,13 @@ export function App() {
                     key={service.key}
                     type="button"
                     className="mini-card module-card module-violet service-module-button"
-                    onClick={() => {
-                      setSelectedServiceKey(service.key);
-                      setActiveTab("overview");
-                    }}
+                    onClick={() => setSelectedServiceKey(service.key)}
                   >
                     <span className="metric-label">{service.zone}</span>
                     <strong>{service.name}</strong>
                     <p className="panel-note">{service.role}</p>
                     <div className="meta-inline">
                       <span>{service.note}</span>
-                      <span>managed in {serviceManagedIn(service)}</span>
                     </div>
                     <span className={`status-pill ${statusTone(service.state)}`}>{serviceLabel(service)}</span>
                   </button>
@@ -1848,7 +2045,6 @@ export function App() {
                             <div className="muted">{service.role}</div>
                             <div className="meta-inline">
                               <span>{service.note}</span>
-                              <span>managed in {serviceManagedIn(service)}</span>
                               <span>{service.optional ? "optional execution surface" : "proxied through the control room"}</span>
                             </div>
                           </div>
@@ -1948,7 +2144,7 @@ export function App() {
                     <button className="action-button" type="button" onClick={() => refreshData()}>
                       refresh state
                     </button>
-                    <button className="action-button" type="button" onClick={() => copyServiceField(selectedService.url, `${selectedService.name} URL`)}>
+                    <button className="action-button" type="button" onClick={() => copyServiceField(selectedServiceProxyUrl, `${selectedService.name} URL`)}>
                       copy url
                     </button>
                     <button
@@ -2040,7 +2236,7 @@ export function App() {
         </div>
       ) : null}
 
-      {activeTab === "operations" ? (
+      {!isInitialLoad && activeTab === "operations" ? (
         <div className="tab-panel">
           <section className="workspace-grid">
             <article className="panel panel-span-12">
@@ -2057,10 +2253,7 @@ export function App() {
                     key={service.key}
                     type="button"
                     className={`mini-card module-card module-${zoneAccent(service.zone)} service-module-button`}
-                    onClick={() => {
-                      setSelectedServiceKey(service.key);
-                      setActiveTab("overview");
-                    }}
+                    onClick={() => setSelectedServiceKey(service.key)}
                   >
                     <span className="metric-label">{service.zone}</span>
                     <strong>{service.name}</strong>
@@ -2083,11 +2276,11 @@ export function App() {
                   <p className="section-kicker">Action Queue</p>
                   <h2>Approvals</h2>
                 </div>
-                <span className="count-pill">{data.approvals.length}</span>
+                <span className="count-pill">showing {visibleApprovals.length} of {data.approvals.length}</span>
               </div>
               <div className="table-stack">
                 {data.approvals.length ? (
-                  data.approvals.slice(0, 8).map((job) => (
+                  visibleApprovals.map((job) => (
                     <div key={job.id} className="table-row approval-row">
                       <div className="row-main">
                         <strong>{job.module}</strong>
@@ -2096,6 +2289,63 @@ export function App() {
                           <span>{job.requested_by ?? "system"}</span>
                           <span>{summarizeTime(job.created_at)}</span>
                         </div>
+                        {job.preview?.title ? <div className="approval-preview-title">{job.preview.title}</div> : null}
+                        {job.preview?.project ? (
+                          <div className="meta-inline">
+                            <span>{job.preview.project.client_name}</span>
+                            <span>{job.preview.project.service_type}</span>
+                            <span>{job.preview.project.status}</span>
+                          </div>
+                        ) : null}
+                        {job.preview?.lead ? (
+                          <div className="approval-preview-block">
+                            <strong>Draft reply</strong>
+                            <p>{job.preview.lead.draft_reply}</p>
+                            <div className="meta-inline">
+                              <span>fit {job.preview.lead.fit_score ?? "n/a"}</span>
+                              <span>urgency {job.preview.lead.urgency_score ?? "n/a"}</span>
+                            </div>
+                            <p className="muted">{job.preview.lead.raw_input}</p>
+                          </div>
+                        ) : null}
+                        {job.preview?.draft ? (
+                          <div className="approval-preview-block">
+                            <strong>{job.preview.draft.draft_subject}</strong>
+                            <p>{job.preview.draft.draft_body}</p>
+                            <div className="meta-inline">
+                              <span>{job.preview.draft.message_type}</span>
+                              <span>{job.preview.draft.urgency}</span>
+                            </div>
+                          </div>
+                        ) : null}
+                        {job.preview?.drafts?.length ? (
+                          <div className="approval-preview-block">
+                            <strong>Draft variants</strong>
+                            <div className="table-stack compact-stack">
+                              {job.preview.drafts.map((draft) => (
+                                <div key={`${job.id}-${draft.platform}`} className="table-row compact-row">
+                                  <div className="row-main">
+                                    <strong>{draft.platform}</strong>
+                                    <p className="muted">{draft.caption}</p>
+                                  </div>
+                                  <div className="row-meta">
+                                    <span className="status-pill warn">{draft.status}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {job.preview?.revision ? (
+                          <div className="approval-preview-block">
+                            <strong>Revision notes</strong>
+                            <p>{job.preview.revision.raw_notes}</p>
+                            <div className="meta-inline">
+                              <span>{job.preview.revision.soundflow_script ? "soundflow ready" : "no soundflow"}</span>
+                              <span>{job.preview.revision.reascript_path ? "reascript ready" : "no reascript"}</span>
+                            </div>
+                          </div>
+                        ) : null}
                         <label className="field compact-field">
                           <span className="metric-label">Reject reason</span>
                           <input
@@ -2315,6 +2565,13 @@ export function App() {
                         </div>
                         <div className="row-meta">
                           <span className="status-pill warn">stale</span>
+                          <button
+                            className="action-button bad"
+                            disabled={!operatorName || pendingTaskActionId === worker.slug}
+                            onClick={() => retireWorker(worker.slug)}
+                          >
+                            {pendingTaskActionId === worker.slug ? "working" : "retire"}
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -2406,11 +2663,39 @@ export function App() {
               {taskActionError ? <p className="feedback bad">{taskActionError}</p> : null}
               <p className="panel-note">Historical smoke-test failures stay visible until the backing rows are cleared.</p>
             </article>
+            <article className="panel panel-span-12">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Audit</p>
+                  <h2>Recent Activity</h2>
+                </div>
+                <span className="count-pill">{data.auditLog.length}</span>
+              </div>
+              <div className="table-stack">
+                {data.auditLog.length ? (
+                  data.auditLog.map((entry) => (
+                    <div key={`${entry.id ?? entry.created_at}-${entry.action}`} className="table-row">
+                      <div className="row-main">
+                        <strong>{entry.action}</strong>
+                        <div className="muted">{entry.actor} · tier {entry.tier}</div>
+                        <div className="meta-inline">
+                          {entry.project_id ? <span>project {entry.project_id}</span> : null}
+                          {entry.job_id ? <span>job {entry.job_id}</span> : null}
+                          <span>{summarizeTime(entry.created_at)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="empty-state">No recent audit activity is available yet.</p>
+                )}
+              </div>
+            </article>
           </section>
         </div>
       ) : null}
 
-      {activeTab === "automation" ? (
+      {!isInitialLoad && activeTab === "automation" ? (
         <div className="tab-panel">
           <section className="workspace-grid">
             <article className="panel panel-span-4 automation-panel automation-cyan">
@@ -2420,7 +2705,7 @@ export function App() {
                   <h2>Bootstrap + Maintenance</h2>
                 </div>
                 <span className={`status-pill ${data.bootstrapStatus.status === "imported" || data.bootstrapStatus.status === "skipped" ? "ok" : "warn"}`}>
-                  {data.bootstrapStatus.status}
+                  {bootstrapStatusLabel(data.bootstrapStatus.status)}
                 </span>
               </div>
               <div className="stat-strip">
@@ -2522,10 +2807,10 @@ export function App() {
                   <p className="section-kicker">Rules</p>
                   <h2>Rule Inventory</h2>
                 </div>
-                <span className="count-pill">{data.rules.length}</span>
+                <span className="count-pill">showing {visibleRules.length} of {data.rules.length}</span>
               </div>
               <div className="table-stack">
-                {data.rules.slice(0, 10).map((rule) => (
+                {visibleRules.map((rule) => (
                   <div key={rule.id} className="table-row">
                     <div className="row-main">
                       <strong>{rule.name}</strong>
@@ -2563,6 +2848,11 @@ export function App() {
                       <div className="row-meta">
                         <span className="status-pill ok">prebuilt</span>
                         <span className="muted">{playbook.n8n_workflow_slug}</span>
+                        <div className="action-row">
+                          <a className="action-button" href={n8nWorkflowUrl(n8nUrl, playbook.n8n_workflow_slug)} target="_blank" rel="noreferrer">
+                            open in n8n
+                          </a>
+                        </div>
                       </div>
                     </div>
                   ))
@@ -2597,7 +2887,7 @@ export function App() {
         </div>
       ) : null}
 
-      {activeTab === "context" ? (
+      {!isInitialLoad && activeTab === "context" ? (
         <div className="tab-panel">
           <section className="workspace-grid">
             <article className="panel panel-span-5">
@@ -2625,7 +2915,12 @@ export function App() {
                   <p className="section-kicker">Voice</p>
                   <h2>Style Profiles</h2>
                 </div>
-                <span className="count-pill">{data.styleProfiles.length}</span>
+                <div className="header-actions">
+                  <span className="count-pill">{data.styleProfiles.length}</span>
+                  <button className="action-button" type="button" disabled={styleRescanPending} onClick={rescanStyleSources}>
+                    {styleRescanPending ? "rescanning" : "rescan style sources"}
+                  </button>
+                </div>
               </div>
               <div className="table-stack">
                 {data.styleProfiles.length ? (
@@ -2634,7 +2929,15 @@ export function App() {
                       <div className="row-main">
                         <strong>{profile.name}</strong>
                         <div className="muted">{profile.scope} · {profile.source_type}</div>
-                        <div className="muted">{profile.extracted_guidance?.summary ?? "No guidance summary extracted yet."}</div>
+                        <div className="muted">
+                          {profile.extracted_guidance?.summary ?? "No guidance summary extracted yet. Add seed text or rescan saved source files."}
+                        </div>
+                        <div className="meta-inline">
+                          <span>updated {profile.updated_at ? summarizeTime(profile.updated_at) : "n/a"}</span>
+                          {profile.extracted_guidance?.tone_markers?.slice(0, 3).map((marker) => (
+                            <span key={`${profile.id}-${marker}`}>{marker}</span>
+                          ))}
+                        </div>
                       </div>
                       <div className="row-meta">
                         <span className="status-pill ok">active context</span>
@@ -2649,34 +2952,114 @@ export function App() {
           </section>
 
           <section className="workspace-grid">
+            <article className="panel panel-span-5">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Knowledge</p>
+                  <h2>Active Voice Preview</h2>
+                </div>
+                <span className="count-pill">{latestStyleProfile?.name ?? "seed only"}</span>
+              </div>
+              <div className="context-preview-card">
+                <span className="metric-label">How the system will sound</span>
+                <p className="context-preview-copy">{voicePreview}</p>
+                <div className="summary-pill-row">
+                  {(latestStyleProfile?.extracted_guidance?.preferred_phrases ?? workspaceSettings.style_seed.source_paths).slice(0, 4).map((item) => (
+                    <span key={item} className="summary-pill">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </article>
+
+            <article className="panel panel-span-3">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Context Feed</p>
+                  <h2>Source Inputs</h2>
+                </div>
+                <span className="count-pill">{styleSourceCount}</span>
+              </div>
+              <div className="table-stack">
+                {workspaceSettings.style_seed.source_paths.length ? (
+                  workspaceSettings.style_seed.source_paths.slice(0, 6).map((sourcePath) => (
+                    <div key={sourcePath} className="table-row compact-row">
+                      <div className="row-main">
+                        <strong>{sourcePath.split("/").pop() || sourcePath}</strong>
+                        <div className="muted">{sourcePath}</div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="empty-state">No saved style source files yet. Paste a tone seed or add source paths in Settings.</p>
+                )}
+              </div>
+            </article>
+
+            <article className="panel panel-span-4">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">CRM</p>
+                  <h2>Projects + Leads</h2>
+                </div>
+                <span className="count-pill">{data.projects.length} projects</span>
+              </div>
+              <div className="table-stack">
+                {data.projects.length ? (
+                  data.projects.slice(0, 4).map((project) => (
+                    <div key={project.id} className="table-row">
+                      <div className="row-main">
+                        <strong>{project.client_name}</strong>
+                        <div className="muted">{project.service_type} · {project.status}</div>
+                        <div className="meta-inline">
+                          <span>{project.lead_count ?? 0} leads</span>
+                          {project.updated_at ? <span>updated {summarizeTime(project.updated_at)}</span> : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="empty-state">No projects have been created yet.</p>
+                )}
+              </div>
+            </article>
+          </section>
+
+          <section className="workspace-grid">
             <article className="panel panel-span-12">
               <div className="panel-header">
                 <div>
-                  <p className="section-kicker">Platform</p>
-                  <h2>Service Surfaces Feeding Context</h2>
+                  <p className="section-kicker">Recent Intake</p>
+                  <h2>Lead Signals</h2>
                 </div>
-                <span className="count-pill">{overviewServices.length}</span>
+                <span className="count-pill">{data.leads.length}</span>
               </div>
-              <div className="module-grid">
-                {overviewServices.map((service) => (
-                  <div key={service.key} className={`mini-card module-card module-${zoneAccent(service.zone)}`}>
-                    <span className="metric-label">{service.zone}</span>
-                    <strong>{service.name}</strong>
-                    <p className="panel-note">{service.role}</p>
-                    <div className="meta-inline">
-                      <span>{service.note}</span>
-                      <span>managed in {serviceManagedIn(service)}</span>
+              <div className="table-stack">
+                {data.leads.length ? (
+                  data.leads.slice(0, 6).map((lead) => (
+                    <div key={lead.id} className="table-row">
+                      <div className="row-main">
+                        <strong>{lead.source}</strong>
+                        <div className="muted">{lead.draft_reply ?? "No draft reply stored yet."}</div>
+                        <div className="meta-inline">
+                          <span>fit {lead.fit_score ?? "n/a"}</span>
+                          <span>urgency {lead.urgency_score ?? "n/a"}</span>
+                          {lead.created_at ? <span>{summarizeTime(lead.created_at)}</span> : null}
+                        </div>
+                      </div>
                     </div>
-                    <span className={`status-pill ${statusTone(service.state)}`}>{serviceLabel(service)}</span>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="empty-state">No lead signals are in CRM yet.</p>
+                )}
               </div>
             </article>
           </section>
         </div>
       ) : null}
 
-      {activeTab === "settings" ? (
+      {!isInitialLoad && activeTab === "settings" ? (
         <div className="tab-panel">
           <section className={`panel onboarding-panel ${onboardingRequired ? "needs-setup" : "is-complete"}`}>
             <div className="panel-header onboarding-header">
@@ -2698,7 +3081,6 @@ export function App() {
                   type="button"
                   onClick={() => {
                     setEditingWorkspaceSetup(true);
-                    setOnboardingStep(0);
                     setWorkspaceDraft(data.workspace.settings);
                   }}
                 >
@@ -2747,19 +3129,28 @@ export function App() {
               </div>
               <div className="onboarding-actions">
                 <button className="action-button" type="button" onClick={refreshData}>refresh workspace</button>
-                <button
-                  className="action-button ok"
-                  type="button"
-                  onClick={() => {
-                    setEditingWorkspaceSetup(true);
-                    setOnboardingStep(0);
-                    setWorkspaceDraft(workspaceSettings);
-                  }}
-                >
-                  {onboardingRequired ? "continue setup" : "edit saved settings"}
-                </button>
+                {editingWorkspaceSetup || onboardingRequired ? (
+                  !onboardingRequired ? (
+                    <button className="action-button" type="button" onClick={() => setEditingWorkspaceSetup(false)}>
+                      close editor
+                    </button>
+                  ) : null
+                ) : (
+                  <button
+                    className="action-button ok"
+                    type="button"
+                    onClick={() => {
+                      setEditingWorkspaceSetup(true);
+                      setWorkspaceDraft(workspaceSettings);
+                    }}
+                  >
+                    edit saved settings
+                  </button>
+                )}
               </div>
             </div>
+            {editingWorkspaceSetup || onboardingRequired ? (
+            <>
             <div className="onboarding-grid">
               <article className="mini-card">
                 <span className="metric-label">1. Studio identity</span>
@@ -3267,6 +3658,37 @@ export function App() {
                 </button>
               </div>
             </div>
+            </>
+            ) : (
+              <div className="settings-summary-layout">
+                <article className="mini-card settings-summary-card">
+                  <span className="metric-label">Saved deployment posture</span>
+                  <strong>{workspaceSettings.deployment_mode === "control_plane_plus_worker" ? "control plane + worker" : "single machine"}</strong>
+                  <p className="panel-note">{workspaceSettings.public_base_url || frontDoorUrl}</p>
+                  <div className="summary-pill-row">
+                    <span className="summary-pill">{workspaceSettings.https_mode.replace(/_/g, " ")}</span>
+                    <span className="summary-pill">{workspaceSettings.operator_name || "owner"}</span>
+                    <span className="summary-pill">{workerPostureLabel}</span>
+                  </div>
+                </article>
+                <article className="mini-card settings-summary-card">
+                  <span className="metric-label">Shared paths</span>
+                  <strong>{workspaceSettings.shared_paths.projects}</strong>
+                  <p className="panel-note">Drafts: {workspaceSettings.shared_paths.draft_queue}</p>
+                  <p className="panel-note">Approvals: {workspaceSettings.shared_paths.approval_queue}</p>
+                </article>
+                <article className="mini-card settings-summary-card">
+                  <span className="metric-label">Style and alert posture</span>
+                  <strong>{workspaceSettings.style_seed.name || "Default Studio Tone"}</strong>
+                  <p className="panel-note">{alertEmailCount} email destination(s) · {integrationFlags} integrations enabled</p>
+                  <div className="action-row">
+                    <button className="action-button" type="button" disabled={styleRescanPending} onClick={rescanStyleSources}>
+                      {styleRescanPending ? "rescanning" : "rescan style sources"}
+                    </button>
+                  </div>
+                </article>
+              </div>
+            )}
             {onboardingMessage ? <p className="feedback ok">{onboardingMessage}</p> : null}
             {onboardingError ? <p className="feedback bad">{onboardingError}</p> : null}
           </section>

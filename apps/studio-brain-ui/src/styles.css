@@ -182,6 +182,18 @@ code {
   letter-spacing: 0.08em;
 }
 
+.workflow-card strong {
+  font-size: 2rem;
+  letter-spacing: -0.05em;
+}
+
+.workflow-unit {
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
 .workflow-overview {
   border-color: rgba(226, 161, 90, 0.18);
 }
@@ -226,7 +238,10 @@ code {
 }
 
 .tab-button.is-active {
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  transform: translateY(-1px);
 }
 
 .tab-label {
@@ -296,6 +311,39 @@ code {
     0 30px 90px rgba(0, 0, 0, 0.34),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(18px);
+}
+
+.loading-shell {
+  margin-bottom: 18px;
+}
+
+.loading-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.loading-card {
+  min-height: 180px;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.loading-bar {
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.06), rgba(85, 192, 214, 0.18), rgba(255, 255, 255, 0.06));
+  background-size: 220% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+.loading-bar-short {
+  width: 34%;
+}
+
+.loading-bar-medium {
+  width: 72%;
 }
 
 .hero,
@@ -794,7 +842,7 @@ code {
 }
 
 .alert-summary-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .field {
@@ -810,6 +858,13 @@ code {
   padding: 12px 13px;
   border-radius: 14px;
   font: inherit;
+}
+
+.field input:disabled,
+.field textarea:disabled,
+.field select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .field textarea,
@@ -883,7 +938,7 @@ code {
 
 .settings-snapshot-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-top: 16px;
 }
@@ -1018,6 +1073,17 @@ code {
   margin-top: 16px;
 }
 
+.settings-summary-layout {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.settings-summary-card {
+  padding: 18px;
+}
+
 .missing-list {
   display: grid;
   gap: 6px;
@@ -1038,6 +1104,10 @@ code {
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.02)),
     rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.compact-row {
+  padding: 13px 14px;
 }
 
 .service-button {
@@ -1198,6 +1268,47 @@ code {
   color: #ffc4c4;
 }
 
+.approval-preview-title {
+  font-size: 0.92rem;
+  color: var(--text-strong);
+}
+
+.approval-preview-block {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.028);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.context-preview-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(138, 140, 245, 0.12), transparent 40%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.context-preview-copy {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--text-soft);
+}
+
+.empty-state {
+  padding: 18px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  color: var(--text-soft);
+}
+
 .top-gap {
   margin-top: 12px;
 }
@@ -1206,12 +1317,14 @@ code {
   .top-rail,
   .command-grid,
   .workflow-strip,
+  .loading-grid,
   .alert-summary-grid,
   .readiness-grid,
   .recovery-grid,
   .stat-strip,
   .onboarding-grid,
   .settings-snapshot-grid,
+  .settings-summary-layout,
   .zone-summary-grid,
   .support-health-grid,
   .module-grid,
@@ -1317,5 +1430,15 @@ code {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -20% 0;
   }
 }

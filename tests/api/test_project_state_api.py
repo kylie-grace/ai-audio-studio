@@ -31,6 +31,19 @@ class FakePool:
     def __init__(self) -> None:
         now = datetime.now(timezone.utc)
         self.projects: dict[str, FakeRow] = {}
+        self.leads: dict[str, FakeRow] = {
+            "lead-1": FakeRow(
+                id="lead-1",
+                project_id="project-1",
+                source="contact-form",
+                raw_input="Need a mix for a single next week.",
+                normalized={"artist_name": "Demo Artist", "service_requested": "mix"},
+                fit_score=82,
+                urgency_score=71,
+                draft_reply="Thanks for reaching out. We can review the session and get you booked.",
+                created_at=now,
+            )
+        }
         self.jobs: dict[str, FakeRow] = {
             "job-awaiting": FakeRow(
                 id="job-awaiting",
@@ -38,7 +51,7 @@ class FakePool:
                 module="lead-intake",
                 action="draft",
                 trigger_type="webhook",
-                trigger_payload=None,
+                trigger_payload=json.dumps({"lead_id": "lead-1", "source": "contact-form"}),
                 status="awaiting-approval",
                 priority="normal",
                 approval_required=True,
@@ -127,6 +140,8 @@ class FakePool:
         if "SELECT COUNT(*) FROM worker_tasks WHERE status = 'failed'" in query:
             return sum(1 for row in self.worker_tasks if row.get("status") == "failed")
         if "SELECT COUNT(*) FROM worker_nodes" in query:
+            if "status <> 'retired'" in query:
+                return sum(1 for row in self.worker_nodes if row.get("status") != "retired")
             return len(self.worker_nodes)
         if "SELECT COUNT(*) FROM worker_tasks WHERE status = 'claimed'" in query and "lease_expires_at" not in query:
             return sum(1 for row in self.worker_tasks if row.get("status") == "claimed")
@@ -171,8 +186,14 @@ class FakePool:
             )
         if "SELECT * FROM jobs WHERE id = $1" in query or "SELECT * FROM jobs WHERE id=$1" in query:
             return self.jobs.get(args[0])
+        if "SELECT * FROM projects WHERE id=$1" in query:
+            return self.projects.get(args[0])
+        if "SELECT * FROM leads WHERE id=$1" in query:
+            return self.leads.get(args[0])
         if "SELECT * FROM revisions WHERE job_id=$1" in query:
             return next((row for row in self.revisions.values() if row["job_id"] == args[0]), None)
+        if "SELECT * FROM worker_nodes WHERE slug=$1" in query:
+            return next((row for row in self.worker_nodes if row["slug"] == args[0]), None)
         if "SELECT * FROM worker_tasks WHERE id=$1" in query:
             return next((row for row in self.worker_tasks if row.get("id") == args[0]), None)
         if "INSERT INTO audit_log" in query and "RETURNING id, created_at" in query:
@@ -185,9 +206,19 @@ class FakePool:
         if "SELECT * FROM jobs WHERE status = 'awaiting-approval'" in query:
             return [row for row in self.jobs.values() if row["status"] == "awaiting-approval"]
         if "SELECT slug, display_name, status, last_seen_at FROM worker_nodes" in query:
+            if "status <> 'retired'" in query:
+                return [row for row in self.worker_nodes if row.get("status") != "retired"]
             return list(self.worker_nodes)
         if "SELECT * FROM worker_nodes ORDER BY slug ASC" in query:
+            if "status <> 'retired'" in query:
+                return [row for row in self.worker_nodes if row.get("status") != "retired"]
             return list(self.worker_nodes)
+        if "SELECT * FROM worker_tasks WHERE worker_slug=$1 AND status IN ('queued','claimed')" in query:
+            return [
+                row
+                for row in self.worker_tasks
+                if row.get("worker_slug") == args[0] and row.get("status") in {"queued", "claimed"}
+            ]
         if "SELECT * FROM worker_tasks WHERE status='failed'" in query:
             return [row for row in self.worker_tasks if row.get("status") == "failed"]
         if "SELECT * FROM worker_tasks WHERE status='claimed'" in query:
@@ -255,6 +286,26 @@ class FakePool:
             if worker:
                 worker["status"] = "idle"
                 worker["last_seen_at"] = args[0]
+            return "UPDATE 1"
+        if "UPDATE worker_tasks" in query and "SET status='cancelled'" in query:
+            task = next(row for row in self.worker_tasks if row["id"] == args[2])
+            task["status"] = "cancelled"
+            task["error_message"] = args[0]
+            task["claimed_by"] = None
+            task["claimed_at"] = None
+            task["lease_expires_at"] = None
+            task["completed_at"] = args[1]
+            return "UPDATE 1"
+        if "UPDATE worker_nodes" in query and "SET status='retired'" in query:
+            worker = next((row for row in self.worker_nodes if row["slug"] == args[0]), None)
+            if worker:
+                worker["status"] = "retired"
+            return "UPDATE 1"
+        if "UPDATE jobs SET status='failed'" in query:
+            job = self.jobs[args[1]]
+            if job["status"] in {"approved", "in-progress", "pending"}:
+                job["status"] = "failed"
+                job["error_message"] = args[0]
             return "UPDATE 1"
         if "UPDATE jobs" in query and "SET status='pending'" in query:
             job = self.jobs[args[0]]
@@ -350,6 +401,28 @@ def test_approval_requires_authorized_actor():
     )
     assert response.status_code == 403
     assert "authorized actors list" in response.json()["detail"]
+
+
+def test_approval_queue_includes_preview_payload():
+    pool = FakePool()
+    pool.projects["project-1"] = FakeRow(
+        id="project-1",
+        slug="demo-artist",
+        client_name="Demo Artist",
+        service_type="mix",
+        status="lead",
+    )
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.get("/approval-queue/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    lead_job = next(item for item in payload if item["id"] == "job-awaiting")
+    assert lead_job["preview"]["kind"] == "lead-reply"
+    assert lead_job["preview"]["lead"]["draft_reply"]
+    assert lead_job["preview"]["project"]["client_name"] == "Demo Artist"
 
 
 def test_approval_requires_operator_token_when_configured():
@@ -522,6 +595,37 @@ def test_alert_summary_reports_waiting_jobs_and_stale_workers():
         "stale-worker",
         "expired-worker-lease",
     }
+
+
+def test_retire_worker_cancels_queued_work_and_hides_worker_from_lists():
+    pool = FakePool()
+    pool.worker_tasks.append(
+        FakeRow(
+            id="task-queued",
+            status="queued",
+            worker_slug="stale-worker",
+            claimed_by=None,
+            claimed_at=None,
+            lease_expires_at=None,
+            completed_at=None,
+            job_id="job-revision",
+            project_id="project-1",
+            payload={},
+        )
+    )
+    pool.jobs["job-revision"]["status"] = "approved"
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.post("/workers/stale-worker/retire", headers={"X-Actor": "owner"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "retired"
+    assert pool.worker_tasks[0]["status"] == "cancelled"
+    assert pool.jobs["job-revision"]["status"] == "failed"
+
+    listed_workers = client.get("/workers/").json()
+    assert {worker["slug"] for worker in listed_workers} == {"fresh-worker"}
 
 
 def test_runtime_recovery_snapshot_groups_stale_failed_and_claimed_work():

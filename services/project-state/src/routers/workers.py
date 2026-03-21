@@ -136,7 +136,7 @@ async def _append_audit(pool, task, actor: str, action: str, payload: dict | Non
 @router.get("/")
 async def list_workers():
     pool = await get_pool()
-    rows = await pool.fetch("SELECT * FROM worker_nodes ORDER BY slug ASC")
+    rows = await pool.fetch("SELECT * FROM worker_nodes WHERE status <> 'retired' ORDER BY slug ASC")
     return [serialize_worker(row) for row in rows]
 
 
@@ -230,7 +230,7 @@ async def runtime_recovery_snapshot():
     now = datetime.now(timezone.utc)
     stale_cutoff = now - timedelta(minutes=5)
 
-    workers = await pool.fetch("SELECT * FROM worker_nodes ORDER BY slug ASC")
+    workers = await pool.fetch("SELECT * FROM worker_nodes WHERE status <> 'retired' ORDER BY slug ASC")
     failed_tasks = await pool.fetch(
         "SELECT * FROM worker_tasks WHERE status='failed' ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 20"
     )
@@ -266,6 +266,79 @@ async def runtime_recovery_snapshot():
             "expired_claim_count": expired_claim_count,
             "stale_worker_count": len(stale_workers),
         },
+    }
+
+
+@router.post("/{slug}/retire")
+async def retire_worker(
+    slug: str,
+    x_actor: str = Header(...),
+    x_operator_token: str | None = Header(default=None),
+):
+    require_authorized_actor(x_actor)
+    require_operator_token(x_operator_token)
+    pool = await get_pool()
+    worker = await pool.fetchrow("SELECT * FROM worker_nodes WHERE slug=$1", slug)
+    if worker is None:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    queued_or_claimed = await pool.fetch(
+        "SELECT * FROM worker_tasks WHERE worker_slug=$1 AND status IN ('queued','claimed') ORDER BY created_at ASC",
+        slug,
+    )
+    retired_at = datetime.now(timezone.utc)
+
+    for task in queued_or_claimed:
+        await pool.execute(
+            """UPDATE worker_tasks
+               SET status='cancelled',
+                   error_message=$1,
+                   claimed_by=NULL,
+                   claimed_at=NULL,
+                   lease_expires_at=NULL,
+                   completed_at=$2,
+                   updated_at=now()
+               WHERE id=$3""",
+            f"Worker {slug} retired by operator {x_actor}.",
+            retired_at,
+            task["id"],
+        )
+        if task.get("job_id") is not None:
+            await pool.execute(
+                "UPDATE jobs SET status='failed', error_message=$1, updated_at=now() WHERE id=$2 AND status IN ('approved','in-progress','pending')",
+                f"Worker {slug} retired by operator {x_actor}.",
+                task["job_id"],
+            )
+        await _append_audit(
+            pool,
+            task,
+            f"human:{x_actor}",
+            "cancel-worker-task",
+            {"task_id": str(task["id"]), "worker_slug": slug},
+        )
+
+    await pool.execute(
+        """UPDATE worker_nodes
+           SET status='retired',
+               updated_at=now()
+           WHERE slug=$1""",
+        slug,
+    )
+    await pool.execute(
+        """INSERT INTO audit_log (actor, action, tier, payload)
+           VALUES ($1, 'retire-worker', 3, $2::jsonb)""",
+        f"human:{x_actor}",
+        json.dumps(
+            {
+                "worker_slug": slug,
+                "cancelled_task_count": len(queued_or_claimed),
+            }
+        ),
+    )
+    return {
+        "worker_slug": slug,
+        "status": "retired",
+        "cancelled_task_count": len(queued_or_claimed),
     }
 
 

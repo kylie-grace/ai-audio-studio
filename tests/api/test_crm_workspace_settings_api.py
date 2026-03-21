@@ -31,18 +31,43 @@ class FakePool:
         self.workspace_row = workspace_row
         self.style_profile_count = style_profile_count
         self.executed: list[tuple[str, tuple[Any, ...]]] = []
+        now = datetime.now(timezone.utc)
+        self.projects = [
+            FakeRow(
+                id="project-1",
+                slug="demo-artist",
+                client_name="Demo Artist",
+                client_email="demo@example.test",
+                service_type="mix",
+                status="active",
+                budget_signal="mid",
+                timeline="next week",
+                notes="VIP",
+                created_at=now,
+                updated_at=now,
+            )
+        ]
 
     async def fetchrow(self, query: str, *args: Any):
         if "SELECT * FROM workspace_settings WHERE singleton = TRUE" in query:
             return self.workspace_row
         if "SELECT id FROM style_profiles WHERE name=" in query:
             return FakeRow(id="profile-1")
+        if "SELECT COUNT(*) FROM leads WHERE project_id=$1" in query:
+            return None
         raise AssertionError(f"Unhandled fetchrow query: {query}")
 
     async def fetchval(self, query: str, *args: Any):
         if "SELECT COUNT(*) FROM style_profiles WHERE scope='studio'" in query:
             return self.style_profile_count
+        if "SELECT COUNT(*) FROM leads WHERE project_id=$1" in query:
+            return 2 if args[0] == "project-1" else 0
         raise AssertionError(f"Unhandled fetchval query: {query}")
+
+    async def fetch(self, query: str, *args: Any):
+        if "SELECT * FROM projects ORDER BY updated_at DESC, created_at DESC LIMIT $1" in query:
+            return self.projects[: args[0]]
+        raise AssertionError(f"Unhandled fetch query: {query}")
 
     async def execute(self, query: str, *args: Any):
         self.executed.append((query, args))
@@ -197,3 +222,21 @@ def test_style_seed_rescan_updates_existing_profile(client):
     assert payload["status"] == "ok"
     assert payload["style_profile_name"] == "Default Studio Tone"
     assert fake_pool.executed
+
+
+def test_list_projects_returns_lead_counts(client):
+    app, _ = client
+    fake_pool = FakePool(workspace_row=None, style_profile_count=0)
+
+    async def fake_get_pool():
+        return fake_pool
+
+    main.get_pool = fake_get_pool
+
+    with TestClient(app) as test_client:
+        response = test_client.get("/projects")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["slug"] == "demo-artist"
+    assert payload[0]["lead_count"] == 2
