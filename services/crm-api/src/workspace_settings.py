@@ -175,6 +175,125 @@ def serialize_workspace_settings(row) -> dict[str, Any]:
     }
 
 
+def connection_center(settings: dict[str, Any]) -> list[dict[str, Any]]:
+    integrations = settings.get("integrations") or {}
+    alerts = settings.get("alert_destinations") or {}
+    worker = settings.get("worker") or {}
+    public_base_url = settings.get("public_base_url") or "https://localhost"
+    public_base_url = public_base_url.rstrip("/")
+
+    cards = [
+        {
+            "slug": "front-door",
+            "name": "Operator front door",
+            "status": "ready" if settings.get("public_base_url") else "partial",
+            "configured": bool(settings.get("public_base_url")),
+            "kind": "url",
+            "target": settings.get("public_base_url") or "",
+            "required_fields": ["public_base_url", "https_mode"],
+            "steps": [
+                "Set the preferred operator URL in workspace settings.",
+                "Trust the local TLS root or terminate HTTPS upstream for LAN access.",
+                "Use this single URL as the operator entry point instead of raw service ports.",
+            ],
+            "detail": settings.get("public_base_url") or "No canonical operator URL saved yet. LAN HTTP is still usable during bring-up.",
+        },
+        {
+            "slug": "n8n",
+            "name": "n8n automation",
+            "status": "ready" if integrations.get("n8n", False) else "needs-attention",
+            "configured": bool(integrations.get("n8n", False)),
+            "kind": "workflow",
+            "target": f"{public_base_url}/api/n8n",
+            "required_fields": ["integrations.n8n"],
+            "steps": [
+                "Keep the n8n integration flag enabled in workspace settings.",
+                "Run scripts/bootstrap_n8n.sh on first bring-up so the starter workflows are imported.",
+                "Open n8n from the front door and activate the packaged workflows you intend to use.",
+            ],
+            "detail": "Starter webhook and status digest workflows are packaged with the stack.",
+        },
+        {
+            "slug": "gmail-readonly",
+            "name": "Gmail intake",
+            "status": "ready" if integrations.get("gmail_readonly", False) else "needs-attention",
+            "configured": bool(integrations.get("gmail_readonly", False)),
+            "kind": "oauth",
+            "target": "GMAIL_CLIENT_ID / Gmail OAuth credential",
+            "required_fields": ["integrations.gmail_readonly"],
+            "steps": [
+                "Create a Google OAuth client for read-only Gmail access.",
+                "Save the client details in the control-plane env and enable Gmail read-only in workspace settings.",
+                "Bind that credential inside n8n before enabling inbox polling workflows.",
+            ],
+            "detail": "Read-only Gmail enables inbox ingestion without granting send permissions.",
+        },
+        {
+            "slug": "gmail-send",
+            "name": "Gmail send",
+            "status": "ready" if integrations.get("gmail_send", False) else "needs-attention",
+            "configured": bool(integrations.get("gmail_send", False)),
+            "kind": "oauth",
+            "target": "GMAIL_SEND_CLIENT_ID / Gmail Send credential",
+            "required_fields": ["integrations.gmail_send", "alert_destinations.webhook_url"],
+            "steps": [
+                "Create a Google OAuth client with Gmail send scope.",
+                "Configure the n8n Gmail credential named for send operations.",
+                "Point approval events at the n8n approval-event router webhook before activating send automation.",
+            ],
+            "detail": alerts.get("webhook_url") or "Approval router webhook still needs to be saved in alert destinations.",
+        },
+        {
+            "slug": "instagram",
+            "name": "Instagram publishing",
+            "status": "ready" if integrations.get("instagram", False) else "scaffolded",
+            "configured": bool(integrations.get("instagram", False)),
+            "kind": "oauth",
+            "target": "INSTAGRAM_ACCESS_TOKEN",
+            "required_fields": ["integrations.instagram"],
+            "steps": [
+                "Create the Meta app and short-lived publishing token flow for the studio account.",
+                "Save the access token in the runtime env and enable Instagram in workspace settings.",
+                "Keep publishing approval-gated until the posting workflow is validated on a real account.",
+            ],
+            "detail": "Publishing automation remains scaffolded until account credentials are added and validated.",
+        },
+        {
+            "slug": "facebook",
+            "name": "Facebook publishing",
+            "status": "ready" if integrations.get("facebook", False) else "scaffolded",
+            "configured": bool(integrations.get("facebook", False)),
+            "kind": "oauth",
+            "target": "FACEBOOK_ACCESS_TOKEN",
+            "required_fields": ["integrations.facebook"],
+            "steps": [
+                "Create the Meta page publishing token for the studio page.",
+                "Save the token in the runtime env and enable Facebook in workspace settings.",
+                "Validate posting with approval-only content before unattended publishing is enabled.",
+            ],
+            "detail": "Facebook automation is wired for future activation but still requires real account validation.",
+        },
+        {
+            "slug": "worker-runtime",
+            "name": "Worker runtime",
+            "status": "ready"
+            if settings.get("deployment_mode") == "single_machine" or (worker.get("worker_slug") and worker.get("worker_api_base_url"))
+            else "needs-attention",
+            "configured": bool(worker.get("worker_slug") or settings.get("deployment_mode") == "single_machine"),
+            "kind": "worker",
+            "target": worker.get("worker_api_base_url") or "",
+            "required_fields": ["deployment_mode", "worker.worker_slug", "worker.worker_api_base_url"],
+            "steps": [
+                "Choose single-machine mode or enter the remote worker slug and API URL.",
+                "Use the Setup Validation panel to run workstation validation and dry-run smoke.",
+                "Drain the worker before maintenance or container updates so no new tasks are claimed.",
+            ],
+            "detail": "Single-machine mode is turnkey. Remote worker mode needs explicit worker identity and API reachability.",
+        },
+    ]
+    return cards
+
+
 def workspace_status(settings: dict[str, Any], style_profile_count: int) -> dict[str, Any]:
     shared_paths = settings.get("shared_paths") or {}
     style_seed = settings.get("style_seed") or {}
@@ -292,6 +411,7 @@ def workspace_status(settings: dict[str, Any], style_profile_count: int) -> dict
         "onboarding_complete": onboarding_complete,
         "missing_fields": missing_fields,
         "style_profile_count": style_profile_count,
+        "connection_center": connection_center(settings),
         "readiness_checks": readiness_checks,
         "readiness_summary": readiness_summary,
     }

@@ -622,6 +622,17 @@ type WorkspaceSettings = {
 };
 
 type WorkspaceStatus = {
+  connection_center: Array<{
+    slug: string;
+    name: string;
+    status: "ready" | "partial" | "needs-attention" | "scaffolded";
+    configured: boolean;
+    kind: string;
+    target?: string;
+    required_fields: string[];
+    steps: string[];
+    detail: string;
+  }>;
   readiness_checks: Array<{
     slug: string;
     name: string;
@@ -1481,6 +1492,7 @@ export function App() {
       detail: "Waiting for bootstrap status.",
     },
     workspace: {
+      connection_center: [],
       readiness_checks: [],
       readiness_summary: {
         ready_count: 0,
@@ -1582,6 +1594,7 @@ export function App() {
   }));
   const workspaceSettings = data.workspace.settings;
   const readinessSummary = data.workspace.readiness_summary;
+  const connectionCenter = data.workspace.connection_center;
   const styleSourceCount = workspaceSettings.style_seed.source_paths.length;
   const alertEmailCount = workspaceSettings.alert_destinations.email_to.length;
   const displayedFrontDoor = workspaceSettings.public_base_url || frontDoorUrl;
@@ -1597,6 +1610,7 @@ export function App() {
   ].filter(Boolean).length;
   const moduleSettings = workspaceSettings.module_settings;
   const moduleEnabledCount = Object.values(moduleSettings).filter((module) => module.enabled).length;
+  const readyConnectionCount = connectionCenter.filter((item) => item.status === "ready").length;
   const selectedServiceHighlights = serviceStatusHighlights(selectedServiceStatus);
   const selectedServiceProxyUrl = selectedService ? `${frontDoorUrl}${serviceProxyBase[selectedService.key] ?? ""}` : frontDoorUrl;
   const visibleApprovals = data.approvals.slice(0, 8);
@@ -4775,7 +4789,7 @@ export function App() {
               </article>
               <article className="snapshot-card">
                 <span className="metric-label">Integrations</span>
-                <strong>{integrationFlags} enabled</strong>
+                <strong>{readyConnectionCount}/{connectionCenter.length} ready</strong>
                 <p>{alertEmailCount} alert destination(s) · {workerPostureLabel}</p>
               </article>
               <article className="snapshot-card">
@@ -4783,6 +4797,46 @@ export function App() {
                 <strong>{moduleEnabledCount}/{Object.keys(moduleSettings).length} enabled</strong>
                 <p>Persisted tuning now drives service status and operator defaults.</p>
               </article>
+            </div>
+            <div className="settings-snapshot-grid top-gap">
+              {connectionCenter.map((connection) => (
+                <article key={connection.slug} className="snapshot-card">
+                  <div className="panel-header compact-header">
+                    <div>
+                      <span className="metric-label">{connection.name}</span>
+                      <strong>{connection.kind.replace(/-/g, " ")}</strong>
+                    </div>
+                    <span
+                      className={`status-pill ${
+                        connection.status === "ready"
+                          ? "ok"
+                          : connection.status === "needs-attention"
+                            ? "bad"
+                            : "warn"
+                      }`}
+                    >
+                      {connection.status}
+                    </span>
+                  </div>
+                  <p className="panel-note">{connection.detail}</p>
+                  {connection.target ? <p className="muted">{connection.target}</p> : null}
+                  <div className="summary-pill-row top-gap">
+                    {connection.required_fields.slice(0, 3).map((field) => (
+                      <span key={field} className="summary-pill">{field}</span>
+                    ))}
+                  </div>
+                  <div className="table-stack top-gap">
+                    {connection.steps.slice(0, 2).map((step) => (
+                      <div key={step} className="table-row">
+                        <div className="row-main">
+                          <strong>Next step</strong>
+                          <div className="muted">{step}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ))}
             </div>
             <div className="onboarding-actions-bar">
               <div className="summary-pill-row onboarding-steps-row">

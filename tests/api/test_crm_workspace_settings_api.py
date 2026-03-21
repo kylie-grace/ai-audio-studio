@@ -182,6 +182,7 @@ def test_get_workspace_settings_status_returns_serialized_status(client):
     assert payload["onboarding_required"] is False
     assert payload["style_profile_count"] == 3
     assert payload["readiness_summary"]["ready_count"] >= 4
+    assert any(card["slug"] == "gmail-send" for card in payload["connection_center"])
     assert any(check["slug"] == "worker-posture" and check["status"] == "ready" for check in payload["readiness_checks"])
     assert payload["settings"]["worker"]["worker_slug"] == "studio-mac"
     assert payload["settings"]["worker"]["default_daw"] == "protools"

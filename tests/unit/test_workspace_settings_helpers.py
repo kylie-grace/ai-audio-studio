@@ -75,6 +75,7 @@ def test_workspace_status_marks_complete_when_required_fields_exist():
     assert status["onboarding_required"] is False
     assert status["missing_fields"] == []
     assert status["readiness_summary"]["ready_count"] >= 3
+    assert any(card["slug"] == "n8n" for card in status["connection_center"])
     assert any(check["slug"] == "worker-posture" and check["status"] == "optional" for check in status["readiness_checks"])
     assert any(check["slug"] == "service-tuning" and check["status"] == "ready" for check in status["readiness_checks"])
 
