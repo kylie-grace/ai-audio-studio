@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 
 from adapter_contracts import ArtifactRef, ExecutionResult, RenderedArtifact
@@ -58,6 +59,17 @@ class ReaScriptAdapter:
             str(workspace["script_copy"]),
         ]
         completed = subprocess.run(command, capture_output=True, text=True, check=False, timeout=30)
+        completion_marker = payload.get("completion_marker_path")
+        marker_timeout_seconds = float(payload.get("marker_timeout_seconds", 10))
+        if completion_marker:
+            marker_path = Path(completion_marker)
+            deadline = time.time() + marker_timeout_seconds
+            while time.time() < deadline:
+                if marker_path.exists():
+                    break
+                time.sleep(0.25)
+            else:
+                raise RuntimeError(f"REAPER script did not produce completion marker: {marker_path}")
         log_path = workspace["run_dir"] / "reascript-execution.log"
         log_path.write_text(
             f"command: {' '.join(command)}\n"
@@ -71,7 +83,7 @@ class ReaScriptAdapter:
         return ExecutionResult(
             status="complete",
             message="ReaScript execution dispatched to REAPER",
-            payload={**workspace["manifest"], "dry_run": False, "dispatch_command": command},
+            payload={**workspace["manifest"], "dry_run": False, "dispatch_command": command, "completion_marker_path": completion_marker},
             artifacts=artifacts,
         )
 

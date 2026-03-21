@@ -82,6 +82,7 @@ bash scripts/start_host_studio_worker.sh infra/env.example
 - Worker tasks: `http://<mac-mini-ip>:8080/workers/tasks/list`
 - Host-side Reaper smoke test: `python3 scripts/reaper_host_smoke_test.py`
 - Host worker status: `http://127.0.0.1:8191/status`
+- End-to-end queued Reaper validation: `python3 scripts/validate_host_reaper_queue.py`
 
 ## Behavior
 

@@ -48,11 +48,20 @@ def test_execute_reascript_live_dispatches_reaper_command(tmp_path: Path):
     script.write_text("demo")
     reaper = tmp_path / "REAPER"
     reaper.write_text("binary")
+    marker = tmp_path / "done.json"
+    marker.write_text("{}")
     settings = SimpleNamespace(dry_run_daw=False, reaper_binary_path=str(reaper))
 
     with patch("adapters.reascript.subprocess.run") as mock_run:
         mock_run.return_value = SimpleNamespace(returncode=0, stdout="ok", stderr="")
-        result = execute_reascript({"session_path": str(session), "script_path": str(script)}, settings)
+        result = execute_reascript(
+            {
+                "session_path": str(session),
+                "script_path": str(script),
+                "completion_marker_path": str(marker),
+            },
+            settings,
+        )
 
     assert result["status"] == "complete"
     assert result["payload"]["dry_run"] is False
