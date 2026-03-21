@@ -63,6 +63,34 @@ def _bit_depth(subtype: str) -> int | None:
     return int(digits) if digits else None
 
 
+def _spectral_metrics(data: np.ndarray, sample_rate: int) -> tuple[float, float]:
+    mono = data.mean(axis=1) if data.ndim > 1 else data
+    if mono.size == 0:
+        return 0.0, 0.0
+    spectrum = np.abs(np.fft.rfft(mono))
+    freqs = np.fft.rfftfreq(len(mono), d=1.0 / sample_rate)
+    total_energy = float(np.sum(spectrum**2)) or 1e-9
+    low_band = spectrum[(freqs >= 20) & (freqs <= 120)]
+    high_band = spectrum[(freqs >= 2000) & (freqs <= 12000)]
+    low_energy = float(np.sum(low_band**2)) if low_band.size else 0.0
+    high_energy = float(np.sum(high_band**2)) if high_band.size else 0.0
+    spectral_tilt_db = round(10.0 * math.log10((high_energy + 1e-9) / (low_energy + 1e-9)), 2)
+    low_end_ratio = round(low_energy / total_energy, 4)
+    return spectral_tilt_db, low_end_ratio
+
+
+def _stereo_width(data: np.ndarray) -> float:
+    if data.ndim < 2 or data.shape[1] < 2:
+        return 0.0
+    left = data[:, 0]
+    right = data[:, 1]
+    mid = (left + right) / 2.0
+    side = (left - right) / 2.0
+    mid_rms = float(np.sqrt(np.mean(np.square(mid)))) if mid.size else 0.0
+    side_rms = float(np.sqrt(np.mean(np.square(side)))) if side.size else 0.0
+    return round(side_rms / max(mid_rms, 1e-9), 3)
+
+
 def analyze_audio(file_path: Path, target: str) -> dict:
     thresholds = get_thresholds(target)
     data, sample_rate = sf.read(file_path, always_2d=True)
@@ -78,6 +106,8 @@ def analyze_audio(file_path: Path, target: str) -> dict:
             corr = 1.0
     else:
         corr = 1.0
+    spectral_tilt_db, low_end_ratio = _spectral_metrics(data, sample_rate)
+    stereo_width = _stereo_width(data)
     info = sf.info(file_path)
 
     checks = [
@@ -108,6 +138,24 @@ def analyze_audio(file_path: Path, target: str) -> dict:
             "pass": corr >= thresholds.min_correlation,
             "severity": "WARN",
         },
+        {
+            "check": "spectral_balance",
+            "value": spectral_tilt_db,
+            "pass": -18.0 <= spectral_tilt_db <= 6.0,
+            "severity": "WARN",
+        },
+        {
+            "check": "low_end_ratio",
+            "value": low_end_ratio,
+            "pass": 0.08 <= low_end_ratio <= 0.45,
+            "severity": "WARN",
+        },
+        {
+            "check": "stereo_width",
+            "value": stereo_width,
+            "pass": 0.05 <= stereo_width <= 1.6,
+            "severity": "WARN",
+        },
     ]
     issues = [check for check in checks if not check["pass"]]
     overall_pass = not any(check["severity"] == "HARD_FAIL" and not check["pass"] for check in checks)
@@ -123,6 +171,9 @@ def analyze_audio(file_path: Path, target: str) -> dict:
         "clipping_detected": clipping_detected,
         "phase_ok": corr >= thresholds.min_correlation,
         "mono_ok": corr >= thresholds.min_correlation,
+        "spectral_tilt_db": spectral_tilt_db,
+        "low_end_ratio": low_end_ratio,
+        "stereo_width": stereo_width,
         "duration_s": round(len(data) / sample_rate, 3),
         "sample_rate": sample_rate,
         "bit_depth": _bit_depth(info.subtype or ""),

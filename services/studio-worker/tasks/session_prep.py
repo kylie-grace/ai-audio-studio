@@ -9,9 +9,9 @@ from paths import slugify, translate_path
 
 
 def execute_prepare_session(payload: dict, settings) -> dict:
-    source_dir = translate_path(payload["source_dir"], settings.path_translation_json)
+    source_dir = translate_path(payload["source_dir"], settings.path_translation_json, settings.worker_platform)
     project_slug = payload.get("project_slug") or slugify(payload.get("client_name", source_dir.name))
-    shared_root = translate_path(payload.get("shared_projects_path", settings.shared_projects_path), settings.path_translation_json)
+    shared_root = translate_path(payload.get("shared_projects_path", settings.shared_projects_path), settings.path_translation_json, settings.worker_platform)
     project_root = shared_root / project_slug
     stems_dir = project_root / "stems"
     session_dir = project_root / "session"

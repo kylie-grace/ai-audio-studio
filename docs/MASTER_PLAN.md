@@ -51,21 +51,18 @@ Execution targets:
 
 ## Remaining execution order
 
-1. Add plugin dependency warnings to mix, revision, and execution planning.
-2. Add artifact browser actions and review/download UX.
-3. Add host-machine selector and worker-platform posture to onboarding/settings.
-4. Add workstation setup wizard and validation flows.
-5. Add stronger stop/cancel/recovery behavior for DAW execution.
-6. Harden SoundFlow/Pro Tools execution and preview flows.
-7. Add Wavelab discovery and mastering scaffolding.
-8. Deepen QC/listening/reference review.
-9. Finish project operations, delivery history, and review surfaces.
-10. Finish Gmail/social communications and novice-safe automation packs.
-11. Refresh docs, cut over fully, and run final validation.
+1. Persist richer listening/render review records beyond preview-only objects.
+2. Keep expanding project review packets and candidate-centric operator actions.
+3. Add stronger stop/cancel/recovery behavior for DAW execution.
+4. Harden SoundFlow/Pro Tools execution and preview flows.
+5. Add Wavelab discovery and mastering scaffolding.
+6. Finish Windows worker runtime validation and mount/path runbooks on a real workstation.
+7. Finish Gmail/social communications and novice-safe automation packs.
+8. Refresh docs, cut over fully, and run final validation.
 
 Newly surfaced implementation gaps:
-- artifact browser still needs true front-door download/open flows, not just copy-path actions
-- Windows worker support still needs explicit path translation, mount conventions, and runtime validation
+- listening and render review are still mostly preview-time objects rather than persisted review records
+- Windows worker support now has explicit path translation and validation scaffolding, but still needs live workstation validation and runtime adapter proof
 
 ## Definition of done
 

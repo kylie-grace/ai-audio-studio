@@ -337,6 +337,25 @@ type ProjectDetail = {
     latest_revision_status?: string | null;
     latest_mix_plan_status?: string | null;
   };
+  review_packet: {
+    recommended_operator_action: string;
+    latest_candidate_path?: string | null;
+    focus_flags: string[];
+    latest_manifest_status?: string | null;
+    latest_revision_status?: string | null;
+    latest_mix_plan_status?: string | null;
+    latest_qc: {
+      file_path?: string | null;
+      overall_pass?: boolean | null;
+      hard_fail_count: number;
+      warning_count: number;
+      lufs_integrated?: number | null;
+      true_peak_dbfs?: number | null;
+      low_end_ratio?: number | null;
+      stereo_width?: number | null;
+      spectral_tilt_db?: number | null;
+    };
+  };
 };
 
 type ArtifactPreview = {
@@ -399,6 +418,7 @@ type ListeningReportPreview = {
     qc_hard_fail_count: number;
     qc_warning_count: number;
     reference_alignment: string;
+    focus_flags?: string[];
   };
   next_actions: string[];
 };
@@ -415,7 +435,11 @@ type RenderPlanPreview = {
     sample_rate: number;
     bit_depth: number;
     notes: string;
+    review_gate?: string;
+    qc_required?: boolean;
+    listening_required?: boolean;
   }>;
+  review_candidate_slug?: string;
   follow_up: string[];
 };
 
@@ -2770,6 +2794,12 @@ export function App() {
                           <strong>{profile.label}</strong>
                           <div className="muted">{profile.filename}</div>
                           <div className="muted">{profile.sample_rate} Hz · {profile.bit_depth}-bit · {profile.target}</div>
+                          <div className="muted">{profile.review_gate ?? "internal-review"} · {profile.qc_required ? "qc required" : "qc optional"} · {profile.listening_required ? "listening required" : "listening optional"}</div>
+                        </div>
+                        <div className="row-meta">
+                          <span className={`status-pill ${profile.slug === data.renderPlanPreview?.review_candidate_slug ? "ok" : "muted"}`}>
+                            {profile.slug === data.renderPlanPreview?.review_candidate_slug ? "candidate" : "supporting"}
+                          </span>
                         </div>
                       </div>
                     ))
@@ -2787,6 +2817,11 @@ export function App() {
                             {data.listeningReportPreview.summary.qc_hard_fail_count} hard fails · {data.listeningReportPreview.summary.qc_warning_count} warnings
                           </div>
                           <div className="muted">Reference alignment: {data.listeningReportPreview.summary.reference_alignment}</div>
+                          {(data.listeningReportPreview.summary.focus_flags ?? []).length ? (
+                            <div className="summary-pill-row top-gap">
+                              {(data.listeningReportPreview.summary.focus_flags ?? []).map((flag) => <span key={flag} className="summary-pill">{flag}</span>)}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                       {data.listeningReportPreview.checks.map((check) => (
@@ -4012,13 +4047,14 @@ export function App() {
                 </div>
                 <div className="panel-span-4">
                   <div className="mini-card">
-                    <span className="metric-label">Latest artifact</span>
-                    <strong>{fileLabel((projectDetail?.artifact_inventory[0]?.artifact?.path as string | undefined) ?? (projectDetail?.artifact_inventory[0]?.artifact?.manifest_path as string | undefined))}</strong>
+                    <span className="metric-label">Review candidate</span>
+                    <strong>{fileLabel(projectDetail?.review_packet.latest_candidate_path)}</strong>
                     <p className="panel-note">
-                      {projectDetail?.artifact_inventory[0]?.source
-                        ? `${projectDetail.artifact_inventory[0].source} · ${projectDetail.artifact_inventory[0].task_type ?? projectDetail.artifact_inventory[0].module ?? "artifact"}`
-                        : "Artifacts will appear here after worker execution or packaging."}
+                      {projectDetail?.review_packet.recommended_operator_action ?? "Artifacts and candidate renders will appear here after worker execution or packaging."}
                     </p>
+                    <div className="summary-pill-row">
+                      {projectDetail?.review_packet.focus_flags.map((flag) => <span key={flag} className="summary-pill">{flag}</span>)}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4133,6 +4169,9 @@ export function App() {
                       <div className="row-main">
                         <strong>{String(report.file_path ?? "qc report")}</strong>
                         <div className="muted">{String(report.lufs_integrated ?? "n/a")} LUFS · TP {String(report.true_peak_dbfs ?? "n/a")}</div>
+                        <div className="muted">
+                          Low-end {String(report.low_end_ratio ?? "n/a")} · Stereo {String(report.stereo_width ?? "n/a")} · Spectral {String(report.spectral_tilt_db ?? "n/a")} dB
+                        </div>
                       </div>
                       <div className="row-meta">
                         <span className={`status-pill ${report.overall_pass ? "ok" : "bad"}`}>{report.overall_pass ? "pass" : "review"}</span>
@@ -4179,6 +4218,12 @@ export function App() {
                       {projectDetail?.review_summary.latest_mix_plan_status ? <span className="summary-pill">mix plan {projectDetail.review_summary.latest_mix_plan_status}</span> : null}
                       {projectDetail ? <span className="summary-pill">{projectDetail.review_summary.artifact_count} artifacts</span> : null}
                     </div>
+                    {projectDetail ? (
+                      <p className="panel-note top-gap">
+                        {projectDetail.review_packet.recommended_operator_action}
+                        {projectDetail.review_packet.latest_qc.file_path ? ` Latest QC target: ${projectDetail.review_packet.latest_qc.file_path}.` : ""}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>

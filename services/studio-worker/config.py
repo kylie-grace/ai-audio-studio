@@ -6,6 +6,7 @@ import os
 import socket
 from dataclasses import dataclass
 import json
+import platform
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -28,6 +29,7 @@ class Settings:
     reaper_binary_path: str | None
     protools_app_path: str | None
     soundflow_cli_path: str | None
+    wavelab_app_path: str | None
     workstation_profile: dict
 
 
@@ -65,6 +67,15 @@ def _first_present(*values: str | None) -> str | None:
 def _csv_or_default(env_name: str, default_csv: str) -> list[str]:
     raw = os.environ.get(env_name, default_csv)
     return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _default_worker_platform() -> str:
+    system = platform.system().lower()
+    if system == "darwin":
+        return "macos"
+    if system.startswith("win"):
+        return "windows"
+    return system or "macos"
 
 
 def _infer_supported_daws(capabilities: list[str], worker_config: dict) -> list[str]:
@@ -105,6 +116,7 @@ def load_settings() -> Settings:
     shared_paths = workspace.get("shared_paths") or {}
     worker_config = workspace.get("worker") or {}
     studio_name = str(workspace.get("studio_name") or "").strip()
+    worker_platform = os.environ.get("WORKER_PLATFORM", worker_config.get("platform", _default_worker_platform()))
     capabilities = _csv_or_default("WORKER_CAPABILITIES", "session-prep,revision-parser,delivery-packager")
     worker_display_name = _first_present(
         os.environ.get("WORKER_DISPLAY_NAME"),
@@ -117,17 +129,29 @@ def load_settings() -> Settings:
     reaper_binary_path = _first_present(
         os.environ.get("REAPER_BINARY_PATH"),
         worker_config.get("reaper_binary_path"),
-        "/Applications/REAPER.app/Contents/MacOS/REAPER" if Path("/Applications/REAPER.app/Contents/MacOS/REAPER").exists() else None,
+        (
+            "/Applications/REAPER.app/Contents/MacOS/REAPER"
+            if worker_platform == "macos" and Path("/Applications/REAPER.app/Contents/MacOS/REAPER").exists()
+            else None
+        ),
     )
     protools_app_path = _first_present(
         os.environ.get("PROTOOLS_APP_PATH"),
         worker_config.get("protools_app_path"),
-        "/Applications/Pro Tools.app" if Path("/Applications/Pro Tools.app").exists() else None,
+        "/Applications/Pro Tools.app" if worker_platform == "macos" and Path("/Applications/Pro Tools.app").exists() else None,
     )
     soundflow_cli_path = _first_present(
         os.environ.get("SOUNDFLOW_CLI_PATH"),
         worker_config.get("soundflow_cli_path"),
-        "/Applications/SoundFlow.app/Contents/MacOS/SoundFlow" if Path("/Applications/SoundFlow.app/Contents/MacOS/SoundFlow").exists() else None,
+        (
+            "/Applications/SoundFlow.app/Contents/MacOS/SoundFlow"
+            if worker_platform == "macos" and Path("/Applications/SoundFlow.app/Contents/MacOS/SoundFlow").exists()
+            else None
+        ),
+    )
+    wavelab_app_path = _first_present(
+        os.environ.get("WAVELAB_APP_PATH"),
+        worker_config.get("wavelab_app_path"),
     )
 
     return Settings(
@@ -135,7 +159,7 @@ def load_settings() -> Settings:
         worker_slug=_first_present(os.environ.get("WORKER_SLUG"), worker_config.get("worker_slug"), socket.gethostname().lower())
         or socket.gethostname().lower(),
         worker_display_name=worker_display_name,
-        worker_platform=os.environ.get("WORKER_PLATFORM", "macos"),
+        worker_platform=worker_platform,
         worker_api_base_url=_first_present(os.environ.get("WORKER_API_BASE_URL"), worker_config.get("worker_api_base_url")),
         poll_interval_seconds=float(os.environ.get("POLL_INTERVAL_SECONDS", "5")),
         capabilities=capabilities,
@@ -149,9 +173,10 @@ def load_settings() -> Settings:
         reaper_binary_path=reaper_binary_path,
         protools_app_path=protools_app_path,
         soundflow_cli_path=soundflow_cli_path,
+        wavelab_app_path=wavelab_app_path,
         workstation_profile={
             "display_name": worker_display_name,
-            "platform": os.environ.get("WORKER_PLATFORM", worker_config.get("platform", "macos")),
+            "platform": worker_platform,
             "default_daw": _first_present(
                 os.environ.get("WORKSTATION_DEFAULT_DAW"),
                 worker_config.get("default_daw"),
@@ -163,6 +188,7 @@ def load_settings() -> Settings:
             "reaper_binary_path": reaper_binary_path or "",
             "protools_app_path": protools_app_path or "",
             "soundflow_cli_path": soundflow_cli_path or "",
+            "wavelab_app_path": wavelab_app_path or "",
             "notes": _first_present(os.environ.get("WORKSTATION_NOTES"), worker_config.get("notes")) or "",
         },
     )

@@ -10,22 +10,39 @@ from pathlib import Path
 from typing import Iterable
 
 
-PLUGIN_ROOTS = {
-    "au": [
-        Path("/Library/Audio/Plug-Ins/Components"),
-        Path.home() / "Library/Audio/Plug-Ins/Components",
-    ],
-    "vst3": [
-        Path("/Library/Audio/Plug-Ins/VST3"),
-        Path.home() / "Library/Audio/Plug-Ins/VST3",
-    ],
-    "vst": [
-        Path("/Library/Audio/Plug-Ins/VST"),
-        Path.home() / "Library/Audio/Plug-Ins/VST",
-    ],
-    "aax": [
-        Path("/Library/Application Support/Avid/Audio/Plug-Ins"),
-    ],
+PLUGIN_ROOTS_BY_PLATFORM = {
+    "macos": {
+        "au": [
+            Path("/Library/Audio/Plug-Ins/Components"),
+            Path.home() / "Library/Audio/Plug-Ins/Components",
+        ],
+        "vst3": [
+            Path("/Library/Audio/Plug-Ins/VST3"),
+            Path.home() / "Library/Audio/Plug-Ins/VST3",
+        ],
+        "vst": [
+            Path("/Library/Audio/Plug-Ins/VST"),
+            Path.home() / "Library/Audio/Plug-Ins/VST",
+        ],
+        "aax": [
+            Path("/Library/Application Support/Avid/Audio/Plug-Ins"),
+        ],
+    },
+    "windows": {
+        "au": [],
+        "vst3": [
+            Path(r"C:\Program Files\Common Files\VST3"),
+            Path.home() / "AppData/Local/Programs/Common/VST3",
+        ],
+        "vst": [
+            Path(r"C:\Program Files\VstPlugins"),
+            Path(r"C:\Program Files\Steinberg\VstPlugins"),
+            Path(r"C:\Program Files\Common Files\VST2"),
+        ],
+        "aax": [
+            Path(r"C:\Program Files\Common Files\Avid\Audio\Plug-Ins"),
+        ],
+    },
 }
 
 PLUGIN_SUFFIXES = {
@@ -52,6 +69,26 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _normalized_platform(platform_name: str | None) -> str:
+    value = str(platform_name or "").strip().lower()
+    if value.startswith("win"):
+        return "windows"
+    if value in {"darwin", "mac", "macos", "osx"}:
+        return "macos"
+    return value or "macos"
+
+
+def _plugin_roots(platform_name: str | None) -> dict[str, list[Path]]:
+    return PLUGIN_ROOTS_BY_PLATFORM.get(_normalized_platform(platform_name), PLUGIN_ROOTS_BY_PLATFORM["macos"])
+
+
+def _first_existing_path(candidates: list[str]) -> str | None:
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return candidate
+    return None
+
+
 def _plugin_vendor(name: str) -> str | None:
     if " - " in name:
         return name.split(" - ", 1)[0].strip() or None
@@ -67,12 +104,13 @@ def _iter_plugin_paths(root: Path, suffix: str) -> Iterable[Path]:
     return [entry for entry in entries if entry.name.lower().endswith(suffix)]
 
 
-def scan_plugin_inventory(limit_per_format: int = 150) -> dict:
+def scan_plugin_inventory(platform_name: str | None = None, limit_per_format: int = 150) -> dict:
     plugins: list[dict] = []
     counts_by_format: dict[str, int] = {}
     roots_summary: list[dict] = []
+    plugin_roots = _plugin_roots(platform_name)
 
-    for plugin_format, roots in PLUGIN_ROOTS.items():
+    for plugin_format, roots in plugin_roots.items():
         suffix = PLUGIN_SUFFIXES[plugin_format]
         counts_by_format[plugin_format] = 0
         for root in roots:
@@ -120,18 +158,53 @@ def scan_plugin_inventory(limit_per_format: int = 150) -> dict:
 
 
 def detect_workstation_profile(settings) -> dict:
-    reaper_binary = settings.reaper_binary_path or _which(["reaper", "REAPER", "/Applications/REAPER.app/Contents/MacOS/REAPER"])
-    soundflow_cli = settings.soundflow_cli_path or _which(["sf", "soundflow"])
-    protools_app = settings.protools_app_path
-    plugin_inventory = scan_plugin_inventory()
+    platform_name = _normalized_platform(getattr(settings, "worker_platform", "macos"))
+    reaper_binary = (
+        getattr(settings, "reaper_binary_path", None)
+        or _which(["reaper", "REAPER"])
+        or _first_existing_path(
+            [
+                "/Applications/REAPER.app/Contents/MacOS/REAPER",
+                r"C:\Program Files\REAPER (x64)\reaper.exe",
+                r"C:\Program Files\REAPER\reaper.exe",
+            ]
+        )
+    )
+    soundflow_cli = (
+        getattr(settings, "soundflow_cli_path", None)
+        or _which(["sf", "soundflow"])
+        or _first_existing_path(["/Applications/SoundFlow.app/Contents/MacOS/SoundFlow"])
+    )
+    protools_app = (
+        getattr(settings, "protools_app_path", None)
+        or _first_existing_path(
+            [
+                "/Applications/Pro Tools.app",
+                r"C:\Program Files\Avid\Pro Tools\ProTools.exe",
+            ]
+        )
+    )
+    wavelab_app = (
+        getattr(settings, "wavelab_app_path", None)
+        or _first_existing_path(
+            [
+                "/Applications/WaveLab.app",
+                r"C:\Program Files\Steinberg\WaveLab 12\WaveLab 12.exe",
+                r"C:\Program Files\Steinberg\WaveLab 11\WaveLab 11.exe",
+            ]
+        )
+    )
+    plugin_inventory = scan_plugin_inventory(platform_name=platform_name)
 
     reaper_installed = _path_exists(reaper_binary)
     protools_installed = _path_exists(protools_app)
-    soundflow_installed = _path_exists(soundflow_cli) or _env_flag("SOUNDFLOW_INSTALLED")
+    soundflow_installed = (platform_name == "macos") and (_path_exists(soundflow_cli) or _env_flag("SOUNDFLOW_INSTALLED"))
+    wavelab_installed = _path_exists(wavelab_app)
+    wavelab_automation_ready = wavelab_installed and _env_flag("WAVELAB_AUTOMATION_READY") and not settings.dry_run_daw
 
     permissions = {
-        "accessibility_expected": bool(soundflow_installed or protools_installed),
-        "automation_expected": bool(reaper_installed or protools_installed),
+        "accessibility_expected": platform_name == "macos" and bool(soundflow_installed or protools_installed),
+        "automation_expected": bool(reaper_installed or protools_installed or wavelab_installed),
         "manual_confirmation_required": True,
     }
 
@@ -153,7 +226,19 @@ def detect_workstation_profile(settings) -> dict:
             "notes": (
                 "SoundFlow bridge available."
                 if protools_installed and soundflow_installed
-                else "Requires Pro Tools plus SoundFlow bootstrap."
+                else "Requires Pro Tools plus SoundFlow bootstrap on macOS."
+            ),
+        },
+        {
+            "slug": "wavelab",
+            "installed": wavelab_installed,
+            "binary_path": wavelab_app,
+            "automation_ready": wavelab_automation_ready,
+            "execution_mode": "mastering-bridge" if wavelab_automation_ready else "scaffold-only",
+            "notes": (
+                "WaveLab mastering bridge is enabled."
+                if wavelab_automation_ready
+                else "WaveLab detection is scaffolded; mastering automation still requires explicit runtime validation."
             ),
         },
     ]
@@ -166,6 +251,8 @@ def detect_workstation_profile(settings) -> dict:
         "reascript_execution": reaper_installed and not settings.dry_run_daw,
         "soundflow_rendering": True,
         "soundflow_execution": protools_installed and soundflow_installed and not settings.dry_run_daw,
+        "wavelab_rendering": wavelab_installed,
+        "wavelab_execution": wavelab_automation_ready,
     }
 
     blockers: list[str] = []
@@ -178,7 +265,7 @@ def detect_workstation_profile(settings) -> dict:
 
     return {
         "host": socket.gethostname(),
-        "platform": settings.worker_platform,
+        "platform": platform_name,
         "os_version": platform.platform(),
         "deployment_mode": "single-machine-friendly" if not settings.worker_api_base_url else "worker-node",
         "dry_run_daw": settings.dry_run_daw,
@@ -221,12 +308,27 @@ def validate_workstation_setup(settings) -> dict:
             "detail": next((daw["notes"] for daw in profile["daws"] if daw["slug"] == "protools"), "Pro Tools not configured."),
         },
         {
+            "slug": "wavelab-readiness",
+            "label": "WaveLab readiness",
+            "status": "ready" if any(daw["slug"] == "wavelab" and daw["automation_ready"] for daw in profile["daws"]) else "watch",
+            "detail": next((daw["notes"] for daw in profile["daws"] if daw["slug"] == "wavelab"), "WaveLab not configured."),
+        },
+        {
             "slug": "plugin-inventory",
             "label": "Plugin inventory",
             "status": "ready" if (profile.get("plugins", {}).get("summary", {}).get("count", 0) > 0) else "watch",
             "detail": f"{profile.get('plugins', {}).get('summary', {}).get('count', 0)} plugins discovered",
         },
     ]
+    if profile["platform"] == "windows":
+        checks.append(
+            {
+                "slug": "path-translation",
+                "label": "Path translation",
+                "status": "ready" if getattr(settings, "path_translation_json", "{}").strip() not in {"", "{}"} else "watch",
+                "detail": "Set PATH_TRANSLATION_JSON when the control plane and Windows worker do not share identical paths.",
+            }
+        )
     if profile["dry_run_daw"]:
         checks.append(
             {

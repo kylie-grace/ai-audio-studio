@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Run a lightweight worker service on a second Mac so the control plane can hand off bounded filesystem and DAW-adjacent tasks without moving the whole stack.
+Run a lightweight worker service on the same host or on a second workstation so the control plane can hand off bounded filesystem and DAW-adjacent tasks without moving the whole stack.
 
 ## Initial scope
 
@@ -12,14 +12,17 @@ Current worker capabilities:
 - `delivery-packager`
 - workstation discovery and DAW readiness reporting
 - preview generation for session manifests, mix plans, render plans, listening reports, and execution plans
+- cross-platform path translation for differing control-plane and worker mounts
+- plugin inventory scans for `macos` and scaffolded scan roots for `windows`
+- Wavelab detection scaffolding for mastering-oriented workstation posture
 
 Queued tasks are claimed from `project-state` over HTTP and executed against mounted local paths.
 The code is split into `config`, `paths`, `runner`, `tasks`, and `adapters` so DAW execution can be added without reworking the worker loop.
 
 ## Prerequisites
 
-- Docker Desktop installed on the studio Mac
-- Shared storage mounted at the same path as the Mac mini, or `PATH_TRANSLATION_JSON` configured
+- Docker Desktop installed on the worker workstation
+- Shared storage mounted at the same path as the control plane, or `PATH_TRANSLATION_JSON` configured
 - The Mac mini control plane reachable on the LAN
 - If you are on a single Mac, you do not need this worker at all.
 
@@ -48,6 +51,16 @@ If mount points differ between the Mac mini and studio Mac:
 PATH_TRANSLATION_JSON={"/Volumes/StudioShare":"/Volumes/ControlPlaneShare"}
 ```
 
+For a Windows worker, use Windows targets in the translation map:
+
+```bash
+PATH_TRANSLATION_JSON={"/Volumes/StudioShare":"Z:\\StudioShare"}
+WORKER_PLATFORM=windows
+REAPER_BINARY_PATH="C:\\Program Files\\REAPER (x64)\\reaper.exe"
+PROTOOLS_APP_PATH="C:\\Program Files\\Avid\\Pro Tools\\ProTools.exe"
+WAVELAB_APP_PATH="C:\\Program Files\\Steinberg\\WaveLab 12\\WaveLab 12.exe"
+```
+
 ## Start
 
 ```bash
@@ -73,6 +86,7 @@ bash scripts/start_host_studio_worker.sh infra/env.example
 
 - Studio worker health: `http://<studio-mac-ip>:8190/health`
 - Workstation profile: `http://<studio-mac-ip>:8190/workstation/profile`
+- Workstation validation: `http://<studio-mac-ip>:8190/workstation/validate`
 - Session manifest preview: `POST http://<studio-mac-ip>:8190/session-manifest/preview`
 - Mix plan preview: `POST http://<studio-mac-ip>:8190/mix-plan/preview`
 - Render plan preview: `POST http://<studio-mac-ip>:8190/render-plan/preview`
@@ -94,3 +108,4 @@ bash scripts/start_host_studio_worker.sh infra/env.example
 - `execute-soundflow` and `execute-reascript` now support workstation readiness reporting, generated DAW-specific revision artifacts, Reaper session introspection, preview execution-loop planning, and disposable working-copy staging before execution
 - for host-mode REAPER automation, `execute-reascript` can now dispatch to the configured REAPER binary when `STUDIO_WORKER_DRY_RUN_DAW=false`
 - Set `STUDIO_WORKER_DRY_RUN_DAW=true` to validate DAW execution queueing before a real studio Mac is available
+- `windows` workers are now scaffolded in path translation, plugin scanning, and workstation validation, but still need live DAW runtime validation before being treated as production-ready

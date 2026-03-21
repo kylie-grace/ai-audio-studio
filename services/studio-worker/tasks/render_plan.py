@@ -20,6 +20,9 @@ def build_render_plan(payload: dict) -> dict:
             "sample_rate": sample_rate,
             "bit_depth": bit_depth,
             "notes": "Primary candidate bounce for operator review and listening analysis.",
+            "review_gate": "internal-review",
+            "qc_required": True,
+            "listening_required": True,
         }
     ]
 
@@ -33,6 +36,9 @@ def build_render_plan(payload: dict) -> dict:
                 "sample_rate": sample_rate,
                 "bit_depth": bit_depth,
                 "notes": "Instrumental print for alternate review and content reuse.",
+                "review_gate": "internal-review",
+                "qc_required": False,
+                "listening_required": True,
             }
         )
 
@@ -46,6 +52,9 @@ def build_render_plan(payload: dict) -> dict:
                 "sample_rate": sample_rate,
                 "bit_depth": bit_depth,
                 "notes": "Grouped stem delivery package with QC and manifest follow-up.",
+                "review_gate": "delivery-approval",
+                "qc_required": False,
+                "listening_required": False,
             }
         )
 
@@ -53,6 +62,7 @@ def build_render_plan(payload: dict) -> dict:
         "status": "preview",
         "target": target,
         "profile_count": len(profiles),
+        "review_candidate_slug": "review-mix",
         "profiles": profiles,
         "follow_up": [
             "Run audio QC on each candidate full-mix bounce.",

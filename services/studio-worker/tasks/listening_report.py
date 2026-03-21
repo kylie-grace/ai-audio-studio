@@ -87,6 +87,33 @@ def _build_from_qc_report(report: dict, reference_summary: dict) -> dict:
             "value": corr,
         })
 
+    low_end_ratio = report.get("low_end_ratio")
+    if low_end_ratio is not None:
+        checks.append({
+            "slug": "low-end-balance",
+            "status": "attention" if low_end_ratio > 0.45 or low_end_ratio < 0.08 else "watch" if low_end_ratio > 0.36 else "ok",
+            "detail": f"Low-end ratio {low_end_ratio:.3f} — compare sub/bass balance against references and mono fold-down.",
+            "value": low_end_ratio,
+        })
+
+    stereo_width = report.get("stereo_width")
+    if stereo_width is not None:
+        checks.append({
+            "slug": "stereo-image",
+            "status": "attention" if stereo_width > 1.6 or stereo_width < 0.05 else "watch" if stereo_width > 1.2 else "ok",
+            "detail": f"Stereo width {stereo_width:.3f} — verify center focus and edge translation.",
+            "value": stereo_width,
+        })
+
+    spectral_tilt_db = report.get("spectral_tilt_db")
+    if spectral_tilt_db is not None:
+        checks.append({
+            "slug": "spectral-balance",
+            "status": "attention" if spectral_tilt_db < -18.0 or spectral_tilt_db > 6.0 else "watch" if spectral_tilt_db < -12.0 or spectral_tilt_db > 3.0 else "ok",
+            "detail": f"Spectral tilt {spectral_tilt_db:+.2f} dB — check brightness and top-end balance against references.",
+            "value": spectral_tilt_db,
+        })
+
     # Duration / format info
     duration = report.get("duration_s")
     sample_rate = report.get("sample_rate")
@@ -109,6 +136,15 @@ def _build_from_qc_report(report: dict, reference_summary: dict) -> dict:
             ref_parts.append(f"LUFS delta {lufs_delta:+.1f}")
         if peak_delta is not None:
             ref_parts.append(f"peak delta {peak_delta:+.1f}")
+        low_end_delta = reference_summary.get("low_end_delta")
+        stereo_width_delta = reference_summary.get("stereo_width_delta")
+        spectral_tilt_delta = reference_summary.get("spectral_tilt_delta")
+        if low_end_delta is not None:
+            ref_parts.append(f"low-end delta {low_end_delta:+.3f}")
+        if stereo_width_delta is not None:
+            ref_parts.append(f"stereo delta {stereo_width_delta:+.2f}")
+        if spectral_tilt_delta is not None:
+            ref_parts.append(f"spectral delta {spectral_tilt_delta:+.2f} dB")
         if ref_parts:
             checks.append({
                 "slug": "reference-delta",
@@ -127,6 +163,10 @@ def _build_from_qc_report(report: dict, reference_summary: dict) -> dict:
     lufs_val = report.get("lufs_integrated", -99)
     if abs((lufs_val or -99) - (report.get("lufs_target") or -14)) > 2:
         next_actions.append("Adjust master gain to hit loudness target.")
+    if low_end_ratio is not None and (low_end_ratio > 0.45 or low_end_ratio < 0.08):
+        next_actions.append("Rebalance low-end before release and compare against a trusted reference.")
+    if stereo_width is not None and (stereo_width > 1.6 or stereo_width < 0.05):
+        next_actions.append("Tighten stereo image so translation stays stable on speakers and mono fold-down.")
     if not next_actions:
         next_actions.append("QC passed — ready for client review or delivery packaging.")
 
@@ -141,6 +181,7 @@ def _build_from_qc_report(report: dict, reference_summary: dict) -> dict:
             "qc_warning_count": warnings,
             "reference_alignment": reference_summary.get("alignment", "unscored"),
             "overall_pass": report.get("overall_pass", False),
+            "focus_flags": reference_summary.get("focus_flags", []),
         },
         "next_actions": next_actions,
     }
@@ -188,11 +229,20 @@ def build_listening_report(payload: dict) -> dict:
     if reference_summary:
         lufs_delta = reference_summary.get("lufs_delta")
         peak_delta = reference_summary.get("true_peak_delta")
+        low_end_delta = reference_summary.get("low_end_delta")
+        stereo_width_delta = reference_summary.get("stereo_width_delta")
+        spectral_tilt_delta = reference_summary.get("spectral_tilt_delta")
         parts = []
         if lufs_delta is not None:
             parts.append(f"LUFS delta {lufs_delta:+.1f}")
         if peak_delta is not None:
             parts.append(f"peak delta {peak_delta:+.1f}")
+        if low_end_delta is not None:
+            parts.append(f"low-end delta {low_end_delta:+.3f}")
+        if stereo_width_delta is not None:
+            parts.append(f"stereo delta {stereo_width_delta:+.2f}")
+        if spectral_tilt_delta is not None:
+            parts.append(f"spectral delta {spectral_tilt_delta:+.2f} dB")
         heuristics.append({
             "slug": "reference-delta",
             "status": "watch",
@@ -209,6 +259,7 @@ def build_listening_report(payload: dict) -> dict:
             "qc_hard_fail_count": qc_summary.get("hard_fail_count", 0),
             "qc_warning_count": qc_summary.get("warning_count", 0),
             "reference_alignment": reference_summary.get("alignment", "unscored"),
+            "focus_flags": reference_summary.get("focus_flags", []),
         },
         "next_actions": [
             "Render a candidate bounce for objective QC.",

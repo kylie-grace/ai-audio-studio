@@ -44,12 +44,15 @@ def test_detect_workstation_profile_scans_plugin_inventory(tmp_path: Path):
     (au_root / "DemoVendor - VocalStrip.component").write_text("plugin")
     (vst3_root / "WideStage.vst3").write_text("plugin")
 
-    original_roots = workstation_module.PLUGIN_ROOTS
-    workstation_module.PLUGIN_ROOTS = {
-        "au": [au_root],
-        "vst3": [vst3_root],
-        "vst": [],
-        "aax": [],
+    original_roots = workstation_module.PLUGIN_ROOTS_BY_PLATFORM
+    workstation_module.PLUGIN_ROOTS_BY_PLATFORM = {
+        **original_roots,
+        "macos": {
+            "au": [au_root],
+            "vst3": [vst3_root],
+            "vst": [],
+            "aax": [],
+        },
     }
     try:
         settings = SimpleNamespace(
@@ -64,12 +67,37 @@ def test_detect_workstation_profile_scans_plugin_inventory(tmp_path: Path):
         )
         profile = detect_workstation_profile(settings)
     finally:
-        workstation_module.PLUGIN_ROOTS = original_roots
+        workstation_module.PLUGIN_ROOTS_BY_PLATFORM = original_roots
 
     assert profile["plugins"]["summary"]["count"] == 2
     assert profile["plugins"]["summary"]["counts_by_format"]["au"] == 1
     assert profile["plugins"]["summary"]["counts_by_format"]["vst3"] == 1
     assert any(plugin["name"] == "DemoVendor - VocalStrip" for plugin in profile["plugins"]["plugins"])
+
+
+def test_validate_workstation_setup_adds_windows_path_translation_check(tmp_path: Path):
+    projects = tmp_path / "projects"
+    deliveries = tmp_path / "deliveries"
+    reaper = tmp_path / "reaper.exe"
+    projects.mkdir()
+    deliveries.mkdir()
+    reaper.write_text("binary")
+    settings = SimpleNamespace(
+        reaper_binary_path=str(reaper),
+        protools_app_path=None,
+        soundflow_cli_path=None,
+        wavelab_app_path=None,
+        dry_run_daw=True,
+        worker_platform="windows",
+        worker_api_base_url=None,
+        shared_projects_path=str(projects),
+        delivery_path=str(deliveries),
+        path_translation_json="{}",
+    )
+
+    report = validate_workstation_setup(settings)
+
+    assert any(check["slug"] == "path-translation" and check["status"] == "watch" for check in report["checks"])
 
 
 def test_validate_workstation_setup_reports_path_and_daw_checks(tmp_path: Path):

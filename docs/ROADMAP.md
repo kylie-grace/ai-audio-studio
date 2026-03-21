@@ -9,9 +9,8 @@
 - Document the network posture clearly: full-LAN IP access works immediately, hostname/TLS is the preferred operator path, and direct ports remain for engineering and worker traffic.
 
 ## Next
-- Extend the new workspace questionnaire into broader operator-safe settings coverage so normal setup does not require editing compose or env files beyond secrets and host wiring.
-- Add explicit host-machine selection in onboarding and saved workspace settings.
-- Add roadmap coverage for both `macos` and `windows` remote worker nodes, even if live Windows validation lands later.
+- Persist and surface richer project review packets so the control room can show latest candidate, QC posture, listening focus, and recommended operator action from one place.
+- Keep extending the new workspace questionnaire into broader operator-safe settings coverage so normal setup does not require editing compose or env files beyond secrets and host wiring.
 - Keep `workspace-settings` as the persisted source of truth for studio identity and operating preferences, then connect more modules to read from it.
 - Deepen the module-tuning layer beyond the current eight service blocks so more runtime behavior is driven from persisted settings instead of env defaults.
 - Keep expanding service drilldowns with more safe actions and more specific runtime detail per service.
@@ -29,6 +28,10 @@
   - `Wavelab` where scripting is viable for mastering-oriented execution and delivery prep
 - Keep using the new DAW preview loop as the operator-safe staging path: workstation profile, session introspection, execution-plan preview, render plan, and QC/reference comparison.
 - Add plugin/dependency awareness so planning and approval surfaces warn when the workstation is missing expected DAW/plugin prerequisites.
+- Keep the worker cross-platform posture honest:
+  - `macos` is the validated runtime path today
+  - `windows` path translation, plugin scan roots, and workstation validation are now scaffolded
+  - live Windows DAW runtime validation still needs a real workstation pass
 - Add worker retries, lease expiry recovery, and failure escalation for long-running execution tasks.
 - Add broader end-to-end tests that exercise Dockerized service interactions, not just unit helpers.
 - Tighten HTTPS/LAN onboarding so trusting the local Caddy certificate is a first-run step, not hidden setup knowledge.

@@ -123,7 +123,11 @@ def write_revision_artifacts(session_dir: Path, daw: str, changes: list[dict], s
 
 def generate_revision_artifacts(payload: dict, settings) -> dict:
     project_slug = payload["project_slug"]
-    shared_root = translate_path(payload.get("shared_projects_path", settings.shared_projects_path), settings.path_translation_json)
+    shared_root = translate_path(
+        payload.get("shared_projects_path", settings.shared_projects_path),
+        settings.path_translation_json,
+        settings.worker_platform,
+    )
     session_dir = shared_root / project_slug / "session"
     session_dir.mkdir(parents=True, exist_ok=True)
     changes = parse_changes(payload["raw_notes"])

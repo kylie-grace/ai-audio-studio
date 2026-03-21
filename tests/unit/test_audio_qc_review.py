@@ -18,6 +18,9 @@ def test_summarize_report_counts_failures_and_warnings():
         {
             "target": "streaming",
             "overall_pass": False,
+            "spectral_tilt_db": -4.2,
+            "low_end_ratio": 0.22,
+            "stereo_width": 0.44,
             "issues": [
                 {"check": "true_peak", "severity": "HARD_FAIL"},
                 {"check": "mono_compatibility", "severity": "WARN"},
@@ -28,13 +31,20 @@ def test_summarize_report_counts_failures_and_warnings():
     assert summary["hard_fail_count"] == 1
     assert summary["warning_count"] == 1
     assert summary["issue_slugs"] == ["true_peak", "mono_compatibility"]
+    assert summary["spectral_tilt_db"] == -4.2
+    assert summary["low_end_ratio"] == 0.22
+    assert summary["stereo_width"] == 0.44
 
 
 def test_compare_reports_scores_alignment():
     comparison = compare_reports(
-        {"lufs_integrated": -14.2, "true_peak_dbfs": -1.1},
-        {"lufs_integrated": -14.0, "true_peak_dbfs": -1.0},
+        {"lufs_integrated": -14.2, "true_peak_dbfs": -1.1, "low_end_ratio": 0.18, "stereo_width": 0.31, "spectral_tilt_db": -4.0},
+        {"lufs_integrated": -14.0, "true_peak_dbfs": -1.0, "low_end_ratio": 0.16, "stereo_width": 0.28, "spectral_tilt_db": -2.8},
     )
 
     assert comparison["alignment"] == "close"
     assert comparison["lufs_delta"] == -0.2
+    assert comparison["low_end_delta"] == 0.02
+    assert comparison["stereo_width_delta"] == 0.03
+    assert comparison["spectral_tilt_delta"] == -1.2
+    assert comparison["focus_flags"] == []

@@ -106,6 +106,30 @@ def _artifact_inventory(jobs: list[dict], worker_tasks: list[dict]) -> list[dict
     return artifact_inventory
 
 
+def _load_json_file(path_text: str | None) -> dict | None:
+    if not path_text:
+        return None
+    path = Path(path_text)
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _hydrate_qc_report(report: dict) -> dict:
+    payload = _load_json_file(report.get("report_path"))
+    if not payload:
+        return report
+    for key in ("spectral_tilt_db", "low_end_ratio", "stereo_width", "checks", "issues", "overall_pass"):
+        if key in payload and key not in report:
+            report[key] = payload[key]
+        elif key in payload and key in {"checks", "issues"}:
+            report[key] = payload[key]
+    return report
+
+
 def _review_summary(qc_reports: list[dict], revisions: list[dict], mix_plans: list[dict], artifact_inventory: list[dict]) -> dict:
     passing_qc = sum(1 for report in qc_reports if report.get("overall_pass"))
     return {
@@ -120,6 +144,59 @@ def _review_summary(qc_reports: list[dict], revisions: list[dict], mix_plans: li
     }
 
 
+def _review_packet(session_manifests: list[dict], qc_reports: list[dict], revisions: list[dict], mix_plans: list[dict], artifact_inventory: list[dict]) -> dict:
+    latest_qc = qc_reports[0] if qc_reports else None
+    latest_manifest = session_manifests[0] if session_manifests else None
+    latest_revision = revisions[0] if revisions else None
+    latest_mix_plan = mix_plans[0] if mix_plans else None
+    latest_artifact = artifact_inventory[0] if artifact_inventory else None
+
+    hard_fail_count = sum(1 for issue in (latest_qc or {}).get("issues") or [] if issue.get("severity") == "HARD_FAIL")
+    warning_count = sum(1 for issue in (latest_qc or {}).get("issues") or [] if issue.get("severity") != "HARD_FAIL")
+    focus_flags: list[str] = []
+    if latest_qc:
+        low_end_ratio = latest_qc.get("low_end_ratio")
+        stereo_width = latest_qc.get("stereo_width")
+        spectral_tilt_db = latest_qc.get("spectral_tilt_db")
+        if isinstance(low_end_ratio, (float, int)) and (low_end_ratio > 0.45 or low_end_ratio < 0.08):
+            focus_flags.append("low-end-balance")
+        if isinstance(stereo_width, (float, int)) and (stereo_width > 1.6 or stereo_width < 0.05):
+            focus_flags.append("stereo-image")
+        if isinstance(spectral_tilt_db, (float, int)) and (spectral_tilt_db < -18.0 or spectral_tilt_db > 6.0):
+            focus_flags.append("spectral-balance")
+
+    recommended_action = "Generate the first candidate render and run QC."
+    if latest_qc:
+        if latest_qc.get("overall_pass") and not focus_flags:
+            recommended_action = "Candidate is objectively clean. Run final listening pass and prepare for approval."
+        elif hard_fail_count:
+            recommended_action = "QC hard fails are present. Run another bounded DAW pass before approval."
+        else:
+            recommended_action = "Objective QC is close, but a focused listening pass is still required."
+    elif latest_mix_plan or latest_revision:
+        recommended_action = "Execution planning is ready. Generate a review bounce and attach QC."
+
+    return {
+        "recommended_operator_action": recommended_action,
+        "latest_candidate_path": (latest_qc or {}).get("file_path") or latest_artifact.get("artifact_path") if latest_artifact else None,
+        "latest_qc": {
+            "file_path": (latest_qc or {}).get("file_path"),
+            "overall_pass": (latest_qc or {}).get("overall_pass"),
+            "hard_fail_count": hard_fail_count,
+            "warning_count": warning_count,
+            "lufs_integrated": (latest_qc or {}).get("lufs_integrated"),
+            "true_peak_dbfs": (latest_qc or {}).get("true_peak_dbfs"),
+            "low_end_ratio": (latest_qc or {}).get("low_end_ratio"),
+            "stereo_width": (latest_qc or {}).get("stereo_width"),
+            "spectral_tilt_db": (latest_qc or {}).get("spectral_tilt_db"),
+        },
+        "focus_flags": focus_flags,
+        "latest_manifest_status": (latest_manifest or {}).get("status"),
+        "latest_revision_status": (latest_revision or {}).get("status"),
+        "latest_mix_plan_status": (latest_mix_plan or {}).get("status"),
+    }
+
+
 async def _load_project_detail_payload(pool, project_id: str) -> dict:
     project = await pool.fetchrow("SELECT * FROM projects WHERE id::text=$1 OR slug=$1", project_id)
     if not project:
@@ -129,7 +206,7 @@ async def _load_project_detail_payload(pool, project_id: str) -> dict:
     leads = [_serialize_row(row) for row in await pool.fetch("SELECT * FROM leads WHERE project_id=$1 ORDER BY created_at DESC LIMIT 20", project_key)]
     jobs = [_serialize_row(row) for row in await pool.fetch("SELECT * FROM jobs WHERE project_id=$1 ORDER BY created_at DESC LIMIT 40", project_key)]
     revisions = [_serialize_row(row) for row in await pool.fetch("SELECT * FROM revisions WHERE project_id=$1 ORDER BY created_at DESC LIMIT 20", project_key)]
-    qc_reports = [_serialize_row(row) for row in await pool.fetch("SELECT * FROM qc_reports WHERE project_id=$1 ORDER BY created_at DESC LIMIT 20", project_key)]
+    qc_reports = [_hydrate_qc_report(_serialize_row(row)) for row in await pool.fetch("SELECT * FROM qc_reports WHERE project_id=$1 ORDER BY created_at DESC LIMIT 20", project_key)]
     mix_plans = [_serialize_row(row) for row in await pool.fetch("SELECT * FROM mix_plans WHERE project_id=$1 ORDER BY created_at DESC LIMIT 20", project_key)]
     session_manifests = [
         _serialize_row(row)
@@ -154,6 +231,7 @@ async def _load_project_detail_payload(pool, project_id: str) -> dict:
         "audit_entries": audit_entries,
         "artifact_inventory": artifact_inventory[:50],
         "review_summary": _review_summary(qc_reports, revisions, mix_plans, artifact_inventory),
+        "review_packet": _review_packet(session_manifests, qc_reports, revisions, mix_plans, artifact_inventory[:50]),
     }
 
 

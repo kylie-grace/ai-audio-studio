@@ -13,5 +13,9 @@ def test_build_render_plan_returns_review_and_delivery_profiles():
 
     assert plan["status"] == "preview"
     assert plan["profile_count"] == 3
+    assert plan["review_candidate_slug"] == "review-mix"
     assert any(profile["slug"] == "review-mix" for profile in plan["profiles"])
     assert any(profile["slug"] == "stems" for profile in plan["profiles"])
+    review_mix = next(profile for profile in plan["profiles"] if profile["slug"] == "review-mix")
+    assert review_mix["qc_required"] is True
+    assert review_mix["listening_required"] is True
