@@ -267,6 +267,8 @@ type DashboardData = {
 
 type TabId = "overview" | "operations" | "automation" | "context" | "settings";
 
+type WorkflowId = "start-day" | "approvals" | "recover-runtime" | "manage-automation" | "update-setup";
+
 const browserHost = window.location.hostname || "localhost";
 const browserProtocol = window.location.protocol || "http:";
 const frontDoorUrl = `${browserProtocol}//${window.location.host}`;
@@ -673,6 +675,12 @@ function serviceRecommendedAction(service: ServiceRecord): string {
   if (service.zone === "Automation Modules") return "Confirm automation posture and operator-safe starter packs.";
   if (service.zone === "Production Services") return "Confirm runtime health and packaging path readiness.";
   return "Review platform posture and service ownership in Overview.";
+}
+
+function workflowTone(state: "ready" | "watch" | "action"): "ok" | "warn" | "bad" {
+  if (state === "ready") return "ok";
+  if (state === "watch") return "warn";
+  return "bad";
 }
 
 async function loadDashboardData(): Promise<DashboardData> {
@@ -1207,6 +1215,44 @@ export function App() {
       service.key === "ollama" ||
       service.zone === "Automation Modules",
   );
+  const operationsServices = data.services.filter(
+    (service) =>
+      service.key === "project-state" ||
+      service.key === "studio-worker" ||
+      service.zone === "Production Services" ||
+      service.zone === "Execution Node",
+  );
+  const platformBackbone = [
+    {
+      key: "caddy-edge",
+      name: "Caddy Edge",
+      state: workspaceSettings.https_mode === "https_enabled" ? "healthy" : "degraded",
+      detail:
+        workspaceSettings.https_mode === "https_enabled"
+          ? "TLS enabled on-stack."
+          : workspaceSettings.https_mode === "https_terminated_elsewhere"
+            ? "TLS terminates upstream."
+            : "HTTP fallback is still active.",
+      role: "LAN and HTTPS front door for operators and service subdomains.",
+      owner: "Overview",
+    },
+    {
+      key: "postgres",
+      name: "Postgres",
+      state: data.services.some((service) => service.key === "project-state" && service.state === "healthy") ? "healthy" : "offline",
+      detail: "Backs project-state, CRM, n8n, and orchestration state.",
+      role: "Shared state fabric for workflow, context, and approvals.",
+      owner: "Overview",
+    },
+    {
+      key: "studio-brain-ui",
+      name: "Studio Brain UI",
+      state: data.loadState === "ready" ? "healthy" : data.loadState === "loading" ? "degraded" : "offline",
+      detail: data.error ?? "Operator console reachable and polling live APIs.",
+      role: "Primary novice-facing control surface.",
+      owner: "Overview",
+    },
+  ];
   const contextCards = [
     {
       label: "Studio identity",
@@ -1256,6 +1302,61 @@ export function App() {
       detail: displayedFrontDoor,
     },
   ];
+  const workflowPlaybooks: Array<{
+    id: WorkflowId;
+    label: string;
+    tab: TabId;
+    state: "ready" | "watch" | "action";
+    count: string;
+    summary: string;
+    detail: string;
+  }> = [
+    {
+      id: "start-day",
+      label: "Start Day",
+      tab: "overview",
+      state: healthyCount === data.services.length && !activeAlertCount ? "ready" : healthyCount >= data.services.length - 2 ? "watch" : "action",
+      count: `${healthyCount}/${data.services.length}`,
+      summary: "Check front door, platform health, and workspace readiness.",
+      detail: `${activeAlertCount} active alerts · ${readinessSummary.partial_count} partial checks`,
+    },
+    {
+      id: "approvals",
+      label: "Handle Approvals",
+      tab: "operations",
+      state: data.approvals.length ? "action" : "ready",
+      count: `${data.approvals.length}`,
+      summary: "Clear the approval queue and keep operator identity pinned.",
+      detail: `${data.runtimeAlerts.approvals_waiting} waiting approvals`,
+    },
+    {
+      id: "recover-runtime",
+      label: "Recover Runtime",
+      tab: "operations",
+      state: data.runtimeRecovery.summary.failed_task_count || data.runtimeRecovery.summary.expired_claim_count ? "action" : data.runtimeRecovery.summary.stale_worker_count ? "watch" : "ready",
+      count: `${data.runtimeRecovery.summary.failed_task_count + data.runtimeRecovery.summary.expired_claim_count}`,
+      summary: "Investigate failed tasks, expired claims, and stale workers.",
+      detail: `${data.runtimeRecovery.summary.stale_worker_count} stale workers · ${data.runtimeRecovery.summary.claimed_task_count} claimed`,
+    },
+    {
+      id: "manage-automation",
+      label: "Manage Automation",
+      tab: "automation",
+      state: activeStarterPack ? "ready" : "watch",
+      count: `${enabledRuleCount}`,
+      summary: "Confirm starter packs, rule posture, and playbook coverage.",
+      detail: `${data.playbooks.length} playbooks · ${data.bootstrapStatus.workflow_count} starter workflows`,
+    },
+    {
+      id: "update-setup",
+      label: "Update Setup",
+      tab: "settings",
+      state: data.workspace.onboarding_required || readinessSummary.needs_attention_count ? "action" : readinessSummary.partial_count ? "watch" : "ready",
+      count: `${data.workspace.missing_fields.length}`,
+      summary: "Adjust onboarding, shared paths, context, alerts, and worker posture.",
+      detail: `${integrationFlags} integrations enabled · ${alertEmailCount} alert destinations`,
+    },
+  ];
 
   return (
     <main className="app-shell">
@@ -1289,6 +1390,28 @@ export function App() {
             <span className="metric-subtle">{data.approvals.length} approvals · {activeTaskCount} live tasks</span>
           </article>
         </div>
+      </section>
+
+      <section className="workflow-strip" aria-label="Guided operator workflows">
+        {workflowPlaybooks.map((workflow) => (
+          <button
+            key={workflow.id}
+            type="button"
+            className={`workflow-card workflow-${workflow.tab}`}
+            onClick={() => setActiveTab(workflow.tab)}
+          >
+            <div className="workflow-header">
+              <span className="metric-label">{workflow.label}</span>
+              <span className={`status-pill ${workflowTone(workflow.state)}`}>{workflow.state}</span>
+            </div>
+            <strong>{workflow.count}</strong>
+            <p className="panel-note">{workflow.summary}</p>
+            <div className="workflow-footer">
+              <span>{workflow.detail}</span>
+              <span>open {primaryTabs.find((tab) => tab.id === workflow.tab)?.label.toLowerCase()}</span>
+            </div>
+          </button>
+        ))}
       </section>
 
       <nav className="tab-strip" aria-label="Primary control surfaces">
@@ -1401,6 +1524,51 @@ export function App() {
                     </div>
                     <p className="panel-note">{check.detail}</p>
                   </div>
+                ))}
+              </div>
+            </article>
+          </section>
+
+          <section className="workspace-grid">
+            <article className="panel panel-span-12">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Backbone</p>
+                  <h2>Platform Services</h2>
+                </div>
+                <span className="count-pill">{platformBackbone.length + overviewServices.length}</span>
+              </div>
+              <div className="module-grid platform-grid">
+                {platformBackbone.map((service) => (
+                  <div key={service.key} className="mini-card module-card module-gold">
+                    <span className="metric-label">{service.owner}</span>
+                    <strong>{service.name}</strong>
+                    <p className="panel-note">{service.role}</p>
+                    <div className="meta-inline">
+                      <span>{service.detail}</span>
+                    </div>
+                    <span className={`status-pill ${statusTone(service.state)}`}>{service.state}</span>
+                  </div>
+                ))}
+                {overviewServices.map((service) => (
+                  <button
+                    key={service.key}
+                    type="button"
+                    className="mini-card module-card module-violet service-module-button"
+                    onClick={() => {
+                      setSelectedServiceKey(service.key);
+                      setActiveTab("overview");
+                    }}
+                  >
+                    <span className="metric-label">{service.zone}</span>
+                    <strong>{service.name}</strong>
+                    <p className="panel-note">{service.role}</p>
+                    <div className="meta-inline">
+                      <span>{service.note}</span>
+                      <span>managed in {serviceManagedIn(service)}</span>
+                    </div>
+                    <span className={`status-pill ${statusTone(service.state)}`}>{serviceLabel(service)}</span>
+                  </button>
                 ))}
               </div>
             </article>
@@ -1597,6 +1765,40 @@ export function App() {
 
       {activeTab === "operations" ? (
         <div className="tab-panel">
+          <section className="workspace-grid">
+            <article className="panel panel-span-12">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Execution Fabric</p>
+                  <h2>Operational Service Modules</h2>
+                </div>
+                <span className="count-pill">{operationsServices.length}</span>
+              </div>
+              <div className="module-grid platform-grid">
+                {operationsServices.map((service) => (
+                  <button
+                    key={service.key}
+                    type="button"
+                    className={`mini-card module-card module-${zoneAccent(service.zone)} service-module-button`}
+                    onClick={() => {
+                      setSelectedServiceKey(service.key);
+                      setActiveTab("overview");
+                    }}
+                  >
+                    <span className="metric-label">{service.zone}</span>
+                    <strong>{service.name}</strong>
+                    <p className="panel-note">{service.role}</p>
+                    <div className="meta-inline">
+                      <span>{service.note}</span>
+                      <span>{serviceRecommendedAction(service)}</span>
+                    </div>
+                    <span className={`status-pill ${statusTone(service.state)}`}>{serviceLabel(service)}</span>
+                  </button>
+                ))}
+              </div>
+            </article>
+          </section>
+
           <section className="workspace-grid">
             <article className="panel panel-span-8">
               <div className="panel-header">

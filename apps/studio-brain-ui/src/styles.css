@@ -137,6 +137,71 @@ code {
   margin-bottom: 18px;
 }
 
+.workflow-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 18px;
+}
+
+.workflow-card {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018)),
+    rgba(7, 16, 27, 0.88);
+  color: var(--text-strong);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.workflow-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
+}
+
+.workflow-header,
+.workflow-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.workflow-footer {
+  color: var(--text-dim);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.workflow-overview {
+  border-color: rgba(226, 161, 90, 0.18);
+}
+
+.workflow-operations {
+  border-color: rgba(239, 130, 119, 0.18);
+}
+
+.workflow-automation {
+  border-color: rgba(85, 192, 214, 0.18);
+}
+
+.workflow-context {
+  border-color: rgba(138, 140, 245, 0.18);
+}
+
+.workflow-settings {
+  border-color: rgba(126, 211, 159, 0.18);
+}
+
 .tab-button {
   display: grid;
   gap: 6px;
@@ -524,6 +589,10 @@ code {
 
 .context-card-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.platform-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .service-inspector,
@@ -935,6 +1004,22 @@ code {
     transform 140ms ease;
 }
 
+.service-module-button {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.service-module-button:hover {
+  transform: translateY(-1px);
+}
+
 .service-button:hover {
   transform: translateY(-1px);
   border-color: rgba(85, 192, 214, 0.2);
@@ -1072,6 +1157,7 @@ code {
 @media (max-width: 1220px) {
   .top-rail,
   .command-grid,
+  .workflow-strip,
   .alert-summary-grid,
   .readiness-grid,
   .recovery-grid,
@@ -1081,6 +1167,7 @@ code {
   .zone-summary-grid,
   .support-health-grid,
   .module-grid,
+  .platform-grid,
   .context-card-grid,
   .action-deck,
   .tab-strip {
