@@ -479,11 +479,29 @@ type DashboardData = {
   playbooks: Playbook[];
   tasks: WorkerTask[];
   approvals: ApprovalItem[];
+  jobHistory: Array<{
+    id: string;
+    module: string;
+    action: string;
+    status: string;
+    project_id?: string | null;
+    requested_by?: string | null;
+    approved_by?: string | null;
+    created_at: string;
+    updated_at?: string;
+  }>;
   projects: ProjectRecord[];
   leads: Array<{
     id: string;
     project_id?: string | null;
     source: string;
+    raw_input?: string | null;
+    normalized?: {
+      artist_name?: string;
+      service_requested?: string;
+      budget_signal?: string;
+      urgency?: string;
+    } | null;
     fit_score?: number | null;
     urgency_score?: number | null;
     draft_reply?: string | null;
@@ -1110,7 +1128,7 @@ function workflowTone(state: "ready" | "watch" | "action"): "ok" | "warn" | "bad
 }
 
 async function loadDashboardData(): Promise<DashboardData> {
-  const [services, workers, rules, rulePacks, starterPacks, playbooks, tasks, approvals, projects, leads, auditLog, styleProfiles, alerts, runtimeAlerts, runtimeRecovery, bootstrapStatus, workspace] =
+  const [services, workers, rules, rulePacks, starterPacks, playbooks, tasks, approvals, jobHistory, projects, leads, auditLog, styleProfiles, alerts, runtimeAlerts, runtimeRecovery, bootstrapStatus, workspace] =
     await Promise.all([
       Promise.all(
         serviceCatalog.map(async (service) => ({
@@ -1125,6 +1143,7 @@ async function loadDashboardData(): Promise<DashboardData> {
       fetchJson<Playbook[]>(`${API.openclaw}/playbooks`),
       fetchJson<WorkerTask[]>(`${API.projectState}/workers/tasks/list`),
       fetchJson<ApprovalItem[]>(`${API.projectState}/approval-queue/`),
+      fetchJson<DashboardData["jobHistory"]>(`${API.projectState}/jobs/?status=complete&limit=30`),
       fetchJson<ProjectRecord[]>(`${API.crm}/projects`),
       fetchJson<DashboardData["leads"]>(`${API.crm}/leads`),
       fetchJson<AuditEntry[]>(`${API.projectState}/audit-log/?limit=12`),
@@ -1202,6 +1221,7 @@ async function loadDashboardData(): Promise<DashboardData> {
     playbooks,
     tasks,
     approvals,
+    jobHistory,
     projects,
     leads,
     auditLog,
@@ -1237,6 +1257,7 @@ export function App() {
     playbooks: [],
     tasks: [],
     approvals: [],
+    jobHistory: [],
     projects: [],
     leads: [],
     auditLog: [],
@@ -2876,11 +2897,29 @@ export function App() {
                         ) : null}
                         {job.preview?.revision ? (
                           <div className="approval-preview-block">
-                            <strong>Revision notes</strong>
-                            <p>{job.preview.revision.raw_notes}</p>
+                            <strong>Revision plan</strong>
+                            <p className="muted">{job.preview.revision.raw_notes}</p>
+                            {job.preview.revision.parsed_changes?.length ? (
+                              <div className="table-stack compact-stack">
+                                {(job.preview.revision.parsed_changes as Array<Record<string, unknown>>).slice(0, 8).map((change, idx) => (
+                                  <div key={idx} className="table-row compact-row">
+                                    <div className="row-main">
+                                      <strong>{String(change.element ?? "mix")}</strong>
+                                      <span className="muted">{String(change.parameter ?? "")} · {String(change.direction ?? "")}</span>
+                                    </div>
+                                    <div className="row-meta">
+                                      <span className={`status-pill ${Number(change.confidence ?? 0) >= 0.8 ? "ok" : "warn"}`}>
+                                        {Math.round(Number(change.confidence ?? 0) * 100)}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
                             <div className="meta-inline">
-                              <span>{job.preview.revision.soundflow_script ? "soundflow ready" : "no soundflow"}</span>
-                              <span>{job.preview.revision.reascript_path ? "reascript ready" : "no reascript"}</span>
+                              <span>{job.preview.revision.reascript_path ? "ReaScript generated" : "no script"}</span>
+                              <span>{job.preview.revision.soundflow_script ? "SoundFlow generated" : null}</span>
+                              <span>{job.preview.revision.status}</span>
                             </div>
                           </div>
                         ) : null}
@@ -3535,37 +3574,51 @@ export function App() {
               </div>
             </article>
 
-            <article className="panel panel-span-4">
+          </section>
+
+          <section className="workspace-grid">
+            <article className="panel panel-span-7">
               <div className="panel-header">
                 <div>
                   <p className="section-kicker">CRM</p>
-                  <h2>Projects + Leads</h2>
+                  <h2>Active Projects</h2>
                 </div>
                 <span className="count-pill">{data.projects.length} projects</span>
               </div>
               <div className="table-stack">
                 {data.projects.length ? (
-                  data.projects.slice(0, 4).map((project) => (
+                  data.projects.map((project) => (
                     <div key={project.id} className="table-row">
                       <div className="row-main">
                         <strong>{project.client_name}</strong>
-                        <div className="muted">{project.service_type} · {project.status}</div>
+                        <div className="muted">{project.service_type}</div>
                         <div className="meta-inline">
+                          <span>{project.status}</span>
+                          {project.budget_signal && project.budget_signal !== "unknown" ? (
+                            <span>budget: {project.budget_signal}</span>
+                          ) : null}
+                          {project.timeline ? <span>{project.timeline}</span> : null}
                           <span>{project.lead_count ?? 0} leads</span>
                           {project.updated_at ? <span>updated {summarizeTime(project.updated_at)}</span> : null}
                         </div>
+                        {project.notes ? (
+                          <div className="muted notes-preview">{project.notes.slice(0, 100)}{project.notes.length > 100 ? "…" : ""}</div>
+                        ) : null}
+                      </div>
+                      <div className="row-meta">
+                        <span className={`status-pill ${project.status === "active" ? "ok" : project.status === "complete" ? "muted" : "warn"}`}>
+                          {project.status}
+                        </span>
                       </div>
                     </div>
                   ))
                 ) : (
-                  <p className="empty-state">No projects have been created yet.</p>
+                  <p className="empty-state">No projects have been created yet. Lead intake auto-creates projects on first inquiry.</p>
                 )}
               </div>
             </article>
-          </section>
 
-          <section className="workspace-grid">
-            <article className="panel panel-span-12">
+            <article className="panel panel-span-5">
               <div className="panel-header">
                 <div>
                   <p className="section-kicker">Recent Intake</p>
@@ -3575,21 +3628,64 @@ export function App() {
               </div>
               <div className="table-stack">
                 {data.leads.length ? (
-                  data.leads.slice(0, 6).map((lead) => (
-                    <div key={lead.id} className="table-row">
-                      <div className="row-main">
-                        <strong>{lead.source}</strong>
-                        <div className="muted">{lead.draft_reply ?? "No draft reply stored yet."}</div>
-                        <div className="meta-inline">
-                          <span>fit {lead.fit_score ?? "n/a"}</span>
-                          <span>urgency {lead.urgency_score ?? "n/a"}</span>
-                          {lead.created_at ? <span>{summarizeTime(lead.created_at)}</span> : null}
+                  data.leads.slice(0, 8).map((lead) => {
+                    const normalized = lead.normalized as { artist_name?: string; service_requested?: string; budget_signal?: string; urgency?: string } | null;
+                    return (
+                      <div key={lead.id} className="table-row compact-row">
+                        <div className="row-main">
+                          <strong>{normalized?.artist_name ?? lead.source}</strong>
+                          <div className="muted">{normalized?.service_requested ?? lead.source}</div>
+                          <div className="meta-inline">
+                            {normalized?.budget_signal && normalized.budget_signal !== "unknown" ? (
+                              <span>budget: {normalized.budget_signal}</span>
+                            ) : null}
+                            {normalized?.urgency ? <span>{normalized.urgency}</span> : null}
+                            <span>fit {lead.fit_score ?? "n/a"}</span>
+                            {lead.created_at ? <span>{summarizeTime(lead.created_at)}</span> : null}
+                          </div>
+                          {lead.draft_reply ? (
+                            <div className="muted notes-preview">{lead.draft_reply.slice(0, 120)}{lead.draft_reply.length > 120 ? "…" : ""}</div>
+                          ) : null}
                         </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="empty-state">No lead signals in CRM yet.</p>
+                )}
+              </div>
+            </article>
+          </section>
+
+          <section className="workspace-grid">
+            <article className="panel panel-span-12">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Activity</p>
+                  <h2>Job History</h2>
+                </div>
+                <span className="count-pill">{data.jobHistory.length} completed</span>
+              </div>
+              <div className="table-stack">
+                {data.jobHistory.length ? (
+                  data.jobHistory.slice(0, 20).map((job) => (
+                    <div key={job.id} className="table-row compact-row">
+                      <div className="row-main">
+                        <strong>{job.module}</strong>
+                        <div className="muted">{job.action}</div>
+                        <div className="meta-inline">
+                          {job.approved_by ? <span>approved by {job.approved_by}</span> : null}
+                          {job.requested_by ? <span>from {job.requested_by}</span> : null}
+                          {job.updated_at ? <span>{summarizeTime(job.updated_at)}</span> : null}
+                        </div>
+                      </div>
+                      <div className="row-meta">
+                        <span className="status-pill ok">{job.status}</span>
                       </div>
                     </div>
                   ))
                 ) : (
-                  <p className="empty-state">No lead signals are in CRM yet.</p>
+                  <p className="empty-state">No completed jobs yet. Approve items from the Operations queue to see history here.</p>
                 )}
               </div>
             </article>

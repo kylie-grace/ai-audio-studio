@@ -13,6 +13,7 @@ def test_expected_workflow_pack_exists():
     files = sorted(path.name for path in WORKFLOW_DIR.glob("*.json"))
     assert files == [
         "alerts-runtime-digest.json",
+        "approval-event-router.json",
         "content-source-new-brief.json",
         "control-room-status-digest.json",
         "inbox-source-new-message.json",

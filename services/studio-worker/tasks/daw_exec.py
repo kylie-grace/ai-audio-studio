@@ -10,7 +10,11 @@ from adapters.soundflow import SoundFlowAdapter
 
 def execute_soundflow(payload: dict, settings) -> dict:
     adapter = SoundFlowAdapter()
-    return asdict(adapter.execute({**payload, "dry_run": settings.dry_run_daw}))
+    return asdict(adapter.execute({
+        **payload,
+        "dry_run": settings.dry_run_daw,
+        "soundflow_cli_path": getattr(settings, "soundflow_cli_path", None),
+    }))
 
 
 def execute_reascript(payload: dict, settings) -> dict:

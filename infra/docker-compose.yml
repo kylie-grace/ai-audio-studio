@@ -51,6 +51,26 @@ services:
     ports:
       - "${BIND_HOST:-127.0.0.1}:11434:11434"
 
+  # ── Ollama model initialiser (pulls required models on first boot) ──────
+  ollama-init:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-data:/root/.ollama
+    networks: [studio-net]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: >
+      sh -c "
+        ollama pull ${PLANNER_MODEL:-qwen2.5:14b-instruct} &&
+        ollama pull ${CLASSIFIER_MODEL:-qwen2.5:3b} &&
+        ollama pull ${EMBED_MODEL:-nomic-embed-text} &&
+        echo 'All models ready'
+      "
+    restart: "no"
+
   # ── n8n (workflow automation and webhooks) ─────────────────────────────
   n8n:
     image: n8nio/n8n:latest
@@ -404,6 +424,8 @@ services:
       context: ../workers/mix-planner
       dockerfile: Dockerfile
     environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       PROJECT_STATE_URL: http://project-state:8080
       SHARED_PROJECTS_PATH: /data/projects
@@ -413,6 +435,8 @@ services:
     networks: [studio-net]
     depends_on:
       postgres:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
       project-state:
         condition: service_healthy
@@ -442,6 +466,7 @@ services:
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-5}
       STUDIO_WORKER_DRY_RUN_DAW: ${STUDIO_WORKER_DRY_RUN_DAW:-true}
       WORKER_API_TOKEN: ${WORKER_API_TOKEN:-change-me-worker-token}
+      AUDIO_QC_URL: http://audio-qc:8120
       PORT: "8190"
     volumes:
       - shared-projects:/data/projects

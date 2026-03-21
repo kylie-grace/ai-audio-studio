@@ -11,6 +11,7 @@ import asyncpg
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+import ollama_client as llm
 from scorer import score_fit, score_urgency
 
 _pool: asyncpg.Pool | None = None
@@ -94,6 +95,41 @@ def normalize_lead(raw_text: str, form_fields: dict) -> dict:
     }
 
 
+_LEAD_REPLY_PROMPT = """\
+You are writing a reply email on behalf of {studio_name}, a professional recording studio.
+Studio voice/style: {style_summary}
+
+A new potential client has reached out:
+- Artist/Project name: {artist_name}
+- Service requested: {service_requested}
+- Timeline: {timeline}
+- Budget signal: {budget_signal}
+- Urgency: {urgency}
+- References mentioned: {references}
+
+Write a warm, professional reply (3-4 sentences max). Sound like a real studio owner, not an AI.
+Do NOT include Subject or greeting — just the email body text.
+Sign off as {studio_name}.
+Ask for reference tracks if none were mentioned.
+"""
+
+
+async def draft_reply_llm(normalized: dict, studio_name: str, style_summary: str) -> str | None:
+    """Try LLM-generated personalized reply. Returns None on failure."""
+    prompt = _LEAD_REPLY_PROMPT.format(
+        studio_name=studio_name or "the studio",
+        style_summary=style_summary or "professional, warm, direct",
+        artist_name=normalized.get("artist_name", "the artist"),
+        service_requested=normalized.get("service_requested", "mixing/mastering"),
+        timeline=normalized.get("timeline") or "no timeline specified",
+        budget_signal=normalized.get("budget_signal", "unknown"),
+        urgency=normalized.get("urgency", "normal"),
+        references=", ".join(normalized.get("references", [])) or "none mentioned",
+    )
+    result = await llm.generate(prompt, model=llm.PLANNER_MODEL, timeout=45.0)
+    return result.strip() if result and result.strip() else None
+
+
 def draft_reply(normalized: dict) -> str:
     return draft_reply_with_context(normalized, studio_name="the studio", style_summary="")
 
@@ -149,6 +185,7 @@ async def status():
     module_settings = (await load_module_settings(pool)).get("lead_intake", {})
     pending_jobs = await pool.fetchval("SELECT COUNT(*) FROM jobs WHERE module='lead-intake' AND status='awaiting-approval'")
     lead_count = await pool.fetchval("SELECT COUNT(*) FROM leads")
+    ollama_ready = await llm.is_available(llm.PLANNER_MODEL)
     return {
         "status": "ok",
         "module": "lead-intake",
@@ -156,6 +193,8 @@ async def status():
         "settings": module_settings,
         "pending_approvals": pending_jobs,
         "lead_count": lead_count,
+        "llm_ready": ollama_ready,
+        "llm_model": llm.PLANNER_MODEL,
     }
 
 
@@ -166,7 +205,9 @@ async def webhook_lead_intake(body: LeadIntakeBody):
     fit_score = score_fit(normalized)
     urgency_score = score_urgency(normalized)
     studio_name, style_summary = await load_workspace_context(pool)
-    reply = draft_reply_with_context(normalized, studio_name=studio_name, style_summary=style_summary)
+    reply = await draft_reply_llm(normalized, studio_name, style_summary) or draft_reply_with_context(
+        normalized, studio_name=studio_name, style_summary=style_summary
+    )
     artist_name = normalized["artist_name"]
     slug = slugify(artist_name)
     existing = await pool.fetchrow("SELECT * FROM projects WHERE slug=$1", slug)
@@ -211,6 +252,10 @@ async def webhook_lead_intake(body: LeadIntakeBody):
                 "source": body.source,
                 "artist_name": normalized["artist_name"],
                 "service_requested": normalized["service_requested"],
+                "budget_signal": normalized.get("budget_signal"),
+                "urgency": normalized.get("urgency"),
+                "fit_score": fit_score,
+                "draft_reply_preview": reply[:300],
             }
         ),
     )

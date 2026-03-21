@@ -494,6 +494,53 @@ async def get_workspace_settings():
     return serialize_workspace_settings(row)
 
 
+class WorkspaceSettingsPatch(BaseModel):
+    studio_name: str | None = None
+    operator_name: str | None = None
+    public_base_url: str | None = None
+    alert_destinations: dict | None = None
+    integrations: dict | None = None
+    module_settings: dict | None = None
+    shared_paths: dict | None = None
+    style_seed: dict | None = None
+    onboarding_complete: bool | None = None
+
+
+@app.patch("/workspace-settings")
+async def patch_workspace_settings(body: WorkspaceSettingsPatch):
+    pool = await get_pool()
+    updates: list[str] = ["updated_at = now()"]
+    values: list = []
+    idx = 1
+
+    simple_fields = ["studio_name", "operator_name", "public_base_url", "onboarding_complete"]
+    json_fields = ["alert_destinations", "integrations", "module_settings", "shared_paths", "style_seed"]
+
+    for field in simple_fields:
+        val = getattr(body, field)
+        if val is not None:
+            updates.append(f"{field} = ${idx}")
+            values.append(val)
+            idx += 1
+
+    for field in json_fields:
+        val = getattr(body, field)
+        if val is not None:
+            updates.append(f"{field} = ${idx}::jsonb")
+            values.append(json.dumps(val))
+            idx += 1
+
+    if len(updates) == 1:
+        raise HTTPException(status_code=422, detail="No fields provided to update")
+
+    await pool.execute(
+        f"UPDATE workspace_settings SET {', '.join(updates)} WHERE singleton = TRUE",
+        *values,
+    )
+    row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    return serialize_workspace_settings(row)
+
+
 @app.get("/workstations")
 async def list_workstations():
     pool = await get_pool()

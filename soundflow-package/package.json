@@ -1,0 +1,73 @@
+{
+  "name": "ai-audio-studio",
+  "displayName": "AI Audio Studio",
+  "version": "1.0.0",
+  "description": "Automation commands for AI Audio Studio — Pro Tools integration for Maggie's studio.",
+  "author": "AI Audio Studio",
+  "minSoundFlowVersion": "5.0.0",
+  "commands": [
+    {
+      "id": "set-track-fader",
+      "name": "Set Track Fader",
+      "description": "Set a named track's fader to a specific dB value.",
+      "script": "commands/faders.js",
+      "function": "setTrackVolume"
+    },
+    {
+      "id": "nudge-fader-up",
+      "name": "Nudge Fader Up",
+      "description": "Nudge a named track's fader up by 1 dB.",
+      "script": "commands/faders.js",
+      "function": "nudgeTrackVolumeUp"
+    },
+    {
+      "id": "nudge-fader-down",
+      "name": "Nudge Fader Down",
+      "description": "Nudge a named track's fader down by 1 dB.",
+      "script": "commands/faders.js",
+      "function": "nudgeTrackVolumeDown"
+    },
+    {
+      "id": "set-track-pan",
+      "name": "Set Track Pan",
+      "description": "Set a named track's pan position (-100 to 100).",
+      "script": "commands/faders.js",
+      "function": "setTrackPan"
+    },
+    {
+      "id": "set-track-mute",
+      "name": "Set Track Mute",
+      "description": "Mute or unmute a named track.",
+      "script": "commands/faders.js",
+      "function": "setTrackMute"
+    },
+    {
+      "id": "add-memory-location",
+      "name": "Add Memory Location",
+      "description": "Add a memory location marker at the current playhead.",
+      "script": "commands/markers.js",
+      "function": "addMemoryLocation"
+    },
+    {
+      "id": "save-session-copy",
+      "name": "Save Session Copy",
+      "description": "Save a timestamped copy of the current session.",
+      "script": "commands/session.js",
+      "function": "saveSessionCopy"
+    },
+    {
+      "id": "apply-revision",
+      "name": "Apply Revision Plan",
+      "description": "Execute a parsed AI Audio Studio revision plan JSON file.",
+      "script": "scripts/apply-revision.js",
+      "function": "applyRevision"
+    },
+    {
+      "id": "render-mix",
+      "name": "Render Mix",
+      "description": "Bounce the current mix to disk using the active render profile.",
+      "script": "scripts/render-mix.js",
+      "function": "renderMix"
+    }
+  ]
+}

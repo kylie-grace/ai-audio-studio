@@ -1,13 +1,17 @@
 """Approval queue router — human approval and rejection of queued jobs."""
 import json
+import logging
 import os
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from ..db import get_pool
 from ..fsm import validate_transition
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -134,6 +138,34 @@ async def _build_approval_preview(pool, job) -> dict:
     return preview
 
 
+async def _emit_approval_webhook(pool, job, approver: str, approved_at: datetime) -> None:
+    """Fan-out approval event to configured webhook URL (fire-and-forget, never raises)."""
+    try:
+        row = await pool.fetchrow("SELECT alert_destinations FROM workspace_settings LIMIT 1")
+        if row is None:
+            return
+        destinations = _decode_jsonb(row["alert_destinations"]) or {}
+        webhook_url = destinations.get("webhook_url", "").strip()
+        if not webhook_url:
+            return
+        payload = {
+            "event": "job.approved",
+            "job_id": str(job["id"]),
+            "module": job["module"],
+            "trigger_type": job.get("trigger_type"),
+            "project_id": str(job["project_id"]) if job["project_id"] else None,
+            "approver": approver,
+            "approved_at": approved_at.isoformat(),
+            "trigger_payload": _decode_jsonb(job.get("trigger_payload")),
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(webhook_url, json=payload)
+            resp.raise_for_status()
+            logger.info("Approval webhook delivered to %s (status %s)", webhook_url, resp.status_code)
+    except Exception as exc:
+        logger.warning("Approval webhook failed (non-fatal): %s", exc)
+
+
 async def _queue_revision_execution_if_applicable(pool, job, approver: str, approved_at: datetime) -> None:
     if job["module"] != "revision-parser":
         return
@@ -240,6 +272,7 @@ async def approve_job(job_id: str, x_actor: str = Header(...), x_operator_token:
         job_id, job["project_id"], f"human:{x_actor}",
     )
     await _queue_revision_execution_if_applicable(pool, job, x_actor, now)
+    await _emit_approval_webhook(pool, job, x_actor, now)
     return {"job_id": job_id, "status": "approved", "approved_by": x_actor}
 
 

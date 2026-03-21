@@ -1,0 +1,255 @@
+{
+  "id": "approval-event-router-001",
+  "name": "Approval Event Router",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "studio/approval-event",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook_ApprovalEvent",
+      "name": "Approval Event Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "studio-approval-event"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"received\": true, \"job_id\": $json.body.job_id}",
+        "options": {}
+      },
+      "id": "Respond_ApprovalEvent",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [520, 140]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "outputKey": "inbox-triage",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.module }}",
+                    "rightValue": "inbox-triage",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "social-drafting",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.module }}",
+                    "rightValue": "social-drafting",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "content-pipeline",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.module }}",
+                    "rightValue": "content-pipeline",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "fallbackOutput": "extra"
+        },
+        "options": {}
+      },
+      "id": "Switch_ApprovalModule",
+      "name": "Route by Module",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [520, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://inbox-triage:8140/drafts/by-job/{{ $json.body.job_id }}",
+        "options": {}
+      },
+      "id": "Http_FetchInboxDraft",
+      "name": "Fetch Inbox Draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.draft_body }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "If_HasDraftBody",
+      "name": "Has Draft Body?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.reply_to || $json.source_thread }}",
+        "subject": "=Re: {{ $json.draft_subject || '(no subject)' }}",
+        "emailType": "text",
+        "message": "={{ $json.draft_body }}",
+        "options": {
+          "replyTo": "",
+          "appendAttribution": false
+        }
+      },
+      "id": "Gmail_SendReply",
+      "name": "Send Gmail Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1300, 200],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-send-credential",
+          "name": "Gmail Send"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://project-state:8080/jobs/{{ $('Approval Event Webhook').item.json.body.job_id }}/complete",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"note\": \"Reply sent via n8n Gmail integration\"}",
+        "options": {}
+      },
+      "id": "Http_MarkJobComplete",
+      "name": "Mark Job Complete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://project-state:8080/alerts/",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"level\": \"warn\", \"source\": \"n8n-approval-router\", \"message\": \"Inbox triage approval has no draft body — cannot send reply.\", \"job_id\": $('Approval Event Webhook').item.json.body.job_id}",
+        "options": {}
+      },
+      "id": "Http_AlertNoDraft",
+      "name": "Alert: No Draft Body",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 440]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://project-state:8080/alerts/",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"level\": \"info\", \"source\": \"n8n-approval-router\", \"message\": \"Social draft approved — manual posting required until Instagram/Facebook OAuth is configured.\", \"module\": $json.body.module, \"job_id\": $json.body.job_id}",
+        "options": {}
+      },
+      "id": "Http_SocialNotify",
+      "name": "Social Draft: Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://project-state:8080/alerts/",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"level\": \"info\", \"source\": \"n8n-approval-router\", \"message\": \"Approval event received for module '\" + $json.body.module + \"' — no automated handler configured.\", \"module\": $json.body.module, \"job_id\": $json.body.job_id}",
+        "options": {}
+      },
+      "id": "Http_FallbackNotify",
+      "name": "Fallback: Log Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 620]
+    }
+  ],
+  "connections": {
+    "Approval Event Webhook": {
+      "main": [
+        [
+          { "node": "Respond OK", "type": "main", "index": 0 },
+          { "node": "Route by Module", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Route by Module": {
+      "main": [
+        [{ "node": "Fetch Inbox Draft", "type": "main", "index": 0 }],
+        [{ "node": "Social Draft: Notify", "type": "main", "index": 0 }],
+        [{ "node": "Social Draft: Notify", "type": "main", "index": 0 }],
+        [{ "node": "Fallback: Log Event", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Inbox Draft": {
+      "main": [
+        [{ "node": "Has Draft Body?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Has Draft Body?": {
+      "main": [
+        [{ "node": "Send Gmail Reply", "type": "main", "index": 0 }],
+        [{ "node": "Alert: No Draft Body", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Gmail Reply": {
+      "main": [
+        [{ "node": "Mark Job Complete", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": ""
+  },
+  "pinData": {},
+  "versionId": "starter-approval-event-router",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "notes": "Configure Gmail OAuth credentials named 'Gmail Send' before activating. The webhook URL must be added to workspace_settings.alert_destinations.webhook_url (e.g. http://n8n:5678/webhook/studio/approval-event). Set active=true once credentials are configured."
+  },
+  "tags": []
+}
