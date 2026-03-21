@@ -33,6 +33,7 @@ What is working now:
 - persisted module settings for lead intake, inbox triage, content pipeline, audio QC, session prep, revision parser, delivery packaging, and mix planning
 - DB-backed `openclaw` rule seeding, starter packs, playbooks, alert config, and bootstrap status
 - optional `studio-worker` path for local-worker or split-worker execution
+- DAW preview loop for workstation readiness, session introspection, mix plans, render plans, listening summaries, and execution-plan staging
 - idempotent one-shot n8n workflow bootstrap against the running `n8n` service
 - service `/status` endpoints across the major automation and production modules
 - control-room service drilldowns with live status snapshots and saved tuning summaries
@@ -86,6 +87,7 @@ This validation is meaningful for the MVP, but it is not yet comprehensive enoug
    Current state:
    - local and optional worker execution paths exist
    - dry-run-friendly DAW task handling exists
+   - Reaper `.rpp` session introspection, render-plan previews, QC/reference compare previews, and execution-plan previews now exist
    - a real second-machine validation pass with production DAW tooling is still pending
    Impact:
    - the platform is architecturally ready for the worker model, but not yet fully proven against a live studio workstation

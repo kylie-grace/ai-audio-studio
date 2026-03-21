@@ -15,6 +15,7 @@ import soundfile as sf
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from .review import compare_reports, summarize_report
 from .thresholds import get_thresholds
 
 _pool: asyncpg.Pool | None = None
@@ -50,6 +51,11 @@ class RunQCBody(BaseModel):
     project_id: str
     file_path: str
     target: str = "streaming"
+
+
+class QCComparePreviewBody(BaseModel):
+    candidate: dict
+    reference: dict
 
 
 def _bit_depth(subtype: str) -> int | None:
@@ -108,6 +114,7 @@ def analyze_audio(file_path: Path, target: str) -> dict:
 
     return {
         "overall_pass": overall_pass,
+        "target": target,
         "checks": checks,
         "lufs_integrated": round(loudness, 2),
         "lufs_target": thresholds.lufs_target,
@@ -199,3 +206,15 @@ async def get_report(report_id: str):
     if row is None:
         raise HTTPException(status_code=404, detail="QC report not found")
     return dict(row)
+
+
+@app.post("/qc/compare-preview")
+async def compare_preview(body: QCComparePreviewBody):
+    candidate = body.candidate
+    reference = body.reference
+    return {
+        "status": "preview",
+        "candidate_summary": summarize_report(candidate),
+        "reference_summary": summarize_report(reference),
+        "comparison": compare_reports(candidate, reference),
+    }

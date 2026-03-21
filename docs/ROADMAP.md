@@ -20,6 +20,7 @@
 
 ## Productionizing
 - Finish DAW adapters beyond dry run, with SoundFlow and ReaScript execution validated on a real studio Mac.
+- Keep using the new DAW preview loop as the operator-safe staging path: workstation profile, session introspection, execution-plan preview, render plan, and QC/reference comparison.
 - Add worker retries, lease expiry recovery, and failure escalation for long-running execution tasks.
 - Add broader end-to-end tests that exercise Dockerized service interactions, not just unit helpers.
 - Tighten HTTPS/LAN onboarding so trusting the local Caddy certificate is a first-run step, not hidden setup knowledge.

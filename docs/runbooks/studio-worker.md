@@ -11,7 +11,7 @@ Current worker capabilities:
 - `revision-parser`
 - `delivery-packager`
 - workstation discovery and DAW readiness reporting
-- preview generation for session manifests, mix plans, and listening reports
+- preview generation for session manifests, mix plans, render plans, listening reports, and execution plans
 
 Queued tasks are claimed from `project-state` over HTTP and executed against mounted local paths.
 The code is split into `config`, `paths`, `runner`, `tasks`, and `adapters` so DAW execution can be added without reworking the worker loop.
@@ -61,7 +61,9 @@ docker compose --env-file infra/.env -f infra/docker-compose.worker.yml ps
 - Workstation profile: `http://<studio-mac-ip>:8190/workstation/profile`
 - Session manifest preview: `POST http://<studio-mac-ip>:8190/session-manifest/preview`
 - Mix plan preview: `POST http://<studio-mac-ip>:8190/mix-plan/preview`
+- Render plan preview: `POST http://<studio-mac-ip>:8190/render-plan/preview`
 - Listening report preview: `POST http://<studio-mac-ip>:8190/listening-report/preview`
+- Execution plan preview: `POST http://<studio-mac-ip>:8190/execution-plan/preview`
 - Registered workers: `http://<mac-mini-ip>:8080/workers`
 - Worker tasks: `http://<mac-mini-ip>:8080/workers/tasks/list`
 
@@ -72,5 +74,5 @@ docker compose --env-file infra/.env -f infra/docker-compose.worker.yml ps
 - It claims one queued task at a time
 - On success it posts structured result data back to the Mac mini
 - On failure it marks the task and linked job failed
-- `execute-soundflow` and `execute-reascript` now support workstation readiness reporting and generated DAW-specific revision artifacts, while live execution still remains gated behind real workstation validation
+- `execute-soundflow` and `execute-reascript` now support workstation readiness reporting, generated DAW-specific revision artifacts, Reaper session introspection, and preview execution-loop planning, while live execution still remains gated behind real workstation validation
 - Set `STUDIO_WORKER_DRY_RUN_DAW=true` to validate DAW execution queueing before a real studio Mac is available

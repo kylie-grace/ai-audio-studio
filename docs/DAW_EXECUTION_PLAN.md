@@ -385,12 +385,24 @@ These are the highest-value items that can be built without waiting for a real s
 - add execution artifact schema
 - add listening report schema
 
+Status:
+- completed for the overnight-safe path
+- workstation profile, session manifest, mix plan, render plan, listening report, and execution-plan previews now exist in `studio-worker`
+- the control room now shows workstation readiness, session introspection confidence, mix/render/listening posture, and execution-loop readiness
+
 ## Phase 2: Reaper-first execution path
 - implement real Reaper adapter contract
 - generate real ReaScript artifacts instead of dry-run-only placeholders
 - add safe session-copy workflow
 - add render job plumbing
 - add artifact collection and result persistence
+
+Status:
+- partially completed for the overnight-safe path
+- real ReaScript artifacts are now generated
+- Reaper session manifests can now parse `.rpp` track names, markers, tempo candidates, and introspection confidence
+- render-plan plumbing and execution-plan previews exist
+- true live Reaper execution and copied-session mutation still require a real workstation validation pass
 
 ## Phase 3: Pro Tools bootstrap scaffolding
 - define SoundFlow package structure in repo
@@ -399,11 +411,23 @@ These are the highest-value items that can be built without waiting for a real s
 - add script generation pipeline
 - keep execution behind a capability flag until validated
 
+Status:
+- partially completed
+- SoundFlow-oriented revision artifacts and capability gating exist
+- workstation readiness now reports Pro Tools/SoundFlow posture
+- live SoundFlow execution remains intentionally gated pending real workstation validation
+
 ## Phase 4: Listening/QC loop
 - extend `audio-qc` outputs into richer review objects
 - build reference-compare pipeline
 - add listening summary generator
 - add dashboard review cards for renders and findings
+
+Status:
+- materially advanced
+- `audio-qc` now exposes candidate/reference compare previews
+- listening previews now include QC summary and reference alignment signals
+- the control room now surfaces listening summary, render review posture, and execution-loop guidance
 
 ## Phase 5: Control-room operator UX
 - add session view
@@ -411,6 +435,11 @@ These are the highest-value items that can be built without waiting for a real s
 - add DAW approval preview UI
 - add artifact browser
 - add bounce/render status UI
+
+Status:
+- partially completed for the preview/operator path
+- session view, mix/render/listening previews, workstation readiness, and execution-plan posture are now visible in the control room
+- artifact browsing and real render-job status remain future work once live execution is field-validated
 
 ## Phase 6: Tests
 - worker task contract tests

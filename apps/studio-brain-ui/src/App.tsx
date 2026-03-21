@@ -284,11 +284,22 @@ type SessionManifestPreview = {
   stem_count: number;
   stems: Array<{ name: string; path: string; extension: string; size_bytes: number }>;
   references: Array<{ name: string; path: string }>;
-  session_files: Array<{ name: string; path: string }>;
+  session_files: Array<{ name: string; path: string; type?: string }>;
+  session_details: {
+    session_type: string;
+    track_count: number;
+    track_names: string[];
+    marker_count: number;
+    markers: Array<{ index: number; position: number; name: string }>;
+    tempo_candidates: number[];
+    introspection_confidence: number;
+    primary_session_file?: string | null;
+  };
   readiness: {
     has_stems: boolean;
     has_session_files: boolean;
     ready_for_planning: boolean;
+    confidence_score: number;
   };
 };
 
@@ -312,7 +323,37 @@ type ListeningReportPreview = {
   target: string;
   reference_count: number;
   checks: Array<{ slug: string; status: string; detail: string }>;
+  summary: {
+    issue_count: number;
+    qc_hard_fail_count: number;
+    qc_warning_count: number;
+    reference_alignment: string;
+  };
   next_actions: string[];
+};
+
+type RenderPlanPreview = {
+  status: string;
+  target: string;
+  profile_count: number;
+  profiles: Array<{
+    slug: string;
+    label: string;
+    filename: string;
+    target: string;
+    sample_rate: number;
+    bit_depth: number;
+    notes: string;
+  }>;
+  follow_up: string[];
+};
+
+type ExecutionPlanPreview = {
+  status: string;
+  blockers: string[];
+  ready_for_operator_review: boolean;
+  recommended_next_step: string;
+  phases: Array<{ slug: string; title: string; status: string; summary: string }>;
 };
 
 type BootstrapStatus = {
@@ -458,7 +499,9 @@ type DashboardData = {
   workstationProfile: WorkstationProfile | null;
   sessionManifestPreview: SessionManifestPreview | null;
   mixPlanPreview: MixPlanPreview | null;
+  renderPlanPreview: RenderPlanPreview | null;
   listeningReportPreview: ListeningReportPreview | null;
+  executionPlanPreview: ExecutionPlanPreview | null;
   loadState: "loading" | "ready" | "error";
   error: string | null;
 };
@@ -1094,7 +1137,7 @@ async function loadDashboardData(): Promise<DashboardData> {
     ]);
 
   const previewProjectRoot = workspace.settings.shared_paths.projects || "/data/projects";
-  const [workstationProfile, sessionManifestPreview, mixPlanPreview, listeningReportPreview] = await Promise.all([
+  const [workstationProfile, sessionManifestPreview, mixPlanPreview, renderPlanPreview, listeningReportPreview] = await Promise.all([
     fetchOptionalJson<WorkstationProfile>(`${API.studioWorker}/workstation/profile`),
     fetchOptionalJson<SessionManifestPreview>(`${API.studioWorker}/session-manifest/preview`, {
       method: "POST",
@@ -1115,6 +1158,16 @@ async function loadDashboardData(): Promise<DashboardData> {
         client_notes: "Preview plan generated from saved studio posture.",
       }),
     }),
+    fetchOptionalJson<RenderPlanPreview>(`${API.studioWorker}/render-plan/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        project_slug: workspace.settings.studio_name ? workspace.settings.studio_name.toLowerCase().replace(/\s+/g, "-") : "session",
+        target: workspace.settings.module_settings.audio_qc.default_target,
+        include_stems: true,
+        include_instrumental: true,
+      }),
+    }),
     fetchOptionalJson<ListeningReportPreview>(`${API.studioWorker}/listening-report/preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -1122,9 +1175,22 @@ async function loadDashboardData(): Promise<DashboardData> {
         target: "review-mix",
         references: workspace.settings.style_seed.source_paths,
         issues: [],
+        qc_summary: { target: workspace.settings.module_settings.audio_qc.default_target, hard_fail_count: 0, warning_count: 2 },
+        reference_summary: { lufs_delta: -0.6, true_peak_delta: -0.3, alignment: "close" },
       }),
     }),
   ]);
+  const executionPlanPreview = await fetchOptionalJson<ExecutionPlanPreview>(`${API.studioWorker}/execution-plan/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      workstation: workstationProfile,
+      session_manifest: sessionManifestPreview,
+      mix_plan: mixPlanPreview,
+      render_plan: renderPlanPreview,
+      listening_report: listeningReportPreview,
+    }),
+  });
 
   return {
     refreshedAt: new Date().toLocaleTimeString(),
@@ -1148,7 +1214,9 @@ async function loadDashboardData(): Promise<DashboardData> {
     workstationProfile,
     sessionManifestPreview,
     mixPlanPreview,
+    renderPlanPreview,
     listeningReportPreview,
+    executionPlanPreview,
     loadState: "ready",
     error: null,
   };
@@ -1219,7 +1287,9 @@ export function App() {
     workstationProfile: null,
     sessionManifestPreview: null,
     mixPlanPreview: null,
+    renderPlanPreview: null,
     listeningReportPreview: null,
+    executionPlanPreview: null,
     loadState: "loading",
     error: null,
   });
@@ -2316,6 +2386,7 @@ export function App() {
                       <span className="summary-pill">
                         {data.sessionManifestPreview?.readiness.ready_for_planning ? "ready for planning" : "waiting for session data"}
                       </span>
+                      {data.sessionManifestPreview ? <span className="summary-pill">{Math.round(data.sessionManifestPreview.readiness.confidence_score * 100)}% confidence</span> : null}
                     </div>
                   </div>
                 </div>
@@ -2326,7 +2397,7 @@ export function App() {
                       {data.mixPlanPreview ? `${data.mixPlanPreview.phases.length} plan phases` : "plan unavailable"}
                     </strong>
                     <p className="panel-note">
-                      {data.listeningReportPreview ? `${data.listeningReportPreview.checks.length} listening heuristics staged.` : "Listening preview unavailable."}
+                      {data.renderPlanPreview ? `${data.renderPlanPreview.profile_count} render profiles staged.` : "Render preview unavailable."}
                     </p>
                     <div className="summary-pill-row">
                       {(data.mixPlanPreview?.priorities ?? []).slice(0, 3).map((item) => (
@@ -2334,6 +2405,7 @@ export function App() {
                           {item}
                         </span>
                       ))}
+                      {data.executionPlanPreview ? <span className="summary-pill">{data.executionPlanPreview.ready_for_operator_review ? "operator review ready" : "blocked"}</span> : null}
                     </div>
                   </div>
                 </div>
@@ -2361,6 +2433,31 @@ export function App() {
                   )}
                 </div>
                 <div className="panel-span-4 table-stack">
+                  {data.sessionManifestPreview ? (
+                    <>
+                      <div className="table-row">
+                        <div className="row-main">
+                          <strong>{data.sessionManifestPreview.session_details.session_type}</strong>
+                          <div className="muted">
+                            {data.sessionManifestPreview.session_details.track_count} tracks · {data.sessionManifestPreview.session_details.marker_count} markers
+                          </div>
+                          <div className="muted">{data.sessionManifestPreview.session_details.primary_session_file ?? "No primary session file yet."}</div>
+                        </div>
+                      </div>
+                      {data.sessionManifestPreview.session_details.track_names.slice(0, 4).map((name) => (
+                        <div key={name} className="table-row">
+                          <div className="row-main">
+                            <strong>{name}</strong>
+                            <div className="muted">Session track</div>
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <p className="empty-state">Session introspection will appear here once a DAW session file is reachable.</p>
+                  )}
+                </div>
+                <div className="panel-span-4 table-stack">
                   {data.mixPlanPreview ? (
                     data.mixPlanPreview.phases.map((phase) => (
                       <div key={phase.slug} className="table-row">
@@ -2375,20 +2472,79 @@ export function App() {
                   )}
                 </div>
                 <div className="panel-span-4 table-stack">
-                  {data.listeningReportPreview ? (
-                    data.listeningReportPreview.checks.map((check) => (
-                      <div key={check.slug} className="table-row">
+                  {data.renderPlanPreview ? (
+                    data.renderPlanPreview.profiles.map((profile) => (
+                      <div key={profile.slug} className="table-row">
                         <div className="row-main">
-                          <strong>{check.slug}</strong>
-                          <div className="muted">{check.detail}</div>
-                        </div>
-                        <div className="row-meta">
-                          <span className={`status-pill ${check.status === "attention" ? "bad" : "warn"}`}>{check.status}</span>
+                          <strong>{profile.label}</strong>
+                          <div className="muted">{profile.filename}</div>
+                          <div className="muted">{profile.sample_rate} Hz · {profile.bit_depth}-bit · {profile.target}</div>
                         </div>
                       </div>
                     ))
                   ) : (
+                    <p className="empty-state">Render profiles will appear here once preview generation is available.</p>
+                  )}
+                </div>
+                <div className="panel-span-4 table-stack">
+                  {data.listeningReportPreview ? (
+                    <>
+                      <div className="table-row">
+                        <div className="row-main">
+                          <strong>Listening summary</strong>
+                          <div className="muted">
+                            {data.listeningReportPreview.summary.qc_hard_fail_count} hard fails · {data.listeningReportPreview.summary.qc_warning_count} warnings
+                          </div>
+                          <div className="muted">Reference alignment: {data.listeningReportPreview.summary.reference_alignment}</div>
+                        </div>
+                      </div>
+                      {data.listeningReportPreview.checks.map((check) => (
+                        <div key={check.slug} className="table-row">
+                          <div className="row-main">
+                            <strong>{check.slug}</strong>
+                            <div className="muted">{check.detail}</div>
+                          </div>
+                          <div className="row-meta">
+                            <span className={`status-pill ${check.status === "attention" ? "bad" : "warn"}`}>{check.status}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
                     <p className="empty-state">Listening heuristics will appear here once preview generation is available.</p>
+                  )}
+                </div>
+                <div className="panel-span-4 table-stack">
+                  {data.executionPlanPreview ? (
+                    <>
+                      <div className="table-row">
+                        <div className="row-main">
+                          <strong>Execution plan</strong>
+                          <div className="muted">{data.executionPlanPreview.recommended_next_step}</div>
+                          <div className="muted">
+                            {data.executionPlanPreview.blockers.length ? data.executionPlanPreview.blockers.join(" · ") : "No blocking conditions in preview mode."}
+                          </div>
+                        </div>
+                        <div className="row-meta">
+                          <span className={`status-pill ${data.executionPlanPreview.ready_for_operator_review ? "ok" : "warn"}`}>
+                            {data.executionPlanPreview.ready_for_operator_review ? "review ready" : "blocked"}
+                          </span>
+                        </div>
+                      </div>
+                      {data.executionPlanPreview.phases.map((phase) => (
+                        <div key={phase.slug} className="table-row">
+                          <div className="row-main">
+                            <strong>{phase.title}</strong>
+                            <div className="muted">{phase.summary}</div>
+                          </div>
+                          <div className="row-meta">
+                            <span className={`status-pill ${phase.status === "ready" ? "ok" : phase.status === "watch" ? "warn" : "bad"}`}>{phase.status}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <p className="empty-state">Execution-loop posture will appear here once all DAW preview surfaces are reachable.</p>
                   )}
                 </div>
               </div>

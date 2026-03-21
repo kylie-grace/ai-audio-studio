@@ -13,6 +13,8 @@ from config import load_settings
 from runner import StudioWorkerRunner
 from tasks.listening_report import build_listening_report
 from tasks.mix_plan import build_mix_plan
+from tasks.execution_plan import build_execution_plan
+from tasks.render_plan import build_render_plan
 from tasks.session_manifest import build_session_manifest
 from workstation import detect_workstation_profile
 
@@ -58,6 +60,25 @@ class ListeningReportPreviewBody(BaseModel):
     target: str = "review-mix"
     references: list[str] = []
     issues: list[str] = []
+    qc_summary: dict = {}
+    reference_summary: dict = {}
+
+
+class RenderPlanPreviewBody(BaseModel):
+    project_slug: str = "session"
+    target: str = "review"
+    include_stems: bool = True
+    include_instrumental: bool = True
+    sample_rate: int = 48000
+    bit_depth: int = 24
+
+
+class ExecutionPlanPreviewBody(BaseModel):
+    workstation: dict = {}
+    session_manifest: dict = {}
+    mix_plan: dict = {}
+    render_plan: dict = {}
+    listening_report: dict = {}
 
 
 @app.get("/health")
@@ -88,7 +109,7 @@ async def status():
         "workstation": workstation,
         "daw_ready_count": sum(1 for daw in workstation["daws"] if daw["automation_ready"]),
         "daw_detected_count": sum(1 for daw in workstation["daws"] if daw["installed"]),
-        "preview_surfaces": ["session-manifest", "mix-plan", "listening-report"],
+        "preview_surfaces": ["session-manifest", "mix-plan", "render-plan", "listening-report", "execution-plan"],
     }
 
 
@@ -110,3 +131,13 @@ async def mix_plan_preview(body: MixPlanPreviewBody):
 @app.post("/listening-report/preview")
 async def listening_report_preview(body: ListeningReportPreviewBody):
     return build_listening_report(body.model_dump())
+
+
+@app.post("/render-plan/preview")
+async def render_plan_preview(body: RenderPlanPreviewBody):
+    return build_render_plan(body.model_dump())
+
+
+@app.post("/execution-plan/preview")
+async def execution_plan_preview(body: ExecutionPlanPreviewBody):
+    return build_execution_plan(body.model_dump())
