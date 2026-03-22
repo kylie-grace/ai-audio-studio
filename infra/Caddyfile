@@ -1,4 +1,19 @@
+{
+    default_sni {$CONTROL_PLANE_LAN_IP:192.168.1.153}
+}
+
 https://{$CONTROL_PLANE_HOST:studio-brain.local} {
+    encode zstd gzip
+    reverse_proxy studio-brain-ui:3000
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+    tls internal
+}
+
+https://{$CONTROL_PLANE_LAN_IP:192.168.1.153} {
     encode zstd gzip
     reverse_proxy studio-brain-ui:3000
     header {

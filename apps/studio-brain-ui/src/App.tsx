@@ -2938,29 +2938,6 @@ export function App() {
         </div>
       </section>
 
-      <section className="workflow-strip" aria-label="Guided operator workflows">
-        {workflowPlaybooks.map((workflow) => (
-          <button
-            key={workflow.id}
-            type="button"
-            className={`workflow-card workflow-${workflow.tab}`}
-            onClick={() => setActiveTab(workflow.tab)}
-          >
-            <div className="workflow-header">
-              <span className="metric-label">{workflow.label}</span>
-              <span className={`status-pill ${workflowTone(workflow.state)}`}>{workflow.state}</span>
-            </div>
-            <strong>{workflow.count}</strong>
-            <span className="workflow-unit">{workflow.unit}</span>
-            <p className="panel-note">{workflow.summary}</p>
-            <div className="workflow-footer">
-              <span>{workflow.detail}</span>
-              <span>open {primaryTabs.find((tab) => tab.id === workflow.tab)?.label.toLowerCase()}</span>
-            </div>
-          </button>
-        ))}
-      </section>
-
       <nav className="tab-strip" aria-label="Primary control surfaces">
         {primaryTabs.map((tab) => (
           <button
@@ -3069,6 +3046,29 @@ export function App() {
                 ))}
               </div>
             </article>
+          </section>
+
+          <section className="workflow-strip" aria-label="Guided operator workflows">
+            {workflowPlaybooks.map((workflow) => (
+              <button
+                key={workflow.id}
+                type="button"
+                className={`workflow-card workflow-${workflow.tab}`}
+                onClick={() => setActiveTab(workflow.tab)}
+              >
+                <div className="workflow-header">
+                  <span className="metric-label">{workflow.label}</span>
+                  <span className={`status-pill ${workflowTone(workflow.state)}`}>{workflow.state}</span>
+                </div>
+                <strong>{workflow.count}</strong>
+                <span className="workflow-unit">{workflow.unit}</span>
+                <p className="panel-note">{workflow.summary}</p>
+                <div className="workflow-footer">
+                  <span>{workflow.detail}</span>
+                  <span>open {primaryTabs.find((tab) => tab.id === workflow.tab)?.label.toLowerCase()}</span>
+                </div>
+              </button>
+            ))}
           </section>
 
           <section className="command-grid">
