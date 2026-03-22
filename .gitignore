@@ -64,3 +64,6 @@ backups/
 
 # Legacy source docs (private, not for public repo)
 legacy/
+audit*.md
+LICENSE_dir_backup/
+infra/.env.build

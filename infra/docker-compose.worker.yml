@@ -10,7 +10,7 @@ services:
       context: ../services/studio-worker
       dockerfile: Dockerfile
     environment:
-      PROJECT_STATE_URL: "${MAC_MINI_BASE_URL:-http://192.168.1.10}:8080"
+      PROJECT_STATE_URL: "${MAC_MINI_BASE_URL:-http://192.168.1.50}:8080"
       WORKER_SLUG: "${WORKER_SLUG:-studio-mac}"
       WORKER_DISPLAY_NAME: "${WORKER_DISPLAY_NAME:-Studio Mac}"
       WORKER_PLATFORM: "${WORKER_PLATFORM:-macos}"

@@ -501,7 +501,7 @@ services:
     image: caddy:2-alpine
     environment:
       CONTROL_PLANE_HOST: ${CONTROL_PLANE_HOST:-studio-brain.local}
-      CONTROL_PLANE_LAN_IP: ${CONTROL_PLANE_LAN_IP:-192.168.1.153}
+      CONTROL_PLANE_LAN_IP: ${CONTROL_PLANE_LAN_IP:-192.168.1.50}
     depends_on:
       studio-brain-ui:
         condition: service_healthy

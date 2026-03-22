@@ -133,4 +133,4 @@ Engineering and worker traffic:
 - Full-network IP access is the baseline deployment posture when `BIND_HOST=0.0.0.0`.
 - Hostname/TLS is the polish layer, not a prerequisite for first successful bring-up.
 - `single_machine` is valid. A second worker Mac is optional.
-- If you are replacing an older host or legacy dashboard, follow [legacy-cutover.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/legacy-cutover.md) before retiring it.
+- If you are replacing an older host or legacy dashboard, follow [legacy-cutover.md](legacy-cutover.md) before retiring it.

@@ -45,6 +45,6 @@
 - Reduce the number of machine-local settings that must stay in env files to secrets, ports, tokens, and path wiring only.
 
 ## Dedicated Plans
-- DAW execution, auto-mix, listening loop, and workstation onboarding are broken out in [DAW_EXECUTION_PLAN.md](/Users/kpsnyder/ai-audio-studio/docs/DAW_EXECUTION_PLAN.md).
-- Cross-cutting product completion is tracked in [MASTER_PLAN.md](/Users/kpsnyder/ai-audio-studio/docs/MASTER_PLAN.md).
-- The operator validation checklist lives in [morning-validation.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/morning-validation.md).
+- DAW execution, auto-mix, listening loop, and workstation onboarding are broken out in [DAW_EXECUTION_PLAN.md](DAW_EXECUTION_PLAN.md).
+- Cross-cutting product completion is tracked in [MASTER_PLAN.md](MASTER_PLAN.md).
+- The operator validation checklist lives in [morning-validation.md](runbooks/morning-validation.md).

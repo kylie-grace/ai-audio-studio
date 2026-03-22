@@ -1,6 +1,6 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
-© 2026 Kylie-Grace Mars-Snyder. Licensed under [AGPL-3.0](LICENSE). See [license/USAGE.md](license/USAGE.md) for usage intent and commercial collaboration details.
+© 2026 Kylie-Grace Mars-Snyder. Licensed under [AGPL-3.0](LICENSE). See [docs/USAGE.md](docs/USAGE.md) for usage intent and commercial collaboration details.
 
 # AI Audio Studio Platform
 
@@ -13,7 +13,7 @@ Automated studio operations platform for independent recording studios. Reduces 
 Deployment modes:
 - `single_machine` — one Mac runs the whole Docker stack locally, including UI, n8n, Ollama, Postgres, APIs, and orchestration.
 - `control_plane_plus_worker` — one host runs the control plane and a second Mac runs `studio-worker` for filesystem-heavy or DAW-adjacent tasks.
-- **Shared volume** — `/Volumes/StudioShare/` or equivalent shared mount visible to any machine executing file tasks.
+- **Shared volume** — a shared mount such as `/Volumes/StudioShare/` visible to any machine executing file tasks.
 - **LAN access** — set `BIND_HOST=0.0.0.0` to expose the dashboard and APIs to the full local network by IP.
 - **HTTPS edge** — Caddy now ships in the main Compose stack as the default TLS front door.
 - **Remote worker LAN routing** — remote worker deployments must set a real `WORKER_API_BASE_URL` and mount shared storage before registration.
@@ -46,8 +46,8 @@ What this means in practice:
 
 ### Prerequisites
 - Docker Desktop installed and running
-- Minimum 16 GB RAM on Mac mini (Ollama needs ~10 GB for the planner model)
-- Shared volume mounted at `/Volumes/StudioShare/`
+- Minimum 16 GB RAM on the control-plane machine (native Ollama needs substantial memory for the planner model)
+- Shared volume mounted if you are using shared project paths
 - If you want LAN access, set `BIND_HOST=0.0.0.0` in `infra/.env`
 
 ### First-time setup
@@ -61,17 +61,19 @@ cd studio-ai-platform
 cp infra/env.example infra/.env
 # Edit infra/.env and fill in all required values
 
-# 3. Pull Ollama models (takes 10-30 min depending on connection)
-bash services/ollama/pull_models.sh
+# 3. Start native Ollama and pull the required models
+export OLLAMA_MAX_LOADED_MODELS=1
+export OLLAMA_KEEP_ALIVE=30m
+bash scripts/start-ollama.sh
 
-# 4. Start the control plane on the local Mac
+# 4. Start the control plane on the local machine
 docker compose --env-file infra/.env -f infra/docker-compose.yml up -d
 
 # 5. First-time only: import the starter n8n workflows
 # This runs once against the live n8n service and safely skips if workflows already exist.
 bash scripts/bootstrap_n8n.sh infra/.env
 
-# 6. Optional: start the studio worker on a second Mac
+# 6. Optional: start the studio worker on a second machine
 docker compose --env-file infra/.env -f infra/docker-compose.worker.yml up -d
 
 # 7. Verify all services healthy
@@ -121,7 +123,7 @@ For `control_plane_plus_worker` deployments:
 - keep `WORKER_API_BASE_URL` set to the worker machine's LAN URL, not loopback
 - keep `BIND_HOST=0.0.0.0` on the worker if the control plane must reach it over the LAN
 - mount shared storage before boot or configure `PATH_TRANSLATION_JSON`
-- see [studio-worker.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/studio-worker.md)
+- see [docs/runbooks/studio-worker.md](docs/runbooks/studio-worker.md)
 
 HTTPS front door:
 The main Compose stack now serves the dashboard at `https://$CONTROL_PLANE_HOST` through Caddy with an internal LAN certificate.
@@ -162,7 +164,7 @@ Current validation is headless and MVP-oriented:
 - targeted runtime smoke checks for bootstrap, dashboard, and control-plane services
 - the API tests import-skip if `requirements-test.txt` has not been installed in the active environment
 
-Host-native worker persistence uses launchd; see [docs/runbooks/studio-worker.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/studio-worker.md) and the plist template in `scripts/com.ai-audio-studio.studio-worker.plist`.
+Host-native worker persistence uses launchd; see [docs/runbooks/studio-worker.md](docs/runbooks/studio-worker.md) and the plist template in `scripts/com.ai-audio-studio.studio-worker.plist`.
 
 ## Service Map
 
@@ -315,6 +317,6 @@ Each task file contains: purpose, dependencies, file list, input/output contract
 
 - `docs/architecture/` — ADRs, system diagrams, prompt contracts
 - `docs/runbooks/` — Operator procedures and safety checklists
-- [docs/runbooks/local-network.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/local-network.md) — LAN and HTTPS setup
-- [docs/runbooks/legacy-cutover.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/legacy-cutover.md) — retiring legacy infra cleanly
-- [docs/runbooks/n8n-bootstrap.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/n8n-bootstrap.md) — importable workflow templates
+- [docs/runbooks/local-network.md](docs/runbooks/local-network.md) — LAN and HTTPS setup
+- [docs/runbooks/legacy-cutover.md](docs/runbooks/legacy-cutover.md) — retiring legacy infra cleanly
+- [docs/runbooks/n8n-bootstrap.md](docs/runbooks/n8n-bootstrap.md) — importable workflow templates

@@ -111,10 +111,10 @@ Stay on IP access when:
 - you have not trusted the Caddy root certificate
 
 See:
-- [local-network.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/local-network.md)
-- [legacy-cutover.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/legacy-cutover.md)
-- [n8n-bootstrap.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/n8n-bootstrap.md)
-- [studio-worker.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/studio-worker.md)
+- [local-network.md](local-network.md)
+- [legacy-cutover.md](legacy-cutover.md)
+- [n8n-bootstrap.md](n8n-bootstrap.md)
+- [studio-worker.md](studio-worker.md)
 
 If you are running `single_machine`, stop here. `docker-compose.worker.yml` is optional and only needed for `control_plane_plus_worker`.
 

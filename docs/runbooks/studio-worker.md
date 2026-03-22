@@ -33,10 +33,10 @@ The code is split into `config`, `paths`, `runner`, `tasks`, and `adapters` so D
 In `infra/.env` or a worker-specific env file:
 
 ```bash
-MAC_MINI_BASE_URL=http://192.168.1.10
+MAC_MINI_BASE_URL=http://192.168.1.50
 WORKER_SLUG=studio-mac
 WORKER_DISPLAY_NAME=Studio Mac
-WORKER_API_BASE_URL=http://192.168.1.20:8190
+WORKER_API_BASE_URL=http://192.168.1.60:8190
 WORKER_CAPABILITIES=session-prep,revision-parser,delivery-packager
 STUDIO_WORKER_DRY_RUN_DAW=true
 REAPER_BINARY_PATH=/Applications/REAPER.app/Contents/MacOS/REAPER
@@ -74,7 +74,7 @@ docker compose --env-file infra/.env -f infra/docker-compose.worker.yml ps
 
 Remote worker compose defaults now assume LAN exposure:
 - `BIND_HOST=0.0.0.0`
-- `WORKER_API_BASE_URL` must be set to the worker machine's real LAN URL, for example `http://192.168.1.20:8190`
+- `WORKER_API_BASE_URL` must be set to the worker machine's real LAN URL, for example `http://192.168.1.60:8190`
 - the worker will warn if that callback URL is blank, and the split-compose file now requires it explicitly
 
 For `single_machine` or host-native REAPER automation on the same Mac:
@@ -149,7 +149,7 @@ Minimal launchd program block:
 <true/>
 ```
 
-The repository includes a ready-to-adapt plist template at [scripts/com.ai-audio-studio.studio-worker.plist](/Users/kpsnyder/ai-audio-studio/scripts/com.ai-audio-studio.studio-worker.plist). Copy it into `~/Library/LaunchAgents/`, replace the placeholders, and load it with `launchctl` to keep the host worker alive across reboots.
+The repository includes a ready-to-adapt plist template at [scripts/com.ai-audio-studio.studio-worker.plist](../../scripts/com.ai-audio-studio.studio-worker.plist). Copy it into `~/Library/LaunchAgents/`, replace the placeholders, and load it with `launchctl` to keep the host worker alive across reboots.
 
 Load it with:
 
