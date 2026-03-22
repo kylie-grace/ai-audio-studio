@@ -4,252 +4,196 @@
 
 # AI Audio Studio Platform
 
-> **Active build, not production-ready.** The repository now contains a strong control-plane MVP: Dockerized services, a live dashboard, DB-backed state, seeded orchestration rules, optional worker execution, and LAN/HTTPS access. It is still under construction as a product. Treat it as an operator-facing MVP foundation for `single_machine` or `control_plane_plus_worker`, not a finished turnkey system.
+> **Operator-ready MVP, not a finished product.** The platform runs cleanly end-to-end: Docker stack, live dashboard, approval-gated job FSM, CRM, worker execution, and LAN/HTTPS access. The five core automation modules are functional. What's still being built is the novice onboarding layer — some setup still requires editing environment files rather than pointing and clicking. If you're comfortable with a terminal and Docker, it's usable today. If you're expecting a polished installer, that's the next phase.
 
-Automated studio operations platform for independent recording studios. Reduces admin overhead by 80-90% while maintaining human control over all creative, financial, and client-facing decisions.
+Automated studio operations platform for independent recording studios. Handles the operational layer — lead replies, inbox triage, session prep, audio QC, social content, and DAW revision execution — while keeping every client-facing action behind a human approval gate. The system's job is to do 90% of the preparation work so your job becomes fast, informed review rather than starting from scratch.
 
-## Architecture
+---
 
-Deployment modes:
-- `single_machine` — one Mac runs the whole Docker stack locally, including UI, n8n, Ollama, Postgres, APIs, and orchestration.
-- `control_plane_plus_worker` — one host runs the control plane and a second Mac runs `studio-worker` for filesystem-heavy or DAW-adjacent tasks.
-- **Shared volume** — a shared mount such as `/Volumes/StudioShare/` visible to any machine executing file tasks.
-- **LAN access** — set `BIND_HOST=0.0.0.0` to expose the dashboard and APIs to the full local network by IP.
-- **HTTPS edge** — Caddy now ships in the main Compose stack as the default TLS front door.
-- **Remote worker LAN routing** — remote worker deployments must set a real `WORKER_API_BASE_URL` and mount shared storage before registration.
+## What This Is
 
-## Product Status
+A two-machine platform: a **Mac mini** runs the always-on control plane (Docker stack, AI inference, dashboard), and a **Mac Pro** (or any second Mac) runs the **studio-worker** that executes file operations and DAW scripts. It also runs on a single machine with the `--profile local-worker` flag.
 
-What is solid today:
-- the control plane starts cleanly under Docker Compose
-- the dashboard is live and surfaces health, approvals, workers, rules, alerts, and bootstrap state
-- `project-state` persists jobs, approvals, audit records, worker nodes, and worker tasks
-- `crm-api` persists projects, leads, and style profiles
-- `openclaw` seeds default orchestration rules, starter packs, and playbooks
-- starter n8n workflows can be imported with a one-shot helper
-- internal n8n starters now default to `active: true`, while credential-gated outbound flows stay disabled until credentials exist
-- `single_machine` is the default path, with optional local or remote worker execution
-- the control-room assistant is now backed by live stack context and local Ollama, with an explicit fallback mode if the LLM is unavailable
+Five core automation modules:
 
-What is still being added:
-- deeper operator-safe settings coverage across every major service beyond the current persisted module-tuning layer
-- deeper novice-friendly control-room actions so operators do not need to edit env files for normal product setup
-- richer end-to-end email/content automations beyond the current MVP pathways
-- full DAW execution validation on a real production worker machine
+1. **Lead Intake** — Form/DM/email → normalized lead → scored reply draft → your approval
+2. **Inbox Triage** — Gmail read-only → classify → reply draft → your approval
+3. **Social/Content Pipeline** — Brief → per-platform captions → your approval
+4. **Session Prep & Audio QC** — Stems → validate → organize → LUFS/peak/phase report
+5. **Mix Planner & Revision Parser** — Client notes → DAW change objects → SoundFlow or ReaScript → your approval → execution
 
-What this means in practice:
-- this repo is past the scaffold stage
-- it is not yet a novice-ready finished product
-- the next phase is productization: onboarding, settings, safer defaults, and broader automation coverage
+Nothing is sent, posted, or executed without your explicit approval. The system fails closed.
+
+---
+
+## Documentation
+
+New to the platform? Start with the [overview](docs/guide/00-overview.md) to understand the mental model, then follow the [quick start](docs/setup/01-quick-start.md) to get running in under 30 minutes.
+
+### User Guide
+
+| Document | What's covered |
+|----------|----------------|
+| [00 — Overview](docs/guide/00-overview.md) | Mental model, two-machine architecture, five modules, approval tiers |
+| [01 — First Run](docs/guide/01-first-run.md) | First-time setup walkthrough, workspace questionnaire |
+| [02 — Daily Operations](docs/guide/02-daily-operations.md) | Morning check, approval queue, monitoring, concierge |
+| [03 — Approval Workflow](docs/guide/03-approval-workflow.md) | Every approval type explained in detail |
+| [04 — Leads & Inbox](docs/guide/04-leads-and-inbox.md) | Lead intake, inbox triage, Gmail connection |
+| [05 — Session & DAW](docs/guide/05-session-and-daw.md) | Session prep, mix planning, style profiles |
+| [06 — Audio QC](docs/guide/06-audio-qc.md) | All six measurements, effort levels, reading reports |
+| [07 — Revisions](docs/guide/07-revisions.md) | Revision notes → execution plans → DAW execution |
+| [08 — Delivery](docs/guide/08-delivery.md) | QC-gated delivery packaging and approval |
+| [09 — Social Content](docs/guide/09-social-content.md) | Content briefs, per-platform captions, asset manifest |
+| [10 — Concierge](docs/guide/10-concierge.md) | Control Room Assistant capabilities and limitations |
+| [11 — Settings & Modules](docs/guide/11-settings-and-modules.md) | All settings, module enable/disable, style profiles |
+| [12 — Integrations](docs/guide/12-integrations.md) | Gmail, Instagram, Facebook, alert webhooks step-by-step |
+| [13 — Troubleshooting](docs/guide/13-troubleshooting.md) | Common failures: symptom → cause → fix |
+
+### Setup & Installation
+
+| Document | What's covered |
+|----------|----------------|
+| [01 — Quick Start](docs/setup/01-quick-start.md) | Single-machine setup in 11 steps |
+| [02 — Split Mode](docs/setup/02-split-mode.md) | Two-machine setup: network, storage, path translation |
+| [03 — Environment Variables](docs/setup/03-environment-variables.md) | Every env var, default, and required status |
+| [04 — Ollama](docs/setup/04-ollama.md) | Local LLM setup, model management, memory tuning |
+| [05 — HTTPS & LAN](docs/setup/05-https-and-lan.md) | Caddy setup, certificate trust, HTTPS URLs |
+| [06 — Worker Setup](docs/setup/06-worker-setup.md) | Studio-worker: Docker vs native, capabilities, DAW paths |
+
+### Reference
+
+| Document | What's covered |
+|----------|----------------|
+| [API Reference](docs/reference/api-reference.md) | Every service endpoint, headers, bodies, responses |
+| [Database Schema](docs/reference/database-schema.md) | Every table, column, constraint, and relationship |
+| [FSM States](docs/reference/fsm-states.md) | Job state machine: all states, transitions, enforcement |
+| [n8n Workflows](docs/reference/n8n-workflows.md) | All 8 starter workflows, webhook URLs, payloads |
+| [Service Map](docs/reference/service-map.md) | All services: port, profile, purpose, endpoints |
+
+### Architecture
+
+| Document | What's covered |
+|----------|----------------|
+| [Safety Model](docs/architecture/safety-model.md) | Why approval-gated, permission tiers, fail-closed design |
+| [Two-Machine Design](docs/architecture/two-machine-design.md) | Why the split exists, how communication works |
+
+---
+
+## Safety Model
+
+No outbound action happens without explicit human approval. This is the architectural foundation, not a safety feature bolted on after the fact.
+
+| Tier | Name | What it can do |
+|------|------|----------------|
+| 1 | Read | Analyze and observe — zero client-facing risk |
+| 2 | Draft | Write to internal queue — zero send risk |
+| 3 | Queue | Request human approval — gated, requires explicit yes |
+| 4 | Narrow Auto | Pre-approved bounded actions — file organization only |
+
+**The system fails closed.** If the approval system is unavailable, no jobs proceed. They don't default-approve. They wait.
+
+---
 
 ## Quick Start
 
 ### Prerequisites
 - Docker Desktop installed and running
-- Minimum 16 GB RAM on the control-plane machine (native Ollama needs substantial memory for the planner model)
-- Shared volume mounted if you are using shared project paths
-- If you want LAN access, set `BIND_HOST=0.0.0.0` in `infra/.env`
+- Minimum 16 GB RAM (Ollama's planner model needs memory — more is better)
+- macOS (the worker requires macOS for DAW execution; the control plane runs anywhere Docker runs)
 
 ### First-time setup
 
 ```bash
-# 1. Clone and enter the repo
-git clone <repo-url> studio-ai-platform
-cd studio-ai-platform
+# 1. Clone
+git clone <repo-url> ai-audio-studio
+cd ai-audio-studio
 
 # 2. Configure environment
 cp infra/env.example infra/.env
-# Edit infra/.env and fill in all required values
+# Edit infra/.env — fill in POSTGRES_PASSWORD, API keys, and machine-specific paths
 
-# 3. Start native Ollama and pull the required models
-export OLLAMA_MAX_LOADED_MODELS=1
-export OLLAMA_KEEP_ALIVE=30m
+# 3. Start Ollama (native — not Docker)
 bash scripts/start-ollama.sh
 
-# 4. Start the control plane on the local machine
+# 4. Start the control plane
 docker compose --env-file infra/.env -f infra/docker-compose.yml up -d
 
-# 5. First-time only: import the starter n8n workflows
-# This runs once against the live n8n service and safely skips if workflows already exist.
+# 5. Import n8n starter workflows (one-time, idempotent)
 bash scripts/bootstrap_n8n.sh infra/.env
 
-# 6. Optional: start the studio worker on a second machine
-docker compose --env-file infra/.env -f infra/docker-compose.worker.yml up -d
-
-# 7. Verify all services healthy
-docker compose --env-file infra/.env -f infra/docker-compose.yml ps
+# 6. Open the dashboard
+open http://localhost:3000
 ```
 
-Then open the control room and complete the first-run workspace questionnaire. It now persists:
-- studio identity
-- deployment mode
-- shared paths
-- operator identity
-- style/tone seed
-- alert destinations
-- optional worker settings
+Complete the first-run workspace questionnaire, then follow [01 — First Run](docs/setup/01-quick-start.md) for the full walkthrough.
 
-For the full DAW-capable stack, add the `daw` profile when starting Compose:
-
+For DAW modules (audio-qc, session-prep, revision-parser, delivery-packager, mix-planner):
 ```bash
 docker compose --profile daw --env-file infra/.env -f infra/docker-compose.yml up -d
 ```
 
-That profile includes `audio-qc`, `session-prep`, `revision-parser`, `delivery-packager`, and `mix-planner`.
-
-Network access posture:
-- Fastest access: `http://<control-plane-ip>:3000`
-- Preferred operator URL after hostname setup: `https://$CONTROL_PLANE_HOST`
-- Engineering/admin fallbacks remain available on direct ports such as `:5678`, `:8080`, `:8090`, and `:8100`
+For a second studio Mac as the execution worker:
+```bash
+# On the worker machine
+docker compose --env-file infra/.env -f infra/docker-compose.worker.yml up -d
+```
 
 ### Verify health
 
 ```bash
-curl http://localhost:5678/healthz          # n8n
-curl http://localhost:8080/health           # project-state
-curl http://localhost:8090/health           # crm-api
-curl http://localhost:8100/health           # openclaw
-curl http://localhost:11434/api/tags        # ollama (lists loaded models)
-open http://localhost:3000                  # studio-brain-ui
-open http://localhost:5678                  # n8n workflow editor
-
-# If BIND_HOST=0.0.0.0, access from another machine with:
-# http://<control-plane-ip>:3000
+curl http://localhost:8080/health    # project-state
+curl http://localhost:8090/health    # crm-api
+curl http://localhost:8100/health    # openclaw
+curl http://localhost:11434/api/tags # ollama (lists loaded models)
+open http://localhost:3000           # dashboard
 ```
 
-`single_machine` mode does not require `docker-compose.worker.yml`; the worker file is only for `control_plane_plus_worker` deployments.
+---
 
-For `control_plane_plus_worker` deployments:
-- keep `WORKER_API_BASE_URL` set to the worker machine's LAN URL, not loopback
-- keep `BIND_HOST=0.0.0.0` on the worker if the control plane must reach it over the LAN
-- mount shared storage before boot or configure `PATH_TRANSLATION_JSON`
-- see [docs/runbooks/studio-worker.md](docs/runbooks/studio-worker.md)
+## Architecture
 
-HTTPS front door:
-The main Compose stack now serves the dashboard at `https://$CONTROL_PLANE_HOST` through Caddy with an internal LAN certificate.
-Export the Caddy root certificate with `bash scripts/export_caddy_root_cert.sh infra/.env` and trust it on operator devices for clean HTTPS access.
-The stack also exposes `https://n8n.$CONTROL_PLANE_HOST` and `https://openclaw.$CONTROL_PLANE_HOST`.
+### Deployment modes
 
-Recommended access sequence:
-1. Bring the stack up with `BIND_HOST=0.0.0.0`.
-2. Verify the dashboard by IP at `http://<control-plane-ip>:3000`.
-3. Trust the bundled HTTPS front door.
-4. Point `CONTROL_PLANE_HOST` at that same machine in local DNS or `/etc/hosts`.
-5. Trust the exported Caddy root certificate on operator Macs.
-6. Move daily operator use to `https://$CONTROL_PLANE_HOST`.
+**`single_machine`** — one Mac runs everything. Use `--profile local-worker` if you want bounded DAW tasks to execute locally.
 
-Optional local worker on the same Mac:
-```bash
-docker compose --profile local-worker --env-file infra/.env -f infra/docker-compose.yml up -d
+**`control_plane_plus_worker`** — Mac mini runs the control plane, Mac Pro (or any second Mac) runs the studio-worker for DAW execution.
+
+### Service layout
+
 ```
-Use this when one Mac should also execute bounded worker tasks locally. Keep `infra/docker-compose.worker.yml` for the separate studio-Mac deployment.
+CONTROL PLANE
+  postgres       :5432   Shared database (internal)
+  n8n            :5678   Webhook automation
+  project-state  :8080   Job FSM, approval queue, audit log
+  crm-api        :8090   Leads, projects, style profiles, settings
+  openclaw       :8100   Orchestration + routing
+  caddy          :80/443 HTTPS front door
 
-The Compose project is intentionally named `ai-audio-studio` so Docker Desktop shows the product name instead of the `infra/` folder.
+AUTOMATION MODULES
+  content-pipeline :8110  Social captions
+  audio-qc         :8120  Loudness, peak, phase (--profile daw)
+  lead-intake      :8130  Lead normalization
+  inbox-triage     :8140  Gmail triage
+  session-prep     :8150  Stem validation (--profile daw)
+  revision-parser  :8160  Notes → DAW ops (--profile daw)
+  delivery-packager :8170 Delivery assembly (--profile daw)
+  mix-planner      :8180  Mix planning (--profile daw)
 
-### Headless Validation
+WORKER (separate machine or --profile local-worker)
+  studio-worker  :8190   File and DAW execution agent
 
-```bash
-python3 -m pip install -r requirements-test.txt
-bash scripts/preflight_env.sh infra/.env
-bash scripts/validate_stack.sh infra/env.example
+AI RUNTIME (native macOS — not Docker)
+  ollama         :11434  Local LLM (qwen2.5:14b + qwen2.5:3b)
 ```
 
-Current validation is headless and MVP-oriented:
-- unit and API tests
-- Python syntax compilation
-- Docker Compose config resolution
-- control-plane health checks
-- database migration bootstrap
-- Studio Brain UI source completeness checks
-- targeted runtime smoke checks for bootstrap, dashboard, and control-plane services
-- the API tests import-skip if `requirements-test.txt` has not been installed in the active environment
+### Network access
 
-Host-native worker persistence uses launchd; see [docs/runbooks/studio-worker.md](docs/runbooks/studio-worker.md) and the plist template in `scripts/com.ai-audio-studio.studio-worker.plist`.
+- LAN IP access: `http://<control-plane-ip>:3000` (set `BIND_HOST=0.0.0.0`)
+- HTTPS (after certificate trust): `https://$CONTROL_PLANE_HOST`
+- n8n: `https://n8n.$CONTROL_PLANE_HOST`
+- OpenClaw: `https://openclaw.$CONTROL_PLANE_HOST`
 
-## Service Map
-
-| Service | Port | Purpose |
-|---------|------|---------|
-| `studio-brain-ui` | 3000 | Operator dashboard and API proxy |
-| `n8n` | 5678 | Workflow automation and webhooks |
-| `project-state` | 8080 | Job state, approval queue, audit log |
-| `crm-api` | 8090 | Lead and project records |
-| `openclaw` | 8100 | Orchestration engine |
-| `content-pipeline` | 8110 | Social caption drafting |
-| `audio-qc` | 8120 | Loudness, peak, phase validation |
-| `lead-intake` | 8130 | Lead normalization and draft replies |
-| `inbox-triage` | 8140 | Gmail read-only classification |
-| `session-prep` | 8150 | Stem validation and session organization |
-| `revision-parser` | 8160 | Natural language → DAW change objects |
-| `delivery-packager` | 8170 | QC-gated delivery bundle assembly |
-| `studio-worker` | 8190 | Optional remote studio Mac task agent |
-| `ollama` | 11434 | Local LLM serving |
-| `postgres` | 5432 | Shared database (internal only) |
-
-## Implementation Status
-
-Implemented or partially implemented:
-- `project-state` API, schema, FSM, approval routes, audit restrictions
-- `project-state` worker registry and remote task queue
-- `crm-api` style-profile ingestion for pasted text and file-backed references
-- `openclaw` policy helper plus DB-backed orchestration rules and rule packs
-- `openclaw` starter playbooks for prebuilt operator automations
-- seeded n8n workflow templates under `infra/n8n/workflows/`
-- one-shot n8n bootstrap helper at `scripts/bootstrap_n8n.sh` with idempotent existing-workflow detection
-- effort-level gating helper
-- audio QC threshold presets
-- Docker service graph and prompt/task scaffolding
-- studio worker service for optional remote file-task execution
-- `local-worker` Docker profile for single-Mac execution
-- operator dashboard with live health, approvals, style profiles, worker state, and rule-pack visibility
-- persisted `workspace-settings` and first-run questionnaire for studio identity, paths, tone, alerts, and worker posture
-- persisted module settings and per-service `/status` surfaces for the core automation and production modules
-- LAN and HTTPS operator access paths
-- idempotent n8n bootstrap status surfaced through OpenClaw and the dashboard
-- migration runner plus startup guard for required runtime schema
-- service drilldowns in the control room with live status snapshots and saved tuning summaries
-- live assistant endpoint in OpenClaw with honest fallback mode when the larger model is unavailable
-
-Still incomplete:
-- complete operator-safe settings coverage for every service/module
-- full novice-friendly first-run flow without `.env` editing beyond secrets and machine-local wiring
-- full OpenClaw execution depth against all email/content modules
-- richer style-profile extraction and per-client/per-project context layering
-- audio QC remote execution and DAW automation hooks validated against a real worker machine
-- end-to-end inbound automations beyond the seeded workflow templates
-- outbound alerts and escalation connectors
-
-## Five Core Modules
-
-1. **Lead Intake** — Form/DM/email → normalized lead → draft reply → approval queue
-2. **Inbox Triage** — Gmail read-only → classify → draft response → approval queue
-3. **Social/Content Pipeline** — Brief → draft captions → asset packaging → approval queue
-4. **Session Prep & Audio QC** — Stems → validate → organize → LUFS/peak/phase report
-5. **Mix Planner & Revision Parser** — Notes → parameterized changes → SoundFlow/ReaScript
-
-## New Control-Plane Primitives
-
-- **Style Profiles**: paste tone guidance, point at reference files, or combine both through `crm-api /style-profiles`
-- **Workspace Settings**: the first-run questionnaire now persists studio identity, path defaults, tone seed, alerts, and optional worker posture through `crm-api /workspace-settings`
-- **Orchestration Rules**: curated defaults auto-seed on startup and grouped rule packs list at `openclaw /rule-packs`
-- **Starter Automations**: inspect prebuilt routing surfaces through `openclaw /playbooks`
-- **Studio Worker Queue**: enqueue bounded remote tasks in `project-state /workers/tasks`
-- **Studio Worker Agent**: run `infra/docker-compose.worker.yml` for a second Mac or `--profile local-worker` when one Mac should execute locally
-- **Auto-seeded defaults**: CRM seeds a baseline studio tone profile and OpenClaw seeds email/content routing rules on startup
-- **n8n Workflow Pack**: import the supplied webhook templates from `infra/n8n/workflows/` instead of building first-pass flows from scratch
-
-## Safety Model
-
-All AI actions require explicit human approval before anything is sent or executed:
-
-| Tier | What it can do | Examples |
-|------|---------------|---------|
-| 1 (Read) | Read files and state | File watching, inbox reading |
-| 2 (Draft) | Write drafts to queue | Email drafts, social captions |
-| 3 (Queue) | Add to approval queue | Lead responses, revision plans |
-| 4 (Narrow Auto) | Pre-approved bounded actions | File organization, session prep |
-
-**The system fails closed.** Missing approval → action blocked, never proceeds.
+---
 
 ## Development
 
@@ -258,65 +202,49 @@ All AI actions require explicit human approval before anything is sent or execut
 docker compose -f infra/docker-compose.yml run --rm project-state pytest
 docker compose -f infra/docker-compose.yml run --rm audio-qc pytest
 
-# Headless repo validation from the host
+# Headless validation
 bash scripts/validate_stack.sh infra/env.example
 
 # View logs
 docker compose -f infra/docker-compose.yml logs -f openclaw
 
-# Restart a single service
+# Restart a service
 docker compose -f infra/docker-compose.yml restart project-state
 
-# Apply DB migrations (idempotent)
+# Apply DB migrations
 docker compose -f infra/docker-compose.yml exec postgres \
   psql -U studio -d studiodb -f /docker-entrypoint-initdb.d/init.sql
 ```
 
-## Deployment Modes
+Task files in `tasks/` define the implementation sequence for AI agents. Each file contains purpose, dependencies, file list, input/output contracts, security constraints, and acceptance tests.
 
-Use `single_machine` when one Mac should do everything locally:
-- Start `infra/docker-compose.yml`
-- Add `--profile local-worker` if you want bounded DAW-adjacent tasks to execute on the same machine
-- Keep all tasks on the local machine unless you explicitly need a second node
+---
 
-Use `control_plane_plus_worker` when you want a dedicated worker Mac:
-- Start `infra/docker-compose.yml` on the control-plane machine
-- Start `infra/docker-compose.worker.yml` on the worker machine
-- Point `MAC_MINI_BASE_URL` at the control-plane host and share the same project paths
+## Implementation Status
 
-Use `infra/docker-compose.edge.yml` when you want HTTPS on a single front door for the dashboard.
+**Solid today:**
+- Control plane starts cleanly under Docker Compose
+- Dashboard surfaces health, approvals, workers, rules, alerts, and bootstrap state
+- `project-state` persists jobs, approvals, audit records, worker nodes, and tasks
+- `crm-api` persists projects, leads, and style profiles
+- `openclaw` seeds default orchestration rules, rule packs, and playbooks
+- n8n workflows import with a one-shot bootstrap script
+- Single-machine and split-machine deployment both functional
+- Control Room Assistant backed by live stack context and Ollama
+- Persisted workspace settings, module settings, and style profiles
 
-For novice-friendly operations:
-- Use `https://$CONTROL_PLANE_HOST` as the main dashboard entrypoint.
-- Use `http://<control-plane-ip>:3000` as the immediate LAN fallback before hostname/TLS trust is complete.
-- Keep Docker Desktop filtered by the `ai-audio-studio` project name.
-- Use the seeded rule packs and supplied n8n workflow templates before creating custom automation.
-- Expect a dedicated onboarding/settings flow to replace part of the current env-driven setup over the next milestones.
-- Keep the `daw` profile off unless you want the DAW-oriented services (`audio-qc`, `session-prep`, `revision-parser`, `delivery-packager`, `mix-planner`) started.
-- Use the legacy cutover checklist before retiring any older automation host or dashboard.
+**Still being built:**
+- Novice-friendly first-run flow that doesn't require env file editing for normal setup
+- Full operator-safe settings coverage for all services
+- End-to-end automations beyond current MVP pathways
+- Full DAW execution validation on production hardware
+- Outbound alert connectors beyond the webhook URL
 
-## Task Files
+---
 
-Numbered task files in `tasks/` define the implementation sequence for AI agents:
+## Older Runbooks
 
-```
-tasks/001-bootstrap-stack.md      ← Start here
-tasks/010-lead-intake.md
-tasks/020-inbox-draft-queue.md
-tasks/030-social-draft-pipeline.md
-tasks/040-project-state-service.md
-tasks/050-session-prep.md
-tasks/060-audio-qc.md
-tasks/070-revision-parser.md
-tasks/080-policy-guardrails.md
-```
-
-Each task file contains: purpose, dependencies, file list, input/output contracts, security constraints, and acceptance tests.
-
-## Docs
-
-- `docs/architecture/` — ADRs, system diagrams, prompt contracts
-- `docs/runbooks/` — Operator procedures and safety checklists
-- [docs/runbooks/local-network.md](docs/runbooks/local-network.md) — LAN and HTTPS setup
-- [docs/runbooks/legacy-cutover.md](docs/runbooks/legacy-cutover.md) — retiring legacy infra cleanly
-- [docs/runbooks/n8n-bootstrap.md](docs/runbooks/n8n-bootstrap.md) — importable workflow templates
+Legacy operational documents still in `docs/runbooks/`:
+- [docs/runbooks/local-network.md](docs/runbooks/local-network.md) — early LAN setup notes
+- [docs/runbooks/legacy-cutover.md](docs/runbooks/legacy-cutover.md) — retiring legacy infra
+- [docs/runbooks/studio-worker.md](docs/runbooks/studio-worker.md) — original worker setup notes
