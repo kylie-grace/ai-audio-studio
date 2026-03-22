@@ -731,6 +731,13 @@ type ConciergeTurn = {
   actions?: Array<{ id: ConciergeActionId; label: string }>;
 };
 
+type ConciergeResponse = {
+  status: string;
+  mode: "llm" | "fallback";
+  reply: string;
+  actions: Array<{ id: ConciergeActionId; label: string }>;
+};
+
 const browserHost = window.location.hostname || "localhost";
 const browserProtocol = window.location.protocol || "http:";
 const frontDoorUrl = `${browserProtocol}//${window.location.host}`;
@@ -1626,7 +1633,7 @@ export function App() {
   const [conciergeTurns, setConciergeTurns] = useState<ConciergeTurn[]>([
     {
       role: "assistant",
-      text: "Ask what is blocked, what still needs setup, or tell me to run safe operator actions like worker smoke, drain worker, test alerts, or open the right control surface.",
+      text: "Ask about setup, project status, shared storage, approvals, or runtime issues. This assistant uses live control-room state and falls back to explicit setup guidance if Ollama is unavailable.",
       actions: [
         { id: "run-worker-smoke", label: "Run worker smoke" },
         { id: "goto-settings", label: "Review setup" },
@@ -1634,8 +1641,10 @@ export function App() {
       ],
     },
   ]);
+  const [conciergeMode, setConciergeMode] = useState<"llm" | "fallback">("llm");
   const [conciergePending, setConciergePending] = useState(false);
   const [conciergeError, setConciergeError] = useState<string | null>(null);
+  const [auditFilter, setAuditFilter] = useState("");
   const [artifactActionMessage, setArtifactActionMessage] = useState<string | null>(null);
   const [artifactActionError, setArtifactActionError] = useState<string | null>(null);
   const [artifactPreview, setArtifactPreview] = useState<ArtifactPreview | null>(null);
@@ -1726,6 +1735,14 @@ export function App() {
   const selectedServiceProxyUrl = selectedService ? `${frontDoorUrl}${serviceProxyBase[selectedService.key] ?? ""}` : frontDoorUrl;
   const visibleApprovals = data.approvals.slice(0, 8);
   const visibleRules = data.rules.slice(0, 10);
+  const normalizedAuditFilter = auditFilter.trim().toLowerCase();
+  const filteredAuditLog = data.auditLog.filter((entry) => {
+    if (!normalizedAuditFilter) return true;
+    return [entry.action, entry.actor, entry.project_id ?? "", entry.job_id ?? "", entry.created_at]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedAuditFilter);
+  });
   const latestStyleProfile = data.styleProfiles[0] ?? null;
   const voicePreview = studioVoicePreview(workspaceSettings, latestStyleProfile);
   const deliveryHistory = buildDeliveryHistory(projectDetail);
@@ -2100,7 +2117,7 @@ export function App() {
     }
   }
 
-  function buildConciergeReply(message: string): ConciergeTurn {
+  function buildFallbackConciergeReply(message: string): ConciergeTurn {
     const lower = message.trim().toLowerCase();
     const pendingConnections = connectionCenter.filter((item) => item.status !== "ready");
     const topPending = pendingConnections[0];
@@ -2111,7 +2128,7 @@ export function App() {
     if (/(hello|hi|hey|status|what's up|whats up)/.test(lower)) {
       return {
         role: "assistant",
-        text: `The control plane is ${data.loadState}, ${healthyCount}/${data.services.length} services are healthy, ${activeAlertCount} live alert thresholds are active, and ${pendingConnections.length} connection areas still need attention.`,
+        text: `The assistant backend is unavailable, so this is local fallback guidance. The control plane is ${data.loadState}, ${healthyCount}/${data.services.length} services are healthy, ${activeAlertCount} live alert thresholds are active, and ${pendingConnections.length} connection areas still need attention.`,
         actions: [
           { id: "refresh", label: "Refresh" },
           { id: "goto-operations", label: "Open operations" },
@@ -2122,7 +2139,7 @@ export function App() {
     if (/(missing|gap|left|remain|roadmap|unfinished|feature)/.test(lower)) {
       return {
         role: "assistant",
-        text: `The main remaining product gaps are ${remainingBuildGaps
+        text: `The assistant backend is unavailable, so this is local fallback guidance. The main remaining product gaps are ${remainingBuildGaps
           .filter((item) => item.state !== "ready")
           .map((item) => item.title)
           .join(", ")}. The first connection that still needs direct setup is ${topPending?.name ?? "none right now"}.`,
@@ -2135,7 +2152,7 @@ export function App() {
     if (/(script|scripting|soundflow|pro tools|wavelab|reascript|reaper)/.test(lower)) {
       return {
         role: "assistant",
-        text: `The remaining scripting work is mostly live-runtime proof: SoundFlow and Pro Tools still need a real workstation validation pass, WaveLab remains a documented mastering bridge without live proof, and Windows DAW runtime still needs a real workstation. Reaper-first execution and bounded dry-run rehearsal are already in place.`,
+        text: "The assistant backend is unavailable, so this is local fallback guidance. The remaining scripting work is mostly live-runtime proof: SoundFlow and Pro Tools still need a real workstation validation pass, WaveLab remains a documented mastering bridge without live proof, and Windows DAW runtime still needs a real workstation. Reaper-first execution and bounded dry-run rehearsal are already in place.",
         actions: [
           { id: "run-worker-smoke", label: "Run worker smoke" },
           { id: "goto-context", label: "Review projects and artifacts" },
@@ -2150,7 +2167,7 @@ export function App() {
       return {
         role: "assistant",
         text: matching
-          ? `${matching.name} is ${matching.status}. ${matching.detail} Next: ${matching.steps.slice(0, 2).join(" ")}`
+          ? `The assistant backend is unavailable, so this is local fallback guidance. ${matching.name} is ${matching.status}. ${matching.detail} Next: ${matching.steps.slice(0, 2).join(" ")}`
           : "The connection center can guide front door, n8n, Gmail, social, and worker setup.",
         actions: [
           { id: "goto-settings", label: "Open connection center" },
@@ -2161,21 +2178,21 @@ export function App() {
     if (/(smoke|validate worker|validate setup|dry run)/.test(lower)) {
       return {
         role: "assistant",
-        text: "The safest next step is the workstation dry-run smoke. It rehearses manifest, mix, listening, render, and execution planning against a disposable session without touching a real project.",
+        text: "The assistant backend is unavailable, so this is local fallback guidance. The safest next step is the workstation dry-run smoke. It rehearses manifest, mix, listening, render, and execution planning against a disposable session without touching a real project.",
         actions: [{ id: "run-worker-smoke", label: "Run worker smoke" }],
       };
     }
     if (/(drain|pause worker|maintenance)/.test(lower)) {
       return {
         role: "assistant",
-        text: "Use drain before maintenance so the worker stops claiming new tasks without killing in-flight process state.",
+        text: "The assistant backend is unavailable, so this is local fallback guidance. Use drain before maintenance so the worker stops claiming new tasks without killing in-flight process state.",
         actions: [{ id: workstationRuntime?.runtime.drain_requested ? "resume-worker" : "drain-worker", label: workstationRuntime?.runtime.drain_requested ? "Resume worker" : "Drain worker" }],
       };
     }
     if (/(alert|test alert|notify)/.test(lower)) {
       return {
         role: "assistant",
-        text: `There are ${activeAlertCount} active runtime alerts. You can send a test alert now or jump to Operations to inspect the live alert feed.`,
+        text: `The assistant backend is unavailable, so this is local fallback guidance. There are ${activeAlertCount} active runtime alerts. You can send a test alert now or jump to Operations to inspect the live alert feed.`,
         actions: [
           { id: "test-alerts", label: "Send test alert" },
           { id: "goto-operations", label: "Open operations" },
@@ -2185,7 +2202,7 @@ export function App() {
     if (/(project|artifact|context|style|rag|knowledge|share|storage)/.test(lower)) {
       return {
         role: "assistant",
-        text: `The concierge is storage-aware through the live control-room state: shared project and delivery paths, style source files, projects, leads, review artifacts, and worker posture. The next step for deeper RAG is indexing shared files and artifact text into a dedicated retrieval store, but the current assistant already reasons over the known workspace context.`,
+        text: "The assistant backend is unavailable, so this is local fallback guidance. The control room is storage-aware through shared paths, style source files, projects, leads, review artifacts, and worker posture. The next step for deeper RAG is indexing shared files and artifact text into a retrieval store.",
         actions: [
           { id: "goto-context", label: "Open context" },
           { id: "goto-settings", label: "Review shared paths" },
@@ -2195,7 +2212,7 @@ export function App() {
     if (/(delivery|deliverable|render history|package)/.test(lower)) {
       return {
         role: "assistant",
-        text: `Delivery history is now surfaced from the project review stack. I can guide you to the project detail view where review renders, manifests, and package artifacts are previewable and downloadable from the same control surface.`,
+        text: "The assistant backend is unavailable, so this is local fallback guidance. Delivery history is surfaced from the project review stack. Use Context to review renders, manifests, and delivery artifacts from one control surface.",
         actions: [
           { id: "goto-context", label: "Open project review" },
           { id: "goto-operations", label: "Open live ops" },
@@ -2204,7 +2221,7 @@ export function App() {
     }
     return {
       role: "assistant",
-      text: `I can help with setup, integrations, workers, alerts, approvals, automation posture, and what is still missing. Right now the most useful next action is ${topPending ? `to work through ${topPending.name}` : "to review Operations for live state"}.`,
+      text: `The assistant backend is unavailable, so this is local fallback guidance. I can still point you to setup, integrations, workers, alerts, approvals, automation posture, and what is still missing. Right now the most useful next action is ${topPending ? `to work through ${topPending.name}` : "to review Operations for live state"}.`,
       actions: [
         { id: "goto-settings", label: "Open settings" },
         { id: "goto-operations", label: "Open operations" },
@@ -2219,10 +2236,25 @@ export function App() {
     setConciergeError(null);
     setConciergeTurns((current) => [...current, { role: "user", text }]);
     try {
-      const reply = buildConciergeReply(text);
-      setConciergeTurns((current) => [...current, reply]);
+      const response = await fetch(`${API.openclaw}/concierge/respond`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ message: text }),
+      });
+      if (!response.ok) {
+        throw new Error(`concierge returned ${response.status}`);
+      }
+      const payload = (await response.json()) as ConciergeResponse;
+      setConciergeMode(payload.mode ?? "fallback");
+      setConciergeTurns((current) => [...current, { role: "assistant", text: payload.reply, actions: payload.actions }]);
       setConciergeInput("");
     } catch (error) {
+      setConciergeMode("fallback");
+      const reply = buildFallbackConciergeReply(text);
+      setConciergeTurns((current) => [...current, reply]);
       setConciergeError(error instanceof Error ? error.message : "Unable to generate concierge response.");
     } finally {
       setConciergePending(false);
@@ -2793,21 +2825,21 @@ export function App() {
       detail: "Mix planner is online and ready for future live plan snapshots in the control room.",
     },
   ];
-  const dawFoundationPlaceholders = [
+  const dawReviewSurfaceCards = [
     {
-      title: "Session Manifest",
-      state: data.services.some((service) => service.key === "session-prep" && service.state === "healthy") ? "placeholder-ready" : "blocked",
-      detail: "Surface stem counts, prep issues, session paths, and prep report links from session-prep here.",
+      title: "Session Prep Reports",
+      state: data.services.some((service) => service.key === "session-prep" && service.state === "healthy") ? "ready" : "watch",
+      detail: "Session manifests and prep artifacts are available in Context once a project has been prepared or selected for review.",
     },
     {
-      title: "Mix Plan",
-      state: data.services.some((service) => service.key === "mix-planner" && service.state === "healthy") ? "placeholder-ready" : "blocked",
-      detail: "Expose current mix priorities, focus areas, and project planning notes once the mix-plan API is wired to the dashboard.",
+      title: "Mix Planning",
+      state: data.services.some((service) => service.key === "mix-planner" && service.state === "healthy") ? "ready" : "watch",
+      detail: "Mix-plan previews, execution warnings, and revision intent are already surfaced through worker previews and project review.",
     },
     {
-      title: "Listening Reports",
-      state: data.services.some((service) => service.key === "audio-qc" && service.state === "healthy") ? "placeholder-ready" : "blocked",
-      detail: "Reserve this panel for QC summaries, listening notes, and client-facing review artifacts.",
+      title: "Listening + QC Review",
+      state: data.services.some((service) => service.key === "audio-qc" && service.state === "healthy") ? "ready" : "watch",
+      detail: "Listening reports, render reviews, and QC summaries are persisted in project review as soon as they are generated or saved.",
     },
   ];
   const workflowPlaybooks: Array<{
@@ -2965,12 +2997,15 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <p className="section-kicker">Concierge</p>
-                  <h2>Control Room Chat</h2>
+                  <h2>Control Room Assistant</h2>
                 </div>
-                <span className="count-pill">{conciergeTurns.length} turns</span>
+                <div className="header-actions">
+                  <span className={`status-pill ${conciergeMode === "llm" ? "ok" : "warn"}`}>{conciergeMode === "llm" ? "llm live" : "fallback mode"}</span>
+                  <span className="count-pill">{conciergeTurns.length} turns</span>
+                </div>
               </div>
               <p className="panel-note">
-                Ask about setup, missing features, shared storage posture, integrations, approvals, or tell the control room to run safe actions.
+                Ask about setup, missing features, shared storage posture, integrations, approvals, or project state. Replies come from live control-room context and Ollama when available.
               </p>
               <div className="table-stack top-gap">
                 {conciergeTurns.slice(-6).map((turn, index) => (
@@ -3022,9 +3057,9 @@ export function App() {
                 </div>
                 <span className="status-pill warn">{remainingBuildGaps.filter((item) => item.state !== "ready").length} open</span>
               </div>
-              <div className="placeholder-grid">
+              <div className="status-grid">
                 {remainingBuildGaps.map((item) => (
-                  <div key={item.title} className={`mini-card placeholder-card ${item.state === "ready" ? "placeholder-ready" : item.state === "watch" ? "placeholder-ready" : "blocked"}`}>
+                  <div key={item.title} className={`mini-card status-card ${item.state === "ready" ? "ready" : item.state === "watch" ? "ready" : "blocked"}`}>
                     <div className="workflow-header">
                       <span className="metric-label">{item.title}</span>
                       <span className={`status-pill ${item.state === "ready" ? "ok" : "warn"}`}>{item.state === "ready" ? "ready" : item.state}</span>
@@ -3159,16 +3194,16 @@ export function App() {
                   <div className="panel-header compact-header">
                     <div>
                       <span className="metric-label">Production Coverage</span>
-                      <strong>DAW review surfaces</strong>
+                      <strong>Review surfaces</strong>
                     </div>
                   </div>
-                  <div className="placeholder-grid">
-                    {dawFoundationPlaceholders.map((item) => (
-                      <div key={item.title} className={`mini-card placeholder-card ${item.state}`}>
+                  <div className="status-grid">
+                    {dawReviewSurfaceCards.map((item) => (
+                      <div key={item.title} className={`mini-card status-card ${item.state}`}>
                         <div className="workflow-header">
                           <span className="metric-label">{item.title}</span>
-                          <span className={`status-pill ${item.state === "placeholder-ready" ? "ok" : "warn"}`}>
-                            {item.state === "placeholder-ready" ? "ready to wire" : "blocked"}
+                          <span className={`status-pill ${item.state === "ready" ? "ok" : "warn"}`}>
+                            {item.state === "ready" ? "live" : "watch"}
                           </span>
                         </div>
                         <strong>{item.title}</strong>
@@ -4353,11 +4388,18 @@ export function App() {
                   <p className="section-kicker">Audit</p>
                   <h2>Recent Activity</h2>
                 </div>
-                <span className="count-pill">{data.auditLog.length}</span>
+                <div className="header-actions">
+                  <input
+                    value={auditFilter}
+                    onChange={(event) => setAuditFilter(event.target.value)}
+                    placeholder="filter actor, action, project, or job"
+                  />
+                  <span className="count-pill">{filteredAuditLog.length}</span>
+                </div>
               </div>
               <div className="table-stack">
-                {data.auditLog.length ? (
-                  data.auditLog.map((entry) => (
+                {filteredAuditLog.length ? (
+                  filteredAuditLog.map((entry) => (
                     <div key={`${entry.id ?? entry.created_at}-${entry.action}`} className="table-row">
                       <div className="row-main">
                         <strong>{entry.action}</strong>
@@ -4371,7 +4413,7 @@ export function App() {
                     </div>
                   ))
                 ) : (
-                  <p className="empty-state">No recent audit activity is available yet.</p>
+                  <p className="empty-state">{data.auditLog.length ? "No audit entries match the current filter." : "No recent audit activity is available yet."}</p>
                 )}
               </div>
             </article>

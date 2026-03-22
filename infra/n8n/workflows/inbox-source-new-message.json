@@ -1,6 +1,7 @@
 {
   "name": "Inbox Source New Message",
-  "active": false,
+  "id": "starter-inbox-source-new-message",
+  "active": true,
   "nodes": [
     {
       "parameters": {

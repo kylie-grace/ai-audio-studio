@@ -16,10 +16,23 @@ required_vars=(
   N8N_PASSWORD
 )
 
+path_vars=(
+  SHARED_PROJECTS_PATH
+  DELIVERY_PATH
+)
+
 for key in "${required_vars[@]}"; do
   value="$(grep -E "^${key}=" "${ENV_FILE}" | tail -n 1 | cut -d= -f2- || true)"
   if [[ -z "${value}" ]]; then
     echo "Required env var ${key} is missing or empty in ${ENV_FILE}" >&2
+    exit 1
+  fi
+done
+
+for key in "${path_vars[@]}"; do
+  value="$(grep -E "^${key}=" "${ENV_FILE}" | tail -n 1 | cut -d= -f2- || true)"
+  if [[ -n "${value}" && "${value}" = /* && ! -d "${value}" ]]; then
+    echo "Configured path ${key} does not exist on this host: ${value}" >&2
     exit 1
   fi
 done

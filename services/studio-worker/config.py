@@ -7,9 +7,11 @@ import socket
 from dataclasses import dataclass
 import json
 import platform
+import tempfile
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
+from urllib.parse import urlparse
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,10 @@ class Settings:
     soundflow_cli_path: str | None
     wavelab_app_path: str | None
     workstation_profile: dict
+
+
+class StartupValidationError(RuntimeError):
+    """Raised when the studio worker cannot safely start."""
 
 
 def _workspace_settings_url() -> str | None:
@@ -109,6 +115,109 @@ def _bool_or_default(value, default: bool) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return default
+
+
+def _valid_http_url(value: str | None) -> bool:
+    if not value:
+        return False
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _path_access_report(path_text: str) -> dict:
+    path = Path(path_text)
+    report = {
+        "path": path_text,
+        "exists": path.exists(),
+        "readable": False,
+        "writable": False,
+        "write_tested": False,
+        "detail": path_text,
+    }
+    if not path.exists():
+        report["detail"] = f"{path_text} does not exist"
+        return report
+    report["readable"] = os.access(path, os.R_OK)
+    report["writable"] = os.access(path, os.W_OK)
+    if path.is_dir() and report["writable"]:
+        try:
+            with tempfile.NamedTemporaryFile(prefix=".studio-worker-check-", dir=path, delete=False) as handle:
+                handle.write(b"ok\n")
+                temp_path = Path(handle.name)
+            temp_path.unlink()
+            report["write_tested"] = True
+        except OSError as exc:
+            report["writable"] = False
+            report["detail"] = f"{path_text} is not writable: {exc}"
+            return report
+    report["detail"] = f"{path_text} readable={report['readable']} writable={report['writable']}"
+    return report
+
+
+def validate_startup(settings: Settings) -> dict:
+    errors: list[str] = []
+    warnings: list[str] = []
+    checks: list[dict] = []
+    worker_slug = str(getattr(settings, "worker_slug", "") or "").strip()
+    project_state_url = str(getattr(settings, "project_state_url", "") or "").strip()
+    worker_api_base_url = str(getattr(settings, "worker_api_base_url", "") or "").strip()
+    capabilities = list(getattr(settings, "capabilities", []) or [])
+    dry_run_daw = bool(getattr(settings, "dry_run_daw", False))
+    worker_platform = str(getattr(settings, "worker_platform", "") or "")
+    reaper_binary_path = getattr(settings, "reaper_binary_path", None)
+    protools_app_path = getattr(settings, "protools_app_path", None)
+    soundflow_cli_path = getattr(settings, "soundflow_cli_path", None)
+    wavelab_app_path = getattr(settings, "wavelab_app_path", None)
+
+    if not worker_slug:
+        errors.append("WORKER_SLUG must not be empty")
+    if not _valid_http_url(project_state_url):
+        errors.append(f"PROJECT_STATE_URL is invalid: {project_state_url}")
+    if worker_api_base_url and not _valid_http_url(worker_api_base_url):
+        errors.append(f"WORKER_API_BASE_URL is invalid: {worker_api_base_url}")
+
+    for slug, path_text in {
+        "shared-projects": settings.shared_projects_path,
+        "deliveries": settings.delivery_path,
+    }.items():
+        report = _path_access_report(path_text)
+        checks.append({"slug": slug, **report})
+        if not report["exists"] or not report["readable"] or not report["writable"]:
+            errors.append(f"{slug} path is not fully accessible: {report['detail']}")
+
+    if "execute-reascript" in capabilities:
+        if dry_run_daw:
+            warnings.append("Reaper execution is configured in dry-run mode.")
+        elif not reaper_binary_path or not Path(reaper_binary_path).exists():
+            errors.append("execute-reascript requires a valid REAPER_BINARY_PATH when dry-run is disabled.")
+
+    if "execute-soundflow" in capabilities:
+        if dry_run_daw:
+            warnings.append("SoundFlow execution is configured in dry-run mode.")
+        else:
+            if worker_platform != "macos":
+                warnings.append("SoundFlow execution is primarily validated on macOS.")
+            if not protools_app_path or not Path(protools_app_path).exists():
+                errors.append("execute-soundflow requires a valid PROTOOLS_APP_PATH when dry-run is disabled.")
+            if not soundflow_cli_path or not Path(soundflow_cli_path).exists():
+                errors.append("execute-soundflow requires a valid SOUNDFLOW_CLI_PATH when dry-run is disabled.")
+
+    if wavelab_app_path and not Path(wavelab_app_path).exists():
+        warnings.append(f"WAVELAB_APP_PATH is set but not found: {wavelab_app_path}")
+
+    return {
+        "ready": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "checks": checks,
+    }
+
+
+def assert_startup_ready(settings: Settings) -> dict:
+    validation = validate_startup(settings)
+    if validation["errors"]:
+        raise StartupValidationError("; ".join(validation["errors"]))
+    return validation
 
 
 def load_settings() -> Settings:

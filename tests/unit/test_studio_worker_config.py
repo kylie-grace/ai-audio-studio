@@ -17,6 +17,7 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 load_settings = MODULE.load_settings
+validate_startup = MODULE.validate_startup
 
 
 class FakeResponse:
@@ -116,3 +117,41 @@ def test_env_overrides_workspace_defaults(monkeypatch):
     assert settings.shared_projects_path == "/tmp/projects"
     assert settings.delivery_path == "/tmp/deliveries"
     assert settings.workstation_profile["default_daw"] == "protools"
+
+
+def test_validate_startup_reports_missing_live_reaper(monkeypatch, tmp_path):
+    monkeypatch.setenv("PROJECT_STATE_URL", "http://project-state:8080")
+    monkeypatch.setenv("WORKER_SLUG", "demo-worker")
+    monkeypatch.setenv("WORKER_PLATFORM", "windows")
+    monkeypatch.setenv("WORKER_CAPABILITIES", "execute-reascript")
+    monkeypatch.setenv("SHARED_PROJECTS_PATH", str(tmp_path / "projects"))
+    monkeypatch.setenv("DELIVERY_PATH", str(tmp_path / "deliveries"))
+    monkeypatch.setenv("STUDIO_WORKER_DRY_RUN_DAW", "false")
+    (tmp_path / "projects").mkdir()
+    (tmp_path / "deliveries").mkdir()
+
+    settings = load_settings()
+    report = validate_startup(settings)
+
+    assert report["ready"] is False
+    assert any("REAPER_BINARY_PATH" in error for error in report["errors"])
+
+
+def test_validate_startup_passes_dry_run_with_accessible_paths(monkeypatch, tmp_path):
+    reaper = tmp_path / "REAPER"
+    reaper.write_text("binary")
+    monkeypatch.setenv("PROJECT_STATE_URL", "http://project-state:8080")
+    monkeypatch.setenv("WORKER_SLUG", "demo-worker")
+    monkeypatch.setenv("WORKER_CAPABILITIES", "execute-reascript")
+    monkeypatch.setenv("SHARED_PROJECTS_PATH", str(tmp_path / "projects"))
+    monkeypatch.setenv("DELIVERY_PATH", str(tmp_path / "deliveries"))
+    monkeypatch.setenv("STUDIO_WORKER_DRY_RUN_DAW", "true")
+    monkeypatch.setenv("REAPER_BINARY_PATH", str(reaper))
+    (tmp_path / "projects").mkdir()
+    (tmp_path / "deliveries").mkdir()
+
+    settings = load_settings()
+    report = validate_startup(settings)
+
+    assert report["ready"] is True
+    assert report["warnings"]

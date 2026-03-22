@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from contextlib import asynccontextmanager
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import asyncpg
 from fastapi import FastAPI, HTTPException
@@ -39,6 +40,9 @@ WORKER_URLS = {
 
 CRM_API_URL = os.environ.get("CRM_API_URL", "http://crm-api:8090")
 PROJECT_STATE_URL = os.environ.get("PROJECT_STATE_URL", "http://project-state:8080")
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434")
+PLANNER_MODEL = os.environ.get("PLANNER_MODEL", "qwen2.5:14b-instruct")
+CLASSIFIER_MODEL = os.environ.get("CLASSIFIER_MODEL", "qwen2.5:3b")
 
 _pool: asyncpg.Pool | None = None
 
@@ -146,12 +150,32 @@ class ApplyStarterPackBody(BaseModel):
     exclusive: bool = True
 
 
+class ConciergeBody(BaseModel):
+    message: str
+
+
+class ConciergeResponse(BaseModel):
+    status: str
+    mode: str
+    reply: str
+    actions: list[dict[str, str]]
+    context_summary: dict
+
+
 def fetch_json(url: str) -> dict:
     try:
         with urlopen(url, timeout=5) as response:
             return json.loads(response.read().decode("utf-8"))
     except URLError as exc:
         raise HTTPException(status_code=502, detail=f"Unable to reach upstream dependency: {exc.reason}") from exc
+
+
+def fetch_optional_json(url: str) -> dict | list | None:
+    try:
+        with urlopen(url, timeout=5) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except (URLError, ValueError, json.JSONDecodeError):
+        return None
 
 
 def load_workspace_settings() -> dict:
@@ -162,6 +186,185 @@ def load_workspace_settings() -> dict:
 def load_runtime_alerts() -> dict:
     payload = fetch_json(f"{PROJECT_STATE_URL}/alerts/summary")
     return payload if isinstance(payload, dict) else {}
+
+
+def _extract_json_object(text: str) -> dict | None:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        inner = lines[1:] if len(lines) > 1 else lines
+        if inner and inner[-1].strip() == "```":
+            inner = inner[:-1]
+        cleaned = "\n".join(inner).strip()
+    try:
+        parsed = json.loads(cleaned)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if not match:
+        return None
+    try:
+        parsed = json.loads(match.group())
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
+def _ollama_generate(prompt: str) -> str:
+    last_error: Exception | None = None
+    for model in [PLANNER_MODEL, CLASSIFIER_MODEL]:
+        request = Request(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            data=json.dumps({"model": model, "prompt": prompt, "stream": False}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=45) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            text = str(payload.get("response") or "").strip()
+            if text:
+                return text
+        except Exception as exc:
+            last_error = exc
+            continue
+    if last_error is not None:
+        raise last_error
+    return ""
+
+
+def build_concierge_context() -> dict:
+    workspace = fetch_optional_json(f"{CRM_API_URL}/workspace-settings/status")
+    runtime_alerts = fetch_optional_json(f"{PROJECT_STATE_URL}/alerts/summary")
+    workers = fetch_optional_json(f"{PROJECT_STATE_URL}/workers/") or []
+    approvals = fetch_optional_json(f"{PROJECT_STATE_URL}/approval-queue/") or []
+    projects = fetch_optional_json(f"{CRM_API_URL}/projects") or []
+    bootstrap = bootstrap_status()
+
+    if not isinstance(workspace, dict):
+        workspace = {}
+    if not isinstance(runtime_alerts, dict):
+        runtime_alerts = {}
+    if not isinstance(workers, list):
+        workers = []
+    if not isinstance(approvals, list):
+        approvals = []
+    if not isinstance(projects, list):
+        projects = []
+
+    workspace_settings = workspace.get("settings") if isinstance(workspace.get("settings"), dict) else {}
+    readiness_summary = workspace.get("readiness_summary") if isinstance(workspace.get("readiness_summary"), dict) else {}
+    connection_center = workspace.get("connection_center") if isinstance(workspace.get("connection_center"), list) else []
+    active_alerts = runtime_alerts.get("active_alerts") if isinstance(runtime_alerts.get("active_alerts"), list) else []
+    worker_summaries = [
+        {
+            "slug": worker.get("slug"),
+            "display_name": worker.get("display_name"),
+            "status": worker.get("status"),
+            "platform": worker.get("platform"),
+            "capabilities": worker.get("capabilities"),
+        }
+        for worker in workers[:6]
+        if isinstance(worker, dict)
+    ]
+    project_summaries = [
+        {
+            "slug": project.get("slug"),
+            "client_name": project.get("client_name"),
+            "status": project.get("status"),
+            "service_type": project.get("service_type"),
+        }
+        for project in projects[:6]
+        if isinstance(project, dict)
+    ]
+    return {
+        "studio_name": workspace_settings.get("studio_name") or "Studio Brain",
+        "public_base_url": workspace_settings.get("public_base_url") or "",
+        "host_machine_type": workspace_settings.get("host_machine_type") or "other",
+        "shared_paths": workspace_settings.get("shared_paths") or {},
+        "integrations": workspace_settings.get("integrations") or {},
+        "worker_config": workspace_settings.get("worker") or {},
+        "readiness_summary": readiness_summary,
+        "connection_center": [
+            {
+                "name": item.get("name"),
+                "slug": item.get("slug"),
+                "status": item.get("status"),
+                "detail": item.get("detail"),
+            }
+            for item in connection_center[:8]
+            if isinstance(item, dict)
+        ],
+        "active_alerts": active_alerts[:8],
+        "approval_count": len(approvals),
+        "bootstrap_status": bootstrap.get("status"),
+        "workflow_count": bootstrap.get("workflow_count"),
+        "workers": worker_summaries,
+        "projects": project_summaries,
+    }
+
+
+def suggest_concierge_actions(message: str, context: dict) -> list[dict[str, str]]:
+    lower = message.strip().lower()
+    actions: list[dict[str, str]] = []
+    if any(word in lower for word in ["setup", "connect", "gmail", "oauth", "n8n", "integration"]):
+        actions.append({"id": "goto-settings", "label": "Open settings"})
+    if any(word in lower for word in ["approval", "runtime", "alert", "task", "worker", "stop", "cancel"]):
+        actions.append({"id": "goto-operations", "label": "Open operations"})
+    if any(word in lower for word in ["rule", "automation", "starter pack", "openclaw"]):
+        actions.append({"id": "goto-automation", "label": "Open automation"})
+    if any(word in lower for word in ["project", "artifact", "style", "context", "storage", "share", "rag"]):
+        actions.append({"id": "goto-context", "label": "Open context"})
+    if any(word in lower for word in ["smoke", "validate", "dry run"]):
+        actions.append({"id": "run-worker-smoke", "label": "Run worker smoke"})
+    if "drain" in lower or "pause worker" in lower:
+        actions.append({"id": "drain-worker", "label": "Drain worker"})
+    if "resume" in lower:
+        actions.append({"id": "resume-worker", "label": "Resume worker"})
+    if "alert" in lower:
+        actions.append({"id": "test-alerts", "label": "Send test alert"})
+    if "starter" in lower or "baseline" in lower:
+        actions.append({"id": "apply-operator-baseline", "label": "Apply operator baseline"})
+    if not actions:
+        pending_connection = next(
+            (item for item in context.get("connection_center", []) if item.get("status") != "ready"),
+            None,
+        )
+        if pending_connection:
+            actions.append({"id": "goto-settings", "label": "Review setup"})
+        actions.append({"id": "refresh", "label": "Refresh"})
+    deduped: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for action in actions:
+        if action["id"] in seen:
+            continue
+        deduped.append(action)
+        seen.add(action["id"])
+        if len(deduped) == 3:
+            break
+    return deduped
+
+
+def fallback_concierge_reply(message: str, context: dict) -> str:
+    pending_connection = next(
+        (item for item in context.get("connection_center", []) if item.get("status") != "ready"),
+        None,
+    )
+    active_alerts = context.get("active_alerts") or []
+    workers = context.get("workers") or []
+    approvals = context.get("approval_count") or 0
+    if pending_connection:
+        return (
+            f"Ollama is unavailable, so this assistant is in fallback mode. "
+            f"The clearest next setup step is {pending_connection.get('name')}: {pending_connection.get('detail')} "
+            f"There are {approvals} approvals waiting, {len(active_alerts)} active alerts, and {len(workers)} registered workers."
+        )
+    return (
+        "Ollama is unavailable, so this assistant is in fallback mode. "
+        f"The stack currently has {approvals} approvals waiting, {len(active_alerts)} active alerts, and {len(workers)} registered workers. "
+        "Use the suggested actions to move to the right control surface."
+    )
 
 
 @app.get("/health")
@@ -362,6 +565,66 @@ async def bootstrap_defaults():
         "configured_alert_channel_count": alert_config(load_workspace_settings())["configured_channel_count"],
         "bootstrap_status": bootstrap_status()["status"],
     }
+
+
+@app.post("/concierge/respond", response_model=ConciergeResponse)
+async def concierge_respond(body: ConciergeBody):
+    message = body.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="message is required")
+
+    context = build_concierge_context()
+    prompt = f"""
+You are the AI Audio Studio control-room assistant.
+Answer the operator's question concisely and honestly using the live stack context below.
+Do not invent capabilities that are not present.
+If a feature depends on external credentials or a live workstation, say that clearly.
+Prefer direct operational guidance over marketing language.
+
+Return strict JSON with this shape:
+{{
+  "reply": "short operator-facing answer"
+}}
+
+Live control-room context:
+{json.dumps(context, indent=2)}
+
+Operator message:
+{message}
+""".strip()
+
+    actions = suggest_concierge_actions(message, context)
+    try:
+        raw = _ollama_generate(prompt)
+        parsed = _extract_json_object(raw) or {}
+        reply = str(parsed.get("reply") or "").strip()
+        if not reply:
+            raise ValueError("missing reply")
+        return ConciergeResponse(
+            status="ok",
+            mode="llm",
+            reply=reply,
+            actions=actions,
+            context_summary={
+                "approval_count": context["approval_count"],
+                "active_alert_count": len(context["active_alerts"]),
+                "worker_count": len(context["workers"]),
+                "project_count": len(context["projects"]),
+            },
+        )
+    except Exception:
+        return ConciergeResponse(
+            status="ok",
+            mode="fallback",
+            reply=fallback_concierge_reply(message, context),
+            actions=actions,
+            context_summary={
+                "approval_count": context["approval_count"],
+                "active_alert_count": len(context["active_alerts"]),
+                "worker_count": len(context["workers"]),
+                "project_count": len(context["projects"]),
+            },
+        )
 
 
 @app.post("/rules", status_code=201)

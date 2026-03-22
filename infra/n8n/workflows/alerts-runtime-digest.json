@@ -1,6 +1,7 @@
 {
   "name": "Alerts Runtime Digest",
-  "active": false,
+  "id": "starter-alerts-runtime-digest",
+  "active": true,
   "nodes": [
     {
       "parameters": {

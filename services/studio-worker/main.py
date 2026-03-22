@@ -9,7 +9,7 @@ import httpx
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from config import load_settings
+from config import assert_startup_ready, load_settings, validate_startup
 from runner import StudioWorkerRunner
 from tasks.listening_report import build_listening_report
 from tasks.mix_plan import build_mix_plan
@@ -22,11 +22,13 @@ _client: httpx.AsyncClient | None = None
 _runner: asyncio.Task | None = None
 _worker: StudioWorkerRunner | None = None
 _settings = load_settings()
+_startup_validation = validate_startup(_settings)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _client, _runner, _worker
+    app.state.startup_validation = assert_startup_ready(_settings)
     _client = httpx.AsyncClient(timeout=30.0)
     _worker = StudioWorkerRunner(_client, _settings)
     _runner = asyncio.create_task(_worker.run_forever())
@@ -93,6 +95,7 @@ async def health():
         "capabilities": _settings.capabilities,
         "project_state_url": _settings.project_state_url,
         "configured_workstation": _settings.workstation_profile,
+        "startup_validation": _startup_validation,
     }
 
 
@@ -113,6 +116,7 @@ async def status():
         "configured_workstation": _settings.workstation_profile,
         "workstation": workstation,
         "runtime": runtime,
+        "startup_validation": _startup_validation,
         "daw_ready_count": sum(1 for daw in workstation["daws"] if daw["automation_ready"]),
         "daw_detected_count": sum(1 for daw in workstation["daws"] if daw["installed"]),
         "preview_surfaces": ["session-manifest", "mix-plan", "render-plan", "listening-report", "execution-plan"],

@@ -11,7 +11,7 @@ Single-machine first, split-worker optional:
 - **Split mode** — the Mac mini runs the control plane and a second Mac runs `studio-worker` for filesystem-heavy or DAW-adjacent tasks.
 - **Shared volume** — `/Volumes/StudioShare/` or equivalent shared mount visible to any machine executing file tasks.
 - **LAN access** — set `BIND_HOST=0.0.0.0` to expose the dashboard and APIs to the full local network by IP.
-- **HTTPS edge** — add `infra/docker-compose.edge.yml` when you want a single TLS front door for dashboard access on the LAN.
+- **HTTPS edge** — Caddy now ships in the main Compose stack as the default TLS front door.
 
 ## Product Status
 
@@ -22,7 +22,9 @@ What is solid today:
 - `crm-api` persists projects, leads, and style profiles
 - `openclaw` seeds default orchestration rules, starter packs, and playbooks
 - starter n8n workflows can be imported with a one-shot helper
+- internal n8n starters now default to `active: true`, while credential-gated outbound flows stay disabled until credentials exist
 - single-machine mode is the default path, with optional local or remote worker execution
+- the control-room assistant is now backed by live stack context and local Ollama, with an explicit fallback mode if the LLM is unavailable
 
 What is still being added:
 - deeper operator-safe settings coverage across every major service beyond the current persisted module-tuning layer
@@ -64,13 +66,10 @@ docker compose --env-file infra/.env -f infra/docker-compose.yml up -d
 # This runs once against the live n8n service and safely skips if workflows already exist.
 bash scripts/bootstrap_n8n.sh infra/.env
 
-# 6. Optional: add the HTTPS dashboard front door
-docker compose --env-file infra/.env -f infra/docker-compose.yml -f infra/docker-compose.edge.yml up -d
-
-# 7. Optional: start the studio worker on a second Mac
+# 6. Optional: start the studio worker on a second Mac
 docker compose --env-file infra/.env -f infra/docker-compose.worker.yml up -d
 
-# 8. Verify all services healthy
+# 7. Verify all services healthy
 docker compose --env-file infra/.env -f infra/docker-compose.yml ps
 ```
 
@@ -105,21 +104,15 @@ open http://localhost:5678                  # n8n workflow editor
 
 Single-machine mode does not require `docker-compose.worker.yml`; the worker file is only for split deployments.
 
-Optional HTTPS front door:
-```bash
-docker compose --env-file infra/.env \
-  -f infra/docker-compose.yml \
-  -f infra/docker-compose.edge.yml \
-  up -d
-```
-This serves the dashboard at `https://$CONTROL_PLANE_HOST` through Caddy with an internal LAN certificate.
+HTTPS front door:
+The main Compose stack now serves the dashboard at `https://$CONTROL_PLANE_HOST` through Caddy with an internal LAN certificate.
 Export the Caddy root certificate with `bash scripts/export_caddy_root_cert.sh infra/.env` and trust it on operator devices for clean HTTPS access.
-The edge stack also exposes `https://n8n.$CONTROL_PLANE_HOST` and `https://openclaw.$CONTROL_PLANE_HOST`.
+The stack also exposes `https://n8n.$CONTROL_PLANE_HOST` and `https://openclaw.$CONTROL_PLANE_HOST`.
 
 Recommended access sequence:
 1. Bring the stack up with `BIND_HOST=0.0.0.0`.
 2. Verify the dashboard by IP at `http://<control-plane-ip>:3000`.
-3. Add the HTTPS edge stack.
+3. Trust the bundled HTTPS front door.
 4. Point `CONTROL_PLANE_HOST` at that same machine in local DNS or `/etc/hosts`.
 5. Trust the exported Caddy root certificate on operator Macs.
 6. Move daily operator use to `https://$CONTROL_PLANE_HOST`.
@@ -144,6 +137,7 @@ Current validation is headless and MVP-oriented:
 - Python syntax compilation
 - Docker Compose config resolution
 - control-plane health checks
+- database migration bootstrap
 - Studio Brain UI source completeness checks
 - targeted runtime smoke checks for bootstrap, dashboard, and control-plane services
 
@@ -187,7 +181,9 @@ Implemented or partially implemented:
 - persisted module settings and per-service `/status` surfaces for the core automation and production modules
 - LAN and HTTPS operator access paths
 - idempotent n8n bootstrap status surfaced through OpenClaw and the dashboard
+- migration runner plus startup guard for required runtime schema
 - service drilldowns in the control room with live status snapshots and saved tuning summaries
+- live assistant endpoint in OpenClaw with honest fallback mode when the larger model is unavailable
 
 Still incomplete:
 - complete operator-safe settings coverage for every service/module

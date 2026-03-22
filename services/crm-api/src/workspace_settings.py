@@ -209,9 +209,9 @@ def connection_center(settings: dict[str, Any]) -> list[dict[str, Any]]:
             "steps": [
                 "Keep the n8n integration flag enabled in workspace settings.",
                 "Run scripts/bootstrap_n8n.sh on first bring-up so the starter workflows are imported.",
-                "Open n8n from the front door and activate the packaged workflows you intend to use.",
+                "Internal webhook and digest workflows ship active by default; only credential-gated outbound flows stay disabled.",
             ],
-            "detail": "Starter webhook and status digest workflows are packaged with the stack.",
+            "detail": "Starter webhook and status digest workflows are packaged and enabled by default. Approval-event routing stays disabled until Gmail or social credentials exist.",
         },
         {
             "slug": "gmail-readonly",

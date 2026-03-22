@@ -635,7 +635,7 @@ code {
 }
 
 .readiness-mini-grid,
-.placeholder-grid {
+.status-grid {
   display: grid;
   gap: 12px;
 }
@@ -693,7 +693,7 @@ code {
 }
 
 .foundation-card,
-.placeholder-card,
+.status-card,
 .foundation-capability-card {
   position: relative;
   overflow: hidden;
@@ -701,7 +701,7 @@ code {
 }
 
 .foundation-card::before,
-.placeholder-card::before,
+.status-card::before,
 .foundation-capability-card::before {
   content: "";
   position: absolute;
@@ -760,24 +760,24 @@ code {
 
 .foundation-card.ready::before,
 .foundation-capability-card.ready::before,
-.placeholder-card.placeholder-ready::before {
+.status-card.ready::before {
   background: linear-gradient(180deg, rgba(126, 211, 159, 0.96), rgba(126, 211, 159, 0.28));
 }
 
 .foundation-card.watch::before,
 .foundation-capability-card.watch::before,
-.placeholder-card.blocked::before {
+.status-card.blocked::before {
   background: linear-gradient(180deg, rgba(226, 161, 90, 0.96), rgba(226, 161, 90, 0.26));
 }
 
 .foundation-card strong,
-.placeholder-card strong,
+.status-card strong,
 .foundation-capability-card strong {
   font-size: 1.02rem;
 }
 
 .foundation-card p,
-.placeholder-card p,
+.status-card p,
 .foundation-capability-card p {
   min-height: 3.6em;
 }
@@ -786,7 +786,7 @@ code {
   align-content: start;
 }
 
-.placeholder-card {
+.status-card {
   background:
     radial-gradient(circle at top right, rgba(138, 140, 245, 0.08), transparent 42%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018)),

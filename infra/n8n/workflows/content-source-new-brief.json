@@ -1,6 +1,7 @@
 {
   "name": "Content Source New Brief",
-  "active": false,
+  "id": "starter-content-source-new-brief",
+  "active": true,
   "nodes": [
     {
       "parameters": {

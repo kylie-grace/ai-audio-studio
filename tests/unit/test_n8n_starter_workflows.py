@@ -34,3 +34,22 @@ def test_workflow_files_have_minimal_n8n_shape():
         assert len(webhook_nodes) == 1
         webhook_path = webhook_nodes[0]["parameters"]["path"]
         assert webhook_path.startswith("studio/")
+
+
+def test_internal_workflows_ship_active_by_default():
+    expected_active = {
+        "alerts-runtime-digest.json",
+        "content-source-new-brief.json",
+        "control-room-status-digest.json",
+        "inbox-source-new-message.json",
+        "lead-source-new-lead.json",
+        "qc-source-qc-pass.json",
+        "revision-source-notes-received.json",
+        "session-source-import-stems.json",
+    }
+    for path in WORKFLOW_DIR.glob("*.json"):
+        data = json.loads(path.read_text())
+        if path.name == "approval-event-router.json":
+            assert data["active"] is False
+        elif path.name in expected_active:
+            assert data["active"] is True

@@ -71,6 +71,7 @@ Newly surfaced implementation gaps:
 The system is complete when:
 - onboarding captures host posture, worker posture, context, alerts, integrations, and DAW setup without manual env editing beyond secrets
 - the control room includes a context-aware concierge that can reason over shared paths, projects, alerts, artifacts, and setup posture and route novices to safe actions
+- the concierge is honest about runtime mode, using live Ollama-backed responses when possible and explicit fallback guidance otherwise
 - plugin/dependency risk is visible before execution
 - approved DAW tasks run safely with recoverable artifacts and operator controls
 - artifacts, renders, QC, listening, and delivery history are visible from the control room

@@ -1,6 +1,7 @@
 {
   "name": "QC Source QC Pass",
-  "active": false,
+  "id": "starter-qc-source-qc-pass",
+  "active": true,
   "nodes": [
     {
       "parameters": {

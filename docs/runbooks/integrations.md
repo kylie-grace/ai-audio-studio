@@ -40,6 +40,8 @@ bash scripts/bootstrap_n8n.sh infra/env.example
 ### n8n
 
 - The connection center assumes the packaged workflow set is the starting point.
+- Internal webhook and digest workflows now ship active by default after bootstrap reconciliation.
+- `approval-event-router` intentionally stays inactive until Gmail send or social credentials exist.
 - Use the front-door proxied n8n URL instead of teaching operators raw service ports.
 
 ### Gmail intake

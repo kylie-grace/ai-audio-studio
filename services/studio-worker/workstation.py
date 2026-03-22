@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Iterable
 
+from config import validate_startup
 from tasks.execution_plan import build_execution_plan
 from tasks.listening_report import build_listening_report
 from tasks.mix_plan import build_mix_plan
@@ -70,6 +71,36 @@ def _which(candidates: list[str]) -> str | None:
 
 def _path_exists(path: str | None) -> bool:
     return bool(path and Path(path).exists())
+
+
+def _path_access_report(path_text: str) -> dict:
+    path = Path(path_text)
+    report = {
+        "path": path_text,
+        "exists": path.exists(),
+        "readable": False,
+        "writable": False,
+        "write_tested": False,
+        "detail": path_text,
+    }
+    if not path.exists():
+        report["detail"] = f"{path_text} does not exist"
+        return report
+    report["readable"] = os.access(path, os.R_OK)
+    report["writable"] = os.access(path, os.W_OK)
+    if path.is_dir() and report["writable"]:
+        try:
+            with tempfile.NamedTemporaryFile(prefix=".studio-worker-check-", dir=path, delete=False) as handle:
+                handle.write(b"ok\n")
+                temp_path = Path(handle.name)
+            temp_path.unlink()
+            report["write_tested"] = True
+        except OSError as exc:
+            report["writable"] = False
+            report["detail"] = f"{path_text} is not writable: {exc}"
+            return report
+    report["detail"] = f"{path_text} readable={report['readable']} writable={report['writable']}"
+    return report
 
 
 def _env_flag(name: str) -> bool:
@@ -269,6 +300,13 @@ def detect_workstation_profile(settings) -> dict:
         blockers.append("soundflow-not-detected")
     if settings.dry_run_daw:
         blockers.append("dry-run-enabled")
+    shared_paths = {
+        "projects": _path_access_report(settings.shared_projects_path),
+        "deliveries": _path_access_report(settings.delivery_path),
+    }
+    for path_slug, path_report in shared_paths.items():
+        if not path_report["exists"] or not path_report["readable"] or not path_report["writable"]:
+            blockers.append(f"{path_slug}-path-not-accessible")
 
     return {
         "host": socket.gethostname(),
@@ -281,26 +319,28 @@ def detect_workstation_profile(settings) -> dict:
         "daws": daws,
         "capabilities": capabilities,
         "permissions": permissions,
+        "shared_paths": shared_paths,
         "plugins": plugin_inventory,
         "blockers": blockers,
-        "ready": not blockers or blockers == ["dry-run-enabled"],
+        "ready": not [blocker for blocker in blockers if blocker != "dry-run-enabled"],
     }
 
 
 def validate_workstation_setup(settings) -> dict:
     profile = detect_workstation_profile(settings)
+    startup_validation = validate_startup(settings)
     checks: list[dict] = [
         {
             "slug": "shared-projects-path",
             "label": "Shared projects path",
-            "status": "ready" if Path(profile["shared_projects_path"]).exists() else "needs-attention",
-            "detail": profile["shared_projects_path"],
+            "status": "ready" if profile["shared_paths"]["projects"]["readable"] and profile["shared_paths"]["projects"]["writable"] else "needs-attention",
+            "detail": profile["shared_paths"]["projects"]["detail"],
         },
         {
             "slug": "delivery-path",
             "label": "Delivery path",
-            "status": "ready" if Path(profile["delivery_path"]).exists() else "needs-attention",
-            "detail": profile["delivery_path"],
+            "status": "ready" if profile["shared_paths"]["deliveries"]["readable"] and profile["shared_paths"]["deliveries"]["writable"] else "needs-attention",
+            "detail": profile["shared_paths"]["deliveries"]["detail"],
         },
         {
             "slug": "reaper-readiness",
@@ -345,12 +385,21 @@ def validate_workstation_setup(settings) -> dict:
                 "detail": "DAW execution is still in dry-run mode.",
             }
         )
+    if startup_validation["warnings"]:
+        checks.append(
+            {
+                "slug": "startup-warnings",
+                "label": "Startup warnings",
+                "status": "watch",
+                "detail": " | ".join(startup_validation["warnings"]),
+            }
+        )
     return {
         "status": "ok",
-        "ready": profile["ready"],
+        "ready": startup_validation["ready"] and profile["ready"],
         "host": profile["host"],
         "platform": profile["platform"],
-        "blockers": profile["blockers"],
+        "blockers": profile["blockers"] + startup_validation["errors"],
         "checks": checks,
         "recommended_next_step": next(
             (check["label"] for check in checks if check["status"] != "ready"),

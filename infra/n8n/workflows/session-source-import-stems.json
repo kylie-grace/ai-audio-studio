@@ -1,6 +1,7 @@
 {
   "name": "Session Source Import Stems",
-  "active": false,
+  "id": "starter-session-source-import-stems",
+  "active": true,
   "nodes": [
     {
       "parameters": {

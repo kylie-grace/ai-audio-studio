@@ -8,6 +8,8 @@ volumes:
   ollama-data:
   postgres-data:
   n8n-data:
+  caddy-data:
+  caddy-config:
   shared-projects:
   local-deliveries:
   draft-queue:
@@ -34,6 +36,21 @@ services:
       retries: 5
     ports:
       - "${BIND_HOST:-127.0.0.1}:5432:5432"
+
+  db-migrations:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      MIGRATIONS_DIR: /migrations
+    volumes:
+      - ./db/migrations:/migrations:ro
+      - ./db/run_migrations.sh:/run_migrations.sh:ro
+    networks: [studio-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["sh", "/run_migrations.sh"]
+    restart: "no"
 
   # ── Ollama (local LLM serving — no cloud calls) ────────────────────────
   ollama:
@@ -120,8 +137,8 @@ services:
       - approval-queue:/data/approval-queue
     networks: [studio-net]
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-migrations:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
       interval: 10s
@@ -140,8 +157,8 @@ services:
       PORT: "8090"
     networks: [studio-net]
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-migrations:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')"]
       interval: 10s
@@ -173,8 +190,8 @@ services:
       - n8n-data:/data/n8n:ro
     networks: [studio-net]
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-migrations:
+        condition: service_completed_successfully
       ollama:
         condition: service_healthy
       project-state:
@@ -482,3 +499,28 @@ services:
       retries: 5
     ports:
       - "${BIND_HOST:-127.0.0.1}:8190:8190"
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      CONTROL_PLANE_HOST: ${CONTROL_PLANE_HOST:-studio-brain.local}
+    depends_on:
+      studio-brain-ui:
+        condition: service_healthy
+      openclaw:
+        condition: service_healthy
+      n8n:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider --no-check-certificate https://localhost || wget -q --spider --no-check-certificate https://127.0.0.1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [studio-net]

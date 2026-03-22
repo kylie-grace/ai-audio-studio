@@ -1,6 +1,7 @@
 {
   "name": "Revision Source Notes Received",
-  "active": false,
+  "id": "starter-revision-source-notes-received",
+  "active": true,
   "nodes": [
     {
       "parameters": {

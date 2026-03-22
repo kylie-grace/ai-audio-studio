@@ -22,6 +22,7 @@
 - Keep turning workstation setup into guided operator actions: validation, dry-run smoke rehearsal, and then bounded live execution checks from the control room.
 - Keep the new connection center honest so Gmail, n8n, social, and worker setup are presented as explicit step-by-step onboarding flows instead of raw booleans.
 - Make the control room chat a first-class operator surface so users can ask for setup help, runtime status, storage-aware context, and safe actions without editing raw settings directly.
+- Keep the assistant honest about mode and latency: live Ollama-backed when available, explicit fallback guidance when the model cannot answer in-budget on current hardware.
 
 ## Productionizing
 - Finish DAW adapters beyond dry run, with SoundFlow and ReaScript execution validated on a real studio Mac.
@@ -39,6 +40,7 @@
 - Add worker retries, lease expiry recovery, and failure escalation for long-running execution tasks.
 - Add broader end-to-end tests that exercise Dockerized service interactions, not just unit helpers.
 - Tighten HTTPS/LAN onboarding so trusting the local Caddy certificate is a first-run step, not hidden setup knowledge.
+- Keep the migration runner and startup guards in place so schema drift cannot silently accumulate across upgrades.
 - Reduce the number of machine-local settings that must stay in env files to secrets, ports, tokens, and path wiring only.
 
 ## Dedicated Plans

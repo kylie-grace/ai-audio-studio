@@ -30,16 +30,7 @@ docker compose --profile local-worker --env-file infra/.env -f infra/docker-comp
 docker compose --env-file infra/.env -f infra/docker-compose.yml logs -f
 ```
 
-Optional HTTPS front door:
-
-```bash
-docker compose --env-file infra/.env \
-  -f infra/docker-compose.yml \
-  -f infra/docker-compose.edge.yml \
-  up -d
-```
-
-Use the edge stack when you want a hostname-based HTTPS front door for operators.
+The main stack now includes the HTTPS front door and schema-migration runner. `docker-compose.edge.yml` remains as a compatibility overlay, not the preferred bring-up path.
 
 ## First Access Path
 
@@ -90,6 +81,7 @@ Hostname/TLS:
 
 Notes:
 - Starter workflow webhooks appear after `bash scripts/bootstrap_n8n.sh infra/.env`
+- Internal n8n starters are activated during bootstrap reconciliation; credential-gated outbound flows stay disabled until credentials exist
 - The dashboard is the preferred operator entrypoint
 - Direct service ports remain valid for engineering and worker traffic
 

@@ -5,9 +5,20 @@ volumes:
 services:
   caddy:
     image: caddy:2-alpine
+    environment:
+      CONTROL_PLANE_HOST: ${CONTROL_PLANE_HOST:-studio-brain.local}
     depends_on:
       studio-brain-ui:
-        condition: service_started
+        condition: service_healthy
+      openclaw:
+        condition: service_healthy
+      n8n:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider --no-check-certificate https://localhost || wget -q --spider --no-check-certificate https://127.0.0.1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     ports:
       - "80:80"
       - "443:443"

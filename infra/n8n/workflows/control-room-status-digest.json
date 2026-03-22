@@ -1,6 +1,7 @@
 {
   "name": "Control Room Status Digest",
-  "active": false,
+  "id": "starter-control-room-status-digest",
+  "active": true,
   "nodes": [
     {
       "parameters": {

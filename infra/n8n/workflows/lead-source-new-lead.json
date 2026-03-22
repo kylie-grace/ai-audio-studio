@@ -1,6 +1,7 @@
 {
   "name": "Lead Source New Lead",
-  "active": false,
+  "id": "starter-lead-source-new-lead",
+  "active": true,
   "nodes": [
     {
       "parameters": {
