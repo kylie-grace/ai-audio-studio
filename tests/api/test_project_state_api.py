@@ -675,6 +675,35 @@ def test_requeue_failed_worker_task_resets_task_job_and_revision():
     assert pool.revisions["revision-1"]["status"] == "approved"
 
 
+def test_stop_claimed_worker_task_cancels_inflight_work():
+    pool = FakePool()
+    claimed_at = datetime.now(timezone.utc)
+    pool.worker_tasks.append(
+        FakeRow(
+            id="task-stop",
+            status="claimed",
+            claimed_by="fresh-worker",
+            claimed_at=claimed_at,
+            lease_expires_at=claimed_at,
+            job_id="job-revision",
+            project_id="project-1",
+            payload={},
+        )
+    )
+    pool.jobs["job-revision"]["status"] = "in-progress"
+    pool.worker_nodes[0]["status"] = "busy"
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.post("/workers/tasks/task-stop/stop", headers={"X-Actor": "owner"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert pool.worker_tasks[0]["status"] == "cancelled"
+    assert pool.worker_nodes[0]["status"] == "idle"
+    assert pool.jobs["job-revision"]["status"] == "failed"
+
+
 def test_alert_summary_reports_waiting_jobs_and_stale_workers():
     pool = FakePool()
     now = datetime.now(timezone.utc)

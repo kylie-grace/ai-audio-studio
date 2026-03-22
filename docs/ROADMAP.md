@@ -21,6 +21,7 @@
 - Make hostname and certificate trust setup feel like a standard onboarding step rather than hidden ops knowledge.
 - Keep turning workstation setup into guided operator actions: validation, dry-run smoke rehearsal, and then bounded live execution checks from the control room.
 - Keep the new connection center honest so Gmail, n8n, social, and worker setup are presented as explicit step-by-step onboarding flows instead of raw booleans.
+- Make the control room chat a first-class operator surface so users can ask for setup help, runtime status, storage-aware context, and safe actions without editing raw settings directly.
 
 ## Productionizing
 - Finish DAW adapters beyond dry run, with SoundFlow and ReaScript execution validated on a real studio Mac.

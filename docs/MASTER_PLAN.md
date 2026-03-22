@@ -4,6 +4,7 @@
 
 `ai-audio-studio` is being built as a full studio operating system:
 - one operator-facing control room
+- one operator chat / concierge layer inside that control room
 - one orchestration/control-plane stack
 - optional DAW execution on the same host or on remote worker nodes
 - approval-gated automation for communication, production, review, and delivery
@@ -69,6 +70,7 @@ Newly surfaced implementation gaps:
 
 The system is complete when:
 - onboarding captures host posture, worker posture, context, alerts, integrations, and DAW setup without manual env editing beyond secrets
+- the control room includes a context-aware concierge that can reason over shared paths, projects, alerts, artifacts, and setup posture and route novices to safe actions
 - plugin/dependency risk is visible before execution
 - approved DAW tasks run safely with recoverable artifacts and operator controls
 - artifacts, renders, QC, listening, and delivery history are visible from the control room

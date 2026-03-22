@@ -711,6 +711,26 @@ type TabId = "overview" | "operations" | "automation" | "context" | "settings";
 
 type WorkflowId = "start-day" | "approvals" | "recover-runtime" | "manage-automation" | "update-setup";
 
+type ConciergeActionId =
+  | "refresh"
+  | "goto-settings"
+  | "goto-operations"
+  | "goto-automation"
+  | "goto-context"
+  | "run-worker-smoke"
+  | "drain-worker"
+  | "resume-worker"
+  | "test-alerts"
+  | "reseed-defaults"
+  | "apply-operator-baseline"
+  | "open-setup-editor";
+
+type ConciergeTurn = {
+  role: "assistant" | "user";
+  text: string;
+  actions?: Array<{ id: ConciergeActionId; label: string }>;
+};
+
 const browserHost = window.location.hostname || "localhost";
 const browserProtocol = window.location.protocol || "http:";
 const frontDoorUrl = `${browserProtocol}//${window.location.host}`;
@@ -1564,6 +1584,20 @@ export function App() {
   const [workstationSmokePending, setWorkstationSmokePending] = useState(false);
   const [workstationSmokeMessage, setWorkstationSmokeMessage] = useState<string | null>(null);
   const [workstationSmokeError, setWorkstationSmokeError] = useState<string | null>(null);
+  const [conciergeInput, setConciergeInput] = useState("");
+  const [conciergeTurns, setConciergeTurns] = useState<ConciergeTurn[]>([
+    {
+      role: "assistant",
+      text: "Ask what is blocked, what still needs setup, or tell me to run safe operator actions like worker smoke, drain worker, test alerts, or open the right control surface.",
+      actions: [
+        { id: "run-worker-smoke", label: "Run worker smoke" },
+        { id: "goto-settings", label: "Review setup" },
+        { id: "goto-operations", label: "Show live ops" },
+      ],
+    },
+  ]);
+  const [conciergePending, setConciergePending] = useState(false);
+  const [conciergeError, setConciergeError] = useState<string | null>(null);
   const [artifactActionMessage, setArtifactActionMessage] = useState<string | null>(null);
   const [artifactActionError, setArtifactActionError] = useState<string | null>(null);
   const [artifactPreview, setArtifactPreview] = useState<ArtifactPreview | null>(null);
@@ -1610,7 +1644,46 @@ export function App() {
   ].filter(Boolean).length;
   const moduleSettings = workspaceSettings.module_settings;
   const moduleEnabledCount = Object.values(moduleSettings).filter((module) => module.enabled).length;
+  const workerCapabilities = Array.from(new Set(data.workers.flatMap((worker) => asArray(worker.capabilities))));
   const readyConnectionCount = connectionCenter.filter((item) => item.status === "ready").length;
+  const remainingBuildGaps = [
+    {
+      title: "Gmail send activation",
+      state: workspaceSettings.integrations.gmail_send ? "ready" : "watch",
+      detail: workspaceSettings.integrations.gmail_send
+        ? "Send-side Gmail integration is flagged on. Final validation still depends on real OAuth credentials in n8n."
+        : "Approval-router email send is scaffolded but still needs Gmail send OAuth and n8n credential activation.",
+    },
+    {
+      title: "Social publishing credentials",
+      state: workspaceSettings.integrations.instagram || workspaceSettings.integrations.facebook ? "watch" : "blocked",
+      detail:
+        workspaceSettings.integrations.instagram || workspaceSettings.integrations.facebook
+          ? "Social posting credentials are partly configured. Keep publishing approval-gated until real account validation is done."
+          : "Instagram and Facebook posting remain scaffolded until real studio account tokens are provided.",
+    },
+    {
+      title: "Pro Tools / SoundFlow live pass",
+      state: workerCapabilities.includes("execute-soundflow") ? "watch" : "blocked",
+      detail: workerCapabilities.includes("execute-soundflow")
+        ? "The execution surface exists, but it still needs a real workstation validation pass with SoundFlow and Pro Tools installed."
+        : "SoundFlow execution is not yet advertised by a live worker runtime.",
+    },
+    {
+      title: "WaveLab mastering path",
+      state: workstationValidation?.checks.some((check) => check.slug === "wavelab-readiness" && check.status === "ready") ? "watch" : "blocked",
+      detail: workstationValidation?.checks.some((check) => check.slug === "wavelab-readiness" && check.status === "ready")
+        ? "WaveLab is detected well enough for setup review, but mastering execution still needs live validation."
+        : "WaveLab posture is documented and detected where present, but no validated mastering runtime exists yet.",
+    },
+    {
+      title: "Windows worker proof",
+      state: data.workers.some((worker) => worker.platform === "windows") ? "watch" : "blocked",
+      detail: data.workers.some((worker) => worker.platform === "windows")
+        ? "A Windows worker is registered; runtime proof still needs a real DAW validation pass."
+        : "Cross-platform path translation and validation are built, but no live Windows worker has been proven yet.",
+    },
+  ];
   const selectedServiceHighlights = serviceStatusHighlights(selectedServiceStatus);
   const selectedServiceProxyUrl = selectedService ? `${frontDoorUrl}${serviceProxyBase[selectedService.key] ?? ""}` : frontDoorUrl;
   const visibleApprovals = data.approvals.slice(0, 8);
@@ -1945,6 +2018,168 @@ export function App() {
     }
   }
 
+  async function runConciergeAction(action: ConciergeActionId) {
+    switch (action) {
+      case "refresh":
+        await refreshData();
+        return "Control room refreshed.";
+      case "goto-settings":
+        setActiveTab("settings");
+        return "Opened Settings.";
+      case "goto-operations":
+        setActiveTab("operations");
+        return "Opened Operations.";
+      case "goto-automation":
+        setActiveTab("automation");
+        return "Opened Automation.";
+      case "goto-context":
+        setActiveTab("context");
+        return "Opened Context.";
+      case "run-worker-smoke":
+        await runWorkstationSmoke();
+        return "Ran the workstation dry-run smoke.";
+      case "drain-worker":
+        await updateWorkstationRuntime("drain");
+        return "Worker drain requested.";
+      case "resume-worker":
+        await updateWorkstationRuntime("resume");
+        return "Worker polling resumed.";
+      case "test-alerts":
+        await runAlertAction("test");
+        return "Test alert dispatched.";
+      case "reseed-defaults":
+        await reseedAutomationDefaults();
+        return "Automation defaults reseeded.";
+      case "apply-operator-baseline":
+        await applyStarterPack("operator-baseline");
+        return "Applied the operator-baseline starter pack.";
+      case "open-setup-editor":
+        setActiveTab("settings");
+        setEditingWorkspaceSetup(true);
+        setWorkspaceDraft(workspaceSettings);
+        return "Opened the setup editor.";
+    }
+  }
+
+  function buildConciergeReply(message: string): ConciergeTurn {
+    const lower = message.trim().toLowerCase();
+    const pendingConnections = connectionCenter.filter((item) => item.status !== "ready");
+    const topPending = pendingConnections[0];
+
+    if (!lower) {
+      return { role: "assistant", text: "Ask about setup, alerts, approvals, automation, workers, projects, or what is still missing." };
+    }
+    if (/(hello|hi|hey|status|what's up|whats up)/.test(lower)) {
+      return {
+        role: "assistant",
+        text: `The control plane is ${data.loadState}, ${healthyCount}/${data.services.length} services are healthy, ${activeAlertCount} live alert thresholds are active, and ${pendingConnections.length} connection areas still need attention.`,
+        actions: [
+          { id: "refresh", label: "Refresh" },
+          { id: "goto-operations", label: "Open operations" },
+          { id: "goto-settings", label: "Open settings" },
+        ],
+      };
+    }
+    if (/(missing|gap|left|remain|roadmap|unfinished|feature)/.test(lower)) {
+      return {
+        role: "assistant",
+        text: `The main remaining product gaps are ${remainingBuildGaps
+          .filter((item) => item.state !== "ready")
+          .map((item) => item.title)
+          .join(", ")}. The first connection that still needs direct setup is ${topPending?.name ?? "none right now"}.`,
+        actions: [
+          { id: "goto-settings", label: "Review setup" },
+          { id: "goto-automation", label: "Review automation" },
+        ],
+      };
+    }
+    if (/(script|scripting|soundflow|pro tools|wavelab|reascript|reaper)/.test(lower)) {
+      return {
+        role: "assistant",
+        text: `The remaining scripting work is mostly live-runtime proof: SoundFlow and Pro Tools still need a real workstation validation pass, WaveLab remains a documented mastering bridge without live proof, and Windows DAW runtime still needs a real workstation. Reaper-first execution and bounded dry-run rehearsal are already in place.`,
+        actions: [
+          { id: "run-worker-smoke", label: "Run worker smoke" },
+          { id: "goto-context", label: "Review projects and artifacts" },
+        ],
+      };
+    }
+    if (/(connect|integration|gmail|instagram|facebook|n8n|oauth)/.test(lower)) {
+      const matching =
+        connectionCenter.find((item) => lower.includes(item.slug.replace(/-/g, " "))) ??
+        connectionCenter.find((item) => lower.includes(item.slug)) ??
+        topPending;
+      return {
+        role: "assistant",
+        text: matching
+          ? `${matching.name} is ${matching.status}. ${matching.detail} Next: ${matching.steps.slice(0, 2).join(" ")}`
+          : "The connection center can guide front door, n8n, Gmail, social, and worker setup.",
+        actions: [
+          { id: "goto-settings", label: "Open connection center" },
+          ...(matching?.slug === "n8n" ? [{ id: "apply-operator-baseline" as ConciergeActionId, label: "Apply operator baseline" }] : []),
+        ],
+      };
+    }
+    if (/(smoke|validate worker|validate setup|dry run)/.test(lower)) {
+      return {
+        role: "assistant",
+        text: "The safest next step is the workstation dry-run smoke. It rehearses manifest, mix, listening, render, and execution planning against a disposable session without touching a real project.",
+        actions: [{ id: "run-worker-smoke", label: "Run worker smoke" }],
+      };
+    }
+    if (/(drain|pause worker|maintenance)/.test(lower)) {
+      return {
+        role: "assistant",
+        text: "Use drain before maintenance so the worker stops claiming new tasks without killing in-flight process state.",
+        actions: [{ id: workstationRuntime?.runtime.drain_requested ? "resume-worker" : "drain-worker", label: workstationRuntime?.runtime.drain_requested ? "Resume worker" : "Drain worker" }],
+      };
+    }
+    if (/(alert|test alert|notify)/.test(lower)) {
+      return {
+        role: "assistant",
+        text: `There are ${activeAlertCount} active runtime alerts. You can send a test alert now or jump to Operations to inspect the live alert feed.`,
+        actions: [
+          { id: "test-alerts", label: "Send test alert" },
+          { id: "goto-operations", label: "Open operations" },
+        ],
+      };
+    }
+    if (/(project|artifact|context|style|rag|knowledge|share|storage)/.test(lower)) {
+      return {
+        role: "assistant",
+        text: `The concierge is storage-aware through the live control-room state: shared project and delivery paths, style source files, projects, leads, review artifacts, and worker posture. The next step for deeper RAG is indexing shared files and artifact text into a dedicated retrieval store, but the current assistant already reasons over the known workspace context.`,
+        actions: [
+          { id: "goto-context", label: "Open context" },
+          { id: "goto-settings", label: "Review shared paths" },
+        ],
+      };
+    }
+    return {
+      role: "assistant",
+      text: `I can help with setup, integrations, workers, alerts, approvals, automation posture, and what is still missing. Right now the most useful next action is ${topPending ? `to work through ${topPending.name}` : "to review Operations for live state"}.`,
+      actions: [
+        { id: "goto-settings", label: "Open settings" },
+        { id: "goto-operations", label: "Open operations" },
+      ],
+    };
+  }
+
+  async function submitConciergePrompt(prompt: string) {
+    const text = prompt.trim();
+    if (!text) return;
+    setConciergePending(true);
+    setConciergeError(null);
+    setConciergeTurns((current) => [...current, { role: "user", text }]);
+    try {
+      const reply = buildConciergeReply(text);
+      setConciergeTurns((current) => [...current, reply]);
+      setConciergeInput("");
+    } catch (error) {
+      setConciergeError(error instanceof Error ? error.message : "Unable to generate concierge response.");
+    } finally {
+      setConciergePending(false);
+    }
+  }
+
   async function handleApproval(jobId: string, decision: "approve" | "reject") {
     setPendingJobId(jobId);
     setActionError(null);
@@ -2154,7 +2389,7 @@ export function App() {
     }
   }
 
-  async function handleTaskRecovery(taskId: string, action: "release" | "requeue" | "cancel") {
+  async function handleTaskRecovery(taskId: string, action: "release" | "requeue" | "cancel" | "stop") {
     setPendingTaskActionId(taskId);
     setTaskActionMessage(null);
     setTaskActionError(null);
@@ -2173,7 +2408,7 @@ export function App() {
         throw new Error(payload?.detail ?? `${action} failed with ${response.status}`);
       }
       setTaskActionMessage(
-        `${action === "release" ? "Released" : action === "requeue" ? "Requeued" : "Cancelled"} worker task ${taskId}.`,
+        `${action === "release" ? "Released" : action === "requeue" ? "Requeued" : action === "stop" ? "Stopped" : "Cancelled"} worker task ${taskId}.`,
       );
       await refreshData();
     } catch (error) {
@@ -2453,7 +2688,6 @@ export function App() {
       detail: displayedFrontDoor,
     },
   ];
-  const workerCapabilities = Array.from(new Set(data.workers.flatMap((worker) => asArray(worker.capabilities))));
   const healthyStudioWorker = data.workers.find((worker) => worker.slug === workspaceSettings.worker.worker_slug)
     ?? data.workers.find((worker) => worker.status === "idle" || worker.status === "busy")
     ?? data.workers[0]
@@ -2677,6 +2911,82 @@ export function App() {
 
       {!isInitialLoad && activeTab === "overview" ? (
         <div className="tab-panel">
+          <section className="workspace-grid">
+            <article className="panel panel-span-7">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Concierge</p>
+                  <h2>Control Room Chat</h2>
+                </div>
+                <span className="count-pill">{conciergeTurns.length} turns</span>
+              </div>
+              <p className="panel-note">
+                Ask about setup, missing features, shared storage posture, integrations, approvals, or tell the control room to run safe actions.
+              </p>
+              <div className="table-stack top-gap">
+                {conciergeTurns.slice(-6).map((turn, index) => (
+                  <div key={`${turn.role}-${index}`} className="table-row">
+                    <div className="row-main">
+                      <strong>{turn.role === "assistant" ? "control room" : operatorName || "operator"}</strong>
+                      <div className="muted">{turn.text}</div>
+                      {turn.actions?.length ? (
+                        <div className="action-row top-gap">
+                          {turn.actions.map((action) => (
+                            <button
+                              key={action.id}
+                              type="button"
+                              className="action-button"
+                              onClick={() => void runConciergeAction(action.id)}
+                            >
+                              {action.label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="wizard-footer-actions top-gap">
+                <input
+                  value={conciergeInput}
+                  onChange={(event) => setConciergeInput(event.target.value)}
+                  placeholder="What is still missing? Run worker smoke. How do I finish Gmail?"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void submitConciergePrompt(conciergeInput);
+                    }
+                  }}
+                />
+                <button className="action-button ok" type="button" disabled={conciergePending} onClick={() => void submitConciergePrompt(conciergeInput)}>
+                  {conciergePending ? "thinking" : "send"}
+                </button>
+              </div>
+              {conciergeError ? <p className="feedback bad">{conciergeError}</p> : null}
+            </article>
+            <article className="panel panel-span-5">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Evaluation</p>
+                  <h2>Remaining Build Gaps</h2>
+                </div>
+                <span className="status-pill warn">{remainingBuildGaps.filter((item) => item.state !== "ready").length} open</span>
+              </div>
+              <div className="placeholder-grid">
+                {remainingBuildGaps.map((item) => (
+                  <div key={item.title} className={`mini-card placeholder-card ${item.state === "ready" ? "placeholder-ready" : item.state === "watch" ? "placeholder-ready" : "blocked"}`}>
+                    <div className="workflow-header">
+                      <span className="metric-label">{item.title}</span>
+                      <span className={`status-pill ${item.state === "ready" ? "ok" : "warn"}`}>{item.state === "ready" ? "ready" : item.state}</span>
+                    </div>
+                    <p className="panel-note">{item.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </section>
+
           <section className="command-grid">
             <article className="panel command-card accent-gold">
               <div className="panel-header">
@@ -2799,8 +3109,8 @@ export function App() {
                 <div className="foundation-column">
                   <div className="panel-header compact-header">
                     <div>
-                      <span className="metric-label">Next Surfaces</span>
-                      <strong>Production placeholders</strong>
+                      <span className="metric-label">Production Coverage</span>
+                      <strong>DAW review surfaces</strong>
                     </div>
                   </div>
                   <div className="placeholder-grid">
@@ -3961,9 +4271,9 @@ export function App() {
                               <button
                                 className="action-button bad"
                                 disabled={!operatorName || pendingTaskActionId === task.id}
-                                onClick={() => handleTaskRecovery(task.id, "cancel")}
+                                onClick={() => handleTaskRecovery(task.id, task.status === "claimed" ? "stop" : "cancel")}
                               >
-                                {pendingTaskActionId === task.id ? "working" : "cancel"}
+                                {pendingTaskActionId === task.id ? "working" : task.status === "claimed" ? "stop" : "cancel"}
                               </button>
                             ) : null}
                             {task.status === "failed" ? (

@@ -835,3 +835,56 @@ async def cancel_worker_task(
     )
     cancelled = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
     return serialize_worker_task(cancelled)
+
+
+@router.post("/tasks/{task_id}/stop")
+async def stop_worker_task(
+    task_id: str,
+    x_actor: str = Header(...),
+    x_operator_token: str | None = Header(default=None),
+):
+    require_authorized_actor(x_actor)
+    require_operator_token(x_operator_token)
+    pool = await get_pool()
+    task = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Worker task not found")
+    if task["status"] != "claimed":
+        raise HTTPException(status_code=409, detail="Only claimed tasks can be stopped")
+
+    stopped_at = datetime.now(timezone.utc)
+    await pool.execute(
+        """UPDATE worker_tasks
+           SET status='cancelled',
+               error_message=$1,
+               claimed_by=NULL,
+               claimed_at=NULL,
+               lease_expires_at=NULL,
+               completed_at=$2,
+               updated_at=now()
+           WHERE id=$3""",
+        f"Worker task {task_id} stop requested by operator {x_actor}.",
+        stopped_at,
+        task_id,
+    )
+    if task.get("claimed_by"):
+        await pool.execute(
+            "UPDATE worker_nodes SET status='idle', last_seen_at=$1, updated_at=now() WHERE slug=$2",
+            stopped_at,
+            task["claimed_by"],
+        )
+    if task.get("job_id") is not None:
+        await pool.execute(
+            "UPDATE jobs SET status='failed', error_message=$1, updated_at=now() WHERE id=$2 AND status IN ('approved','in-progress','pending')",
+            f"Worker task {task_id} stop requested by operator {x_actor}.",
+            task["job_id"],
+        )
+    await _append_audit(
+        pool,
+        task,
+        f"human:{x_actor}",
+        "stop-worker-task",
+        {"task_id": task_id, "worker_slug": task.get("worker_slug"), "claimed_by": task.get("claimed_by")},
+    )
+    stopped = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
+    return serialize_worker_task(stopped)
