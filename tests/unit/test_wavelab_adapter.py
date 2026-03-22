@@ -116,3 +116,21 @@ def test_render_creates_applescript(tmp_path: Path):
     rendered = WaveLabAdapter().render({"session_path": str(source), "action": "open_file"})
     assert rendered.path.endswith(".wavelab.applescript")
     assert Path(rendered.path).exists()
+
+
+def test_apply_master_section_script_contains_system_events(tmp_path: Path):
+    source = tmp_path / "master.wav"
+    source.write_text("audio")
+    rendered = WaveLabAdapter().render({"session_path": str(source), "action": "apply_master_section", "params": {"preset": "Loud"}})
+    script = Path(rendered.path).read_text(encoding="utf-8")
+    assert "System Events" in script
+    assert "-- Apply master section preset:" not in script
+
+
+def test_render_to_file_script_contains_system_events(tmp_path: Path):
+    source = tmp_path / "master.wav"
+    source.write_text("audio")
+    rendered = WaveLabAdapter().render({"session_path": str(source), "action": "render_to_file", "params": {"output_path": str(tmp_path / "out.wav")}})
+    script = Path(rendered.path).read_text(encoding="utf-8")
+    assert "System Events" in script
+    assert "-- Render to" not in script

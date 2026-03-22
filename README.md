@@ -1,3 +1,5 @@
+<p align="center"><img src="brand/icon.svg" width="96" alt="AI Audio Studio" /></p>
+
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 © 2026 Kylie-Grace Mars-Snyder. Licensed under [AGPL-3.0](LICENSE). See [docs/USAGE.md](docs/USAGE.md) for usage intent and commercial collaboration details.

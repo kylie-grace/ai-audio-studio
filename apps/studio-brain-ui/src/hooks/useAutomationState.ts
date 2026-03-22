@@ -47,6 +47,15 @@ export function useAutomationState({ data, refreshData }: UseAutomationStateOpti
         detail: "Drafting and assistant flows will fall back or degrade while the model runtime is unavailable.",
       });
     }
+    const llmProvider = (data.workerHealth?.llm_provider as string | undefined) ?? "ollama";
+    const llmKeyOk = (data.workerHealth?.llm_api_key_configured as boolean | undefined) ?? true;
+    if (llmProvider !== "ollama" && !llmKeyOk) {
+      warnings.push({
+        id: "llm-api-key",
+        title: `LLM provider is "${llmProvider}" but no API key is configured`,
+        detail: "Set ANTHROPIC_API_KEY or OPENAI_API_KEY in the worker environment to enable cloud LLM flows.",
+      });
+    }
     return warnings;
   }, [data]);
 

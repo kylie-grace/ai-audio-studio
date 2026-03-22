@@ -29,3 +29,34 @@ def test_write_revision_artifacts_creates_soundflow_payload_for_protools(tmp_pat
     body = Path(result["script_path"]).read_text()
     assert "\"generated_by\": \"ai-audio-studio\"" in body
     assert Path(result["changes_path"]).exists()
+
+
+def test_volume_change_generates_reaper_api_call(tmp_path: Path):
+    changes = [{"parameter": "volume", "value": -6, "track_index": 0, "direction": "down",
+                "element": "vocals", "human_readable": "Bring vocals down 6dB"}]
+
+    result = write_revision_artifacts(tmp_path, "reaper", changes, "/tmp/demo.rpp")
+
+    lua = Path(result["script_path"]).read_text()
+    assert "reaper.SetMediaTrackInfo_Value" in lua
+    assert "TODO" not in lua
+
+
+def test_pan_change_generates_reaper_api_call(tmp_path: Path):
+    changes = [{"parameter": "pan", "value": -50, "track_index": 1, "direction": "adjust",
+                "element": "bass", "human_readable": "Pan bass left"}]
+
+    result = write_revision_artifacts(tmp_path, "reaper", changes, "/tmp/demo.rpp")
+
+    lua = Path(result["script_path"]).read_text()
+    assert "reaper.SetMediaTrackInfo_Value" in lua
+    assert "D_PAN" in lua
+
+
+def test_undo_block_present(tmp_path: Path):
+    changes = parse_changes("Bring vocals up.")
+
+    result = write_revision_artifacts(tmp_path, "reaper", changes, "/tmp/demo.rpp")
+
+    lua = Path(result["script_path"]).read_text()
+    assert "reaper.Undo_BeginBlock" in lua

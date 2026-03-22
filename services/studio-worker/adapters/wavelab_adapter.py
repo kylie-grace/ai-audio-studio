@@ -18,10 +18,39 @@ def _script_for_action(action: str, params: dict) -> str:
         return f'tell application "WaveLab Pro" to open POSIX file "{target}"'
     if action == "apply_master_section":
         preset = str(params.get("preset") or params.get("master_section_preset") or "Default").replace('"', '\\"')
-        return f'tell application "WaveLab Pro" to activate\n-- Apply master section preset: {preset}'
+        return "\n".join([
+            'tell application "WaveLab Pro" to activate',
+            "delay 0.5",
+            'tell application "System Events"',
+            '    tell process "WaveLab Pro"',
+            "        try",
+            f'            click menu item "{preset}" of menu "Master Section Presets" of menu item "Master Section Presets" of menu "Processors" of menu bar 1',
+            "        on error",
+            f'            -- Fallback: preset "{preset}" not found in Processors > Master Section Presets',
+            "            key code 35 using {command down, shift down}",
+            "        end try",
+            "    end tell",
+            "end tell",
+        ])
     if action == "render_to_file":
         target = str(params.get("output_path") or params.get("render_path") or "").replace('"', '\\"')
-        return f'tell application "WaveLab Pro" to activate\n-- Render to "{target}"'
+        return "\n".join([
+            'tell application "WaveLab Pro" to activate',
+            "delay 0.5",
+            'tell application "System Events"',
+            '    tell process "WaveLab Pro"',
+            "        try",
+            '            click menu item "Render Audio File..." of menu "Render" of menu item "Render" of menu "File" of menu bar 1',
+            "            delay 1.0",
+            f'            set value of text field 1 of window 1 to "{target}"',
+            "            key code 36",
+            "        on error",
+            "            -- Fallback: render dialog automation failed, manual render required",
+            "            key code 15 using {command down, shift down}",
+            "        end try",
+            "    end tell",
+            "end tell",
+        ])
     if action == "close_project":
         return 'tell application "WaveLab Pro" to close front document saving no'
     raise ValueError(f"Unsupported WaveLab action: {action}")

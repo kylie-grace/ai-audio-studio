@@ -64,16 +64,36 @@ def _reascript_body(changes: list[dict], session_path: str | None) -> str:
         "log('Starting generated revision pass')",
     ]
     for index, change in enumerate(changes, start=1):
-        lines.extend(
-            [
-                f"log('Change {index}: {change['human_readable']}')",
-                f"-- element: {change['element']}",
-                f"-- parameter: {change['parameter']}",
-                f"-- direction: {change['direction']}",
-                "-- TODO: bind this change to actual Reaper track actions",
-                "",
-            ]
-        )
+        param = change.get("parameter", "other")
+        direction = change.get("direction", "adjust")
+        track_idx = int(change.get("track_index", 0))
+        raw_value = change.get("value")
+        if raw_value is None:
+            db_delta = 1.5 if direction == "up" else -1.5 if direction == "down" else 0.0
+        else:
+            db_delta = float(raw_value)
+
+        human_readable = change.get("human_readable", param)
+        element = change.get("element", "unknown")
+        lines.append(f"log('Change {index}: {human_readable}')")
+        lines.append(f"-- element: {element}, parameter: {param}, direction: {direction}")
+        lines.append(f"local track_{index} = reaper.GetTrack(0, {track_idx})")
+        lines.append(f"if track_{index} then")
+        if param in ("volume", "level"):
+            linear = round(10 ** (db_delta / 20), 6)
+            lines.append(f"  reaper.SetMediaTrackInfo_Value(track_{index}, 'D_VOL', {linear})")
+        elif param == "pan":
+            pan_val = round(max(-1.0, min(1.0, db_delta / 100.0)), 6)
+            lines.append(f"  reaper.SetMediaTrackInfo_Value(track_{index}, 'D_PAN', {pan_val})")
+        elif param == "mute":
+            lines.append(f"  reaper.SetMediaTrackInfo_Value(track_{index}, 'B_MUTE', {1 if db_delta != 0 else 0})")
+        elif param == "solo":
+            lines.append(f"  reaper.SetMediaTrackInfo_Value(track_{index}, 'I_SOLO', {1 if db_delta != 0 else 0})")
+        else:
+            lines.append(f"  -- Unsupported parameter: {param}")
+        lines.append(f"  reaper.UpdateArrange()")
+        lines.append(f"end")
+        lines.append("")
     lines.extend(
         [
             "reaper.Undo_EndBlock('AI Audio Studio revision scaffold', -1)",

@@ -4,9 +4,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
+
+try:
+    from pythonjsonlogger import jsonlogger as _jl  # type: ignore[import]
+    _h = logging.StreamHandler(); _h.setFormatter(_jl.JsonFormatter("%(asctime)s %(name)s %(levelname)s %(message)s", rename_fields={"asctime": "ts", "levelname": "level"})); logging.root.handlers = [_h]
+except ImportError:
+    logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s")
+logging.root.setLevel(logging.INFO)
 from contextlib import asynccontextmanager
 from urllib.error import URLError
 from urllib.request import Request, urlopen

@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Project State Service — canonical job state, approval queue, audit log, and worker registry."""
+import logging
+try:
+    from pythonjsonlogger import jsonlogger as _jl  # type: ignore[import]
+    _h = logging.StreamHandler(); _h.setFormatter(_jl.JsonFormatter("%(asctime)s %(name)s %(levelname)s %(message)s", rename_fields={"asctime": "ts", "levelname": "level"})); logging.root.handlers = [_h]
+except ImportError:
+    logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s")
+logging.root.setLevel(logging.INFO)
 from fastapi import FastAPI
 import asyncpg
 from .db import lifespan

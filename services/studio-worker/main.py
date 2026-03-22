@@ -3,7 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 from contextlib import asynccontextmanager, suppress
+
+try:
+    from pythonjsonlogger import jsonlogger as _jl  # type: ignore[import]
+    _h = logging.StreamHandler(); _h.setFormatter(_jl.JsonFormatter("%(asctime)s %(name)s %(levelname)s %(message)s", rename_fields={"asctime": "ts", "levelname": "level"})); logging.root.handlers = [_h]
+except ImportError:
+    logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s")
+logging.root.setLevel(logging.INFO)
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -137,6 +146,12 @@ class ExecutionPlanPreviewBody(BaseModel):
 
 @app.get("/health")
 async def health():
+    llm_provider = os.getenv("LLM_PROVIDER", "ollama")
+    llm_api_key_configured = (
+        bool(os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY"))
+        if llm_provider != "ollama"
+        else True
+    )
     return {
         "status": "ok",
         "worker_slug": _settings.worker_slug,
@@ -144,6 +159,8 @@ async def health():
         "project_state_url": _settings.project_state_url,
         "configured_workstation": _settings.workstation_profile,
         "startup_validation": _startup_validation,
+        "llm_provider": llm_provider,
+        "llm_api_key_configured": llm_api_key_configured,
     }
 
 

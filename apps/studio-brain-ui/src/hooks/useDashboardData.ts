@@ -667,6 +667,7 @@ export async function loadDashboardData(auditDateFrom = "", auditDateTo = ""): P
     ]);
 
   const previewProjectRoot = workspace.settings.shared_paths.projects || "/data/projects";
+  const workerHealth = await fetchOptionalJson<Record<string, unknown>>(`${API.studioWorker}/health`);
   const workstationProfile = await fetchOptionalJson<WorkstationProfile>(`${API.studioWorker}/workstation/profile`);
   const [sessionManifestPreview, mixPlanPreview, renderPlanPreview, listeningReportPreview] = await Promise.all([
     fetchOptionalJson<SessionManifestPreview>(`${API.studioWorker}/session-manifest/preview`, {
@@ -738,6 +739,7 @@ export async function loadDashboardData(auditDateFrom = "", auditDateTo = ""): P
     runtimeRecovery,
     bootstrapStatus,
     workspace,
+    workerHealth: workerHealth ?? null,
     workstationProfile,
     sessionManifestPreview,
     mixPlanPreview,
@@ -784,6 +786,7 @@ export function createInitialDashboardData(): DashboardData {
       missing_fields: ["studio_name", "shared_paths.projects", "style_seed.raw_text"],
       style_profile_count: 0,
     },
+    workerHealth: null,
     workstationProfile: null,
     sessionManifestPreview: null,
     mixPlanPreview: null,

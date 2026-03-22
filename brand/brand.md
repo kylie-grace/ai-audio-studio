@@ -60,13 +60,9 @@ Alternates:
 - Safe, modular AI audio workflows
 
 ## Asset list
-- `logo/icon.svg` — square app/repo icon
-- `logo/icon-monochrome.svg` — one-color icon
-- `logo/logo-horizontal.svg` — primary wide logo for README and social banners
-- `logo/logo-vertical.svg` — stacked logo for docs or splash screens
-- `logo/badge.svg` — compact lockup for headers
-- `social/og-card.svg` — social/share card
-- `docs/README-snippet.md` — ready-to-paste README usage
+- `brand/icon.svg` — square app/repo icon (used in README header)
+- `brand/icon-monochrome.svg` — one-color icon for badges and dark/light contexts
+- `brand/logo-vertical.svg` — stacked logo for docs or splash screens
 
 ## AGPL framing
 Because the project is AGPL, the brand should emphasize:

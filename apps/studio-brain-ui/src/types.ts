@@ -695,6 +695,7 @@ export type DashboardData = {
   runtimeRecovery: RuntimeRecovery;
   bootstrapStatus: BootstrapStatus;
   workspace: WorkspaceStatus;
+  workerHealth: Record<string, unknown> | null;
   workstationProfile: WorkstationProfile | null;
   sessionManifestPreview: SessionManifestPreview | null;
   mixPlanPreview: MixPlanPreview | null;
