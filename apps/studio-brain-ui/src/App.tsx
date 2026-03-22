@@ -1124,6 +1124,44 @@ function parseDelimitedList(value: string) {
     .filter(Boolean);
 }
 
+function artifactKindLabel(artifact: Record<string, unknown>) {
+  return String(artifact.kind ?? artifact.type ?? "artifact");
+}
+
+function buildDeliveryHistory(projectDetail: ProjectDetail | null) {
+  if (!projectDetail) return [];
+  return projectDetail.artifact_inventory
+    .map((entry) => {
+      const artifact = entry.artifact ?? {};
+      const path =
+        entry.artifact_path ??
+        (artifact.path as string | undefined) ??
+        (artifact.manifest_path as string | undefined) ??
+        (artifact.delivery_path as string | undefined);
+      const kind = artifactKindLabel(artifact).toLowerCase();
+      const label = `${kind} ${fileLabel(path)}`.toLowerCase();
+      const deliveryLike =
+        kind.includes("delivery") ||
+        kind.includes("manifest") ||
+        kind.includes("render") ||
+        label.includes("review_mix") ||
+        label.includes("instrumental") ||
+        label.includes("stems");
+      if (!deliveryLike) return null;
+      return {
+        artifactId: entry.artifact_id,
+        path,
+        createdAt: entry.created_at,
+        source: entry.source,
+        kind: artifactKindLabel(artifact),
+        workerSlug: entry.worker_slug,
+        summary: path ? fileLabel(path) : JSON.stringify(artifact),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .slice(0, 12);
+}
+
 function formatStatusValue(value: unknown): string {
   if (Array.isArray(value)) return value.join(", ");
   if (value && typeof value === "object") return JSON.stringify(value);
@@ -1690,6 +1728,7 @@ export function App() {
   const visibleRules = data.rules.slice(0, 10);
   const latestStyleProfile = data.styleProfiles[0] ?? null;
   const voicePreview = studioVoicePreview(workspaceSettings, latestStyleProfile);
+  const deliveryHistory = buildDeliveryHistory(projectDetail);
   const workstationProfile = data.workstationProfile;
   const selectedProject = data.projects.find((project) => project.id === selectedProjectId) ?? data.projects[0] ?? null;
   const selectedWorker = data.workers.find((worker) => worker.slug === selectedWorkerSlug) ?? data.workers[0] ?? null;
@@ -2150,6 +2189,16 @@ export function App() {
         actions: [
           { id: "goto-context", label: "Open context" },
           { id: "goto-settings", label: "Review shared paths" },
+        ],
+      };
+    }
+    if (/(delivery|deliverable|render history|package)/.test(lower)) {
+      return {
+        role: "assistant",
+        text: `Delivery history is now surfaced from the project review stack. I can guide you to the project detail view where review renders, manifests, and package artifacts are previewable and downloadable from the same control surface.`,
+        actions: [
+          { id: "goto-context", label: "Open project review" },
+          { id: "goto-operations", label: "Open live ops" },
         ],
       };
     }
@@ -4922,6 +4971,50 @@ export function App() {
                         {projectDetail.review_packet.latest_render_review_status ? <span className="summary-pill">render {projectDetail.review_packet.latest_render_review_status}</span> : null}
                       </div>
                     ) : null}
+                  </div>
+                </div>
+                <div className="panel-span-12">
+                  <div className="mini-card">
+                    <div className="panel-header compact-header">
+                      <div>
+                        <span className="metric-label">Delivery history</span>
+                        <strong>{deliveryHistory.length ? `${deliveryHistory.length} delivery-facing artifacts` : "No delivery history yet"}</strong>
+                      </div>
+                      {projectDetail ? <span className="count-pill">{projectDetail.render_reviews.length} render reviews</span> : null}
+                    </div>
+                    <div className="table-stack top-gap">
+                      {deliveryHistory.map((entry) => (
+                        <div key={`${entry.artifactId}-${entry.summary}`} className="table-row compact-row">
+                          <div className="row-main">
+                            <strong>{entry.summary}</strong>
+                            <div className="muted">{entry.kind} · {entry.source}{entry.workerSlug ? ` · ${entry.workerSlug}` : ""}</div>
+                          </div>
+                          <div className="row-meta">
+                            <span className="muted">{entry.createdAt ? summarizeTime(entry.createdAt) : "n/a"}</span>
+                            {selectedProject?.id ? (
+                              <>
+                                <button className="action-button" type="button" onClick={() => previewArtifact(selectedProject.id, entry.artifactId)}>
+                                  preview
+                                </button>
+                                {entry.path ? (
+                                  <a
+                                    className="action-button"
+                                    href={`${API.projectState}/projects/${selectedProject.id}/artifacts/${entry.artifactId}/download`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    download
+                                  </a>
+                                ) : null}
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                      {projectDetail && !deliveryHistory.length ? (
+                        <p className="empty-state">Delivery-facing renders, manifests, and stem packages will appear here once packaging or review bounces have been generated.</p>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
                 {reviewSaveMessage ? <p className="feedback ok">{reviewSaveMessage}</p> : null}

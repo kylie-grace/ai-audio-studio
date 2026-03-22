@@ -44,3 +44,4 @@
 ## Dedicated Plans
 - DAW execution, auto-mix, listening loop, and workstation onboarding are broken out in [DAW_EXECUTION_PLAN.md](/Users/kpsnyder/ai-audio-studio/docs/DAW_EXECUTION_PLAN.md).
 - Cross-cutting product completion is tracked in [MASTER_PLAN.md](/Users/kpsnyder/ai-audio-studio/docs/MASTER_PLAN.md).
+- The operator validation checklist lives in [morning-validation.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/morning-validation.md).
