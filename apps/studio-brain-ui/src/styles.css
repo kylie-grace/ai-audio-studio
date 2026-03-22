@@ -149,7 +149,7 @@ code {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
-  margin: 0 0 14px;
+  margin: 0;
 }
 
 .workflow-card {
@@ -518,6 +518,63 @@ code {
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 16px;
   margin-top: 12px;
+}
+
+.overview-lead-grid,
+.overview-support-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.focus-panel {
+  grid-column: span 4;
+}
+
+.assistant-panel {
+  grid-column: span 8;
+}
+
+.focus-list {
+  display: grid;
+  gap: 10px;
+}
+
+.focus-item {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+    rgba(255, 255, 255, 0.018);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.focus-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.18);
+}
+
+.focus-warn {
+  border-color: rgba(239, 130, 119, 0.2);
+}
+
+.focus-watch {
+  border-color: rgba(240, 190, 105, 0.2);
+}
+
+.focus-ok {
+  border-color: rgba(126, 211, 159, 0.2);
 }
 
 .nested-grid {
@@ -1112,8 +1169,74 @@ code {
 }
 
 .onboarding-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 14px;
+}
+
+.settings-editor-shell {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.settings-section-nav {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-section-button {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  min-height: 84px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+    rgba(255, 255, 255, 0.018);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.settings-section-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(85, 192, 214, 0.22);
+}
+
+.settings-section-button.is-active {
+  border-color: rgba(85, 192, 214, 0.34);
+  background:
+    linear-gradient(180deg, rgba(85, 192, 214, 0.12), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.03);
+}
+
+.settings-section-button .tab-label {
+  font-size: 0.85rem;
+}
+
+.settings-section-button .tab-summary {
+  display: block;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.settings-editor-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.022);
 }
 
 .toggle-grid {
@@ -1162,9 +1285,13 @@ code {
 
 .settings-summary-layout {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-top: 16px;
+}
+
+.compact-status-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .settings-summary-card {
@@ -1491,13 +1618,17 @@ code {
   .recovery-grid,
   .stat-strip,
   .onboarding-grid,
+  .overview-lead-grid,
+  .overview-support-grid,
   .foundation-grid,
   .settings-snapshot-grid,
+  .settings-section-nav,
   .settings-summary-layout,
   .zone-summary-grid,
   .support-health-grid,
   .module-grid,
   .platform-grid,
+  .compact-status-grid,
   .context-card-grid,
   .action-deck,
   .status-key-grid,
@@ -1516,6 +1647,11 @@ code {
   .panel-span-6,
   .panel-span-7,
   .panel-span-8 {
+    grid-column: auto;
+  }
+
+  .focus-panel,
+  .assistant-panel {
     grid-column: auto;
   }
 
@@ -1576,6 +1712,10 @@ code {
 
   .onboarding-footer {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .settings-editor-summary {
     flex-direction: column;
   }
 

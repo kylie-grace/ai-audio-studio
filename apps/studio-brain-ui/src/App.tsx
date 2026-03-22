@@ -710,6 +710,7 @@ type DashboardData = {
 type TabId = "overview" | "operations" | "automation" | "context" | "settings";
 
 type WorkflowId = "start-day" | "approvals" | "recover-runtime" | "manage-automation" | "update-setup";
+type SettingsSectionId = "identity" | "storage" | "voice" | "integrations" | "worker" | "modules";
 
 type ConciergeActionId =
   | "refresh"
@@ -1100,6 +1101,95 @@ function asArray(value: unknown): string[] {
     }
   }
   return [];
+}
+
+function normalizeWorkspaceSettings(input?: Partial<WorkspaceSettings> | null): WorkspaceSettings {
+  const defaults = defaultWorkspaceSettings();
+  const raw = (input ?? {}) as Partial<WorkspaceSettings>;
+  const sharedPaths = (raw.shared_paths ?? {}) as Partial<WorkspaceSettings["shared_paths"]>;
+  const styleSeed = (raw.style_seed ?? {}) as Partial<WorkspaceSettings["style_seed"]>;
+  const alertDestinations = (raw.alert_destinations ?? {}) as Partial<WorkspaceSettings["alert_destinations"]>;
+  const integrations = (raw.integrations ?? {}) as Partial<WorkspaceSettings["integrations"]>;
+  const worker = (raw.worker ?? {}) as Partial<WorkspaceSettings["worker"]>;
+  const modules = (raw.module_settings ?? {}) as Partial<ModuleSettings>;
+  const defaultModules = defaults.module_settings;
+
+  return {
+    ...defaults,
+    ...raw,
+    studio_name: raw.studio_name ?? defaults.studio_name,
+    host_machine_type: raw.host_machine_type ?? defaults.host_machine_type,
+    deployment_mode: raw.deployment_mode ?? defaults.deployment_mode,
+    public_base_url: raw.public_base_url ?? defaults.public_base_url,
+    https_mode: raw.https_mode ?? defaults.https_mode,
+    operator_name: raw.operator_name ?? defaults.operator_name,
+    shared_paths: {
+      ...defaults.shared_paths,
+      ...sharedPaths,
+      projects: sharedPaths.projects ?? defaults.shared_paths.projects,
+      deliveries: sharedPaths.deliveries ?? defaults.shared_paths.deliveries,
+      draft_queue: sharedPaths.draft_queue ?? defaults.shared_paths.draft_queue,
+      approval_queue: sharedPaths.approval_queue ?? defaults.shared_paths.approval_queue,
+      incoming_stems: sharedPaths.incoming_stems ?? defaults.shared_paths.incoming_stems,
+    },
+    style_seed: {
+      ...defaults.style_seed,
+      ...styleSeed,
+      name: styleSeed.name ?? defaults.style_seed.name,
+      raw_text: styleSeed.raw_text ?? defaults.style_seed.raw_text,
+      source_paths: asArray(styleSeed.source_paths ?? defaults.style_seed.source_paths),
+    },
+    alert_destinations: {
+      ...defaults.alert_destinations,
+      ...alertDestinations,
+      email_to: asArray(alertDestinations.email_to ?? defaults.alert_destinations.email_to),
+      webhook_url: alertDestinations.webhook_url ?? defaults.alert_destinations.webhook_url,
+    },
+    integrations: {
+      ...defaults.integrations,
+      ...integrations,
+      n8n: typeof integrations.n8n === "boolean" ? integrations.n8n : defaults.integrations.n8n,
+      gmail_readonly:
+        typeof integrations.gmail_readonly === "boolean" ? integrations.gmail_readonly : defaults.integrations.gmail_readonly,
+      gmail_send: typeof integrations.gmail_send === "boolean" ? integrations.gmail_send : defaults.integrations.gmail_send,
+      instagram: typeof integrations.instagram === "boolean" ? integrations.instagram : defaults.integrations.instagram,
+      facebook: typeof integrations.facebook === "boolean" ? integrations.facebook : defaults.integrations.facebook,
+    },
+    worker: {
+      ...defaults.worker,
+      ...worker,
+      enabled: typeof worker.enabled === "boolean" ? worker.enabled : defaults.worker.enabled,
+      worker_slug: worker.worker_slug ?? defaults.worker.worker_slug,
+      worker_api_base_url: worker.worker_api_base_url ?? defaults.worker.worker_api_base_url,
+      display_name: worker.display_name ?? defaults.worker.display_name,
+      platform: worker.platform ?? defaults.worker.platform,
+      default_daw: worker.default_daw ?? defaults.worker.default_daw,
+      supported_daws: asArray(worker.supported_daws ?? defaults.worker.supported_daws),
+      adapter_capabilities: asArray(worker.adapter_capabilities ?? defaults.worker.adapter_capabilities),
+      dry_run_daw: typeof worker.dry_run_daw === "boolean" ? worker.dry_run_daw : defaults.worker.dry_run_daw,
+      reaper_binary_path: worker.reaper_binary_path ?? defaults.worker.reaper_binary_path,
+      protools_app_path: worker.protools_app_path ?? defaults.worker.protools_app_path,
+      soundflow_cli_path: worker.soundflow_cli_path ?? defaults.worker.soundflow_cli_path,
+      notes: worker.notes ?? defaults.worker.notes,
+    },
+    module_settings: {
+      lead_intake: { ...defaultModules.lead_intake, ...(modules.lead_intake ?? {}) },
+      inbox_triage: { ...defaultModules.inbox_triage, ...(modules.inbox_triage ?? {}) },
+      content_pipeline: { ...defaultModules.content_pipeline, ...(modules.content_pipeline ?? {}) },
+      audio_qc: { ...defaultModules.audio_qc, ...(modules.audio_qc ?? {}) },
+      session_prep: { ...defaultModules.session_prep, ...(modules.session_prep ?? {}) },
+      revision_parser: { ...defaultModules.revision_parser, ...(modules.revision_parser ?? {}) },
+      delivery_packager: { ...defaultModules.delivery_packager, ...(modules.delivery_packager ?? {}) },
+      mix_planner: {
+        ...defaultModules.mix_planner,
+        ...(modules.mix_planner ?? {}),
+        default_focus: asArray(modules.mix_planner?.default_focus ?? defaultModules.mix_planner.default_focus),
+      },
+    },
+    onboarding_complete: typeof raw.onboarding_complete === "boolean" ? raw.onboarding_complete : defaults.onboarding_complete,
+    created_at: raw.created_at ?? null,
+    updated_at: raw.updated_at ?? null,
+  };
 }
 
 function summarizeTime(value: string) {
@@ -1591,6 +1681,7 @@ export function App() {
   const [workspaceDraftHydrated, setWorkspaceDraftHydrated] = useState(false);
   const [operatorNameHydrated, setOperatorNameHydrated] = useState(false);
   const [editingWorkspaceSetup, setEditingWorkspaceSetup] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("identity");
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [onboardingMessage, setOnboardingMessage] = useState<string | null>(null);
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
@@ -1673,7 +1764,7 @@ export function App() {
     managedIn: Array.from(new Set(services.map(serviceManagedIn))).join(" · "),
     accent: zoneAccent(zone),
   }));
-  const workspaceSettings = data.workspace.settings;
+  const workspaceSettings = normalizeWorkspaceSettings(data.workspace.settings);
   const readinessSummary = data.workspace.readiness_summary;
   const connectionCenter = data.workspace.connection_center;
   const styleSourceCount = workspaceSettings.style_seed.source_paths.length;
@@ -1693,6 +1784,60 @@ export function App() {
   const moduleEnabledCount = Object.values(moduleSettings).filter((module) => module.enabled).length;
   const workerCapabilities = Array.from(new Set(data.workers.flatMap((worker) => asArray(worker.capabilities))));
   const readyConnectionCount = connectionCenter.filter((item) => item.status === "ready").length;
+  const pendingConnections = connectionCenter.filter((item) => item.status !== "ready");
+  const topPendingConnection = pendingConnections[0] ?? null;
+  const operatorFocusItems = [
+    activeAlertCount
+      ? {
+          title: "Runtime alerts need review",
+          detail: `${activeAlertCount} active alert${activeAlertCount === 1 ? "" : "s"} across worker leases, approvals, or runtime thresholds.`,
+          action: "Open Operations",
+          tab: "operations" as TabId,
+          tone: "warn",
+        }
+      : null,
+    data.approvals.length
+      ? {
+          title: "Approval queue needs action",
+          detail: `${data.approvals.length} approval item${data.approvals.length === 1 ? "" : "s"} waiting for an operator decision.`,
+          action: "Review approvals",
+          tab: "operations" as TabId,
+          tone: "warn",
+        }
+      : null,
+    topPendingConnection
+      ? {
+          title: `${topPendingConnection.name} still needs setup`,
+          detail: topPendingConnection.steps[0] ?? topPendingConnection.detail,
+          action: "Finish setup",
+          tab: "settings" as TabId,
+          tone: "watch",
+        }
+      : null,
+    failedTaskCount
+      ? {
+          title: "Task recovery is available",
+          detail: `${failedTaskCount} failed worker task${failedTaskCount === 1 ? "" : "s"} can be requeued or inspected from Operations.`,
+          action: "Open recovery",
+          tab: "operations" as TabId,
+          tone: "watch",
+        }
+      : {
+          title: "Platform is stable",
+          detail: "No failed tasks are present. The next high-value move is validating connections or running a worker smoke.",
+          action: "Check setup",
+          tab: "settings" as TabId,
+          tone: "ok",
+        },
+  ].filter(Boolean) as Array<{ title: string; detail: string; action: string; tab: TabId; tone: "ok" | "warn" | "watch" }>;
+  const settingsSections: Array<{ id: SettingsSectionId; label: string; summary: string }> = [
+    { id: "identity", label: "Identity", summary: "Studio name, host type, and front door." },
+    { id: "storage", label: "Storage", summary: "Projects, approvals, deliveries, and stems." },
+    { id: "voice", label: "Voice", summary: "Style seed, tone, and reference files." },
+    { id: "integrations", label: "Integrations", summary: "Alerts, Gmail, n8n, and social posture." },
+    { id: "worker", label: "Worker", summary: "Optional DAW worker and execution defaults." },
+    { id: "modules", label: "Modules", summary: "Lead, inbox, content, QC, revision, and delivery tuning." },
+  ];
   const remainingBuildGaps = [
     {
       title: "Gmail send activation",
@@ -1778,7 +1923,7 @@ export function App() {
 
   useEffect(() => {
     if (!workspaceDraftHydrated) {
-      setWorkspaceDraft(data.workspace.settings);
+      setWorkspaceDraft(normalizeWorkspaceSettings(data.workspace.settings));
       setWorkspaceDraftHydrated(true);
     }
   }, [data.workspace.settings, workspaceDraftHydrated]);
@@ -2113,6 +2258,7 @@ export function App() {
         setActiveTab("settings");
         setEditingWorkspaceSetup(true);
         setWorkspaceDraft(workspaceSettings);
+        setSettingsSection("identity");
         return "Opened the setup editor.";
     }
   }
@@ -2300,43 +2446,44 @@ export function App() {
     setOnboardingError(null);
     setOnboardingMessage(null);
     try {
+      const normalizedDraft = normalizeWorkspaceSettings(workspaceDraft);
       const payload = {
-        ...workspaceDraft,
-        studio_name: workspaceDraft.studio_name.trim(),
-        deployment_mode: workspaceDraft.deployment_mode,
-        public_base_url: workspaceDraft.public_base_url.trim(),
-        https_mode: workspaceDraft.https_mode,
-        operator_name: workspaceDraft.operator_name.trim() || operatorName,
+        ...normalizedDraft,
+        studio_name: normalizedDraft.studio_name.trim(),
+        deployment_mode: normalizedDraft.deployment_mode,
+        public_base_url: normalizedDraft.public_base_url.trim(),
+        https_mode: normalizedDraft.https_mode,
+        operator_name: normalizedDraft.operator_name.trim() || operatorName,
         shared_paths: {
-          ...workspaceDraft.shared_paths,
-          projects: workspaceDraft.shared_paths.projects.trim(),
-          deliveries: workspaceDraft.shared_paths.deliveries.trim(),
-          draft_queue: workspaceDraft.shared_paths.draft_queue.trim(),
-          approval_queue: workspaceDraft.shared_paths.approval_queue.trim(),
-          incoming_stems: workspaceDraft.shared_paths.incoming_stems.trim(),
+          ...normalizedDraft.shared_paths,
+          projects: normalizedDraft.shared_paths.projects.trim(),
+          deliveries: normalizedDraft.shared_paths.deliveries.trim(),
+          draft_queue: normalizedDraft.shared_paths.draft_queue.trim(),
+          approval_queue: normalizedDraft.shared_paths.approval_queue.trim(),
+          incoming_stems: normalizedDraft.shared_paths.incoming_stems.trim(),
         },
         alert_destinations: {
-          ...workspaceDraft.alert_destinations,
-          webhook_url: workspaceDraft.alert_destinations.webhook_url.trim(),
-          email_to: workspaceDraft.alert_destinations.email_to.map((email) => email.trim()).filter(Boolean),
+          ...normalizedDraft.alert_destinations,
+          webhook_url: normalizedDraft.alert_destinations.webhook_url.trim(),
+          email_to: normalizedDraft.alert_destinations.email_to.map((email) => email.trim()).filter(Boolean),
         },
         style_seed: {
-          ...workspaceDraft.style_seed,
-          name: workspaceDraft.style_seed.name.trim(),
-          raw_text: workspaceDraft.style_seed.raw_text.trim(),
-          source_paths: workspaceDraft.style_seed.source_paths.map((path) => path.trim()).filter(Boolean),
+          ...normalizedDraft.style_seed,
+          name: normalizedDraft.style_seed.name.trim(),
+          raw_text: normalizedDraft.style_seed.raw_text.trim(),
+          source_paths: normalizedDraft.style_seed.source_paths.map((path) => path.trim()).filter(Boolean),
         },
         worker: {
-          ...workspaceDraft.worker,
-          worker_slug: workspaceDraft.worker.worker_slug.trim(),
-          worker_api_base_url: workspaceDraft.worker.worker_api_base_url.trim(),
-          display_name: workspaceDraft.worker.display_name.trim(),
-          supported_daws: workspaceDraft.worker.supported_daws.map((item) => item.trim()).filter(Boolean),
-          adapter_capabilities: workspaceDraft.worker.adapter_capabilities.map((item) => item.trim()).filter(Boolean),
-          reaper_binary_path: workspaceDraft.worker.reaper_binary_path.trim(),
-          protools_app_path: workspaceDraft.worker.protools_app_path.trim(),
-          soundflow_cli_path: workspaceDraft.worker.soundflow_cli_path.trim(),
-          notes: workspaceDraft.worker.notes.trim(),
+          ...normalizedDraft.worker,
+          worker_slug: normalizedDraft.worker.worker_slug.trim(),
+          worker_api_base_url: normalizedDraft.worker.worker_api_base_url.trim(),
+          display_name: normalizedDraft.worker.display_name.trim(),
+          supported_daws: normalizedDraft.worker.supported_daws.map((item) => item.trim()).filter(Boolean),
+          adapter_capabilities: normalizedDraft.worker.adapter_capabilities.map((item) => item.trim()).filter(Boolean),
+          reaper_binary_path: normalizedDraft.worker.reaper_binary_path.trim(),
+          protools_app_path: normalizedDraft.worker.protools_app_path.trim(),
+          soundflow_cli_path: normalizedDraft.worker.soundflow_cli_path.trim(),
+          notes: normalizedDraft.worker.notes.trim(),
         },
       };
       const response = await fetch(`${API.crm}/workspace-settings/bootstrap`, {
@@ -2353,10 +2500,7 @@ export function App() {
       }
       setOnboardingMessage("Workspace onboarding saved.");
       setOperatorName(payload.operator_name);
-      setWorkspaceDraft((current) => ({
-        ...current,
-        ...payload,
-      }));
+      setWorkspaceDraft(normalizeWorkspaceSettings(payload));
       setEditingWorkspaceSetup(false);
       await refreshData();
     } catch (error) {
@@ -2969,8 +3113,38 @@ export function App() {
 
       {!isInitialLoad && activeTab === "overview" ? (
         <div className="tab-panel">
-          <section className="workspace-grid">
-            <article className="panel panel-span-7">
+          <section className="overview-lead-grid">
+            <article className="panel focus-panel">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Today</p>
+                  <h2>Operator focus</h2>
+                </div>
+                <span className={`status-pill ${activeAlertCount || data.approvals.length ? "warn" : "ok"}`}>
+                  {activeAlertCount || data.approvals.length ? "action needed" : "steady"}
+                </span>
+              </div>
+              <p className="panel-note">
+                Start here. This panel keeps the first screen anchored on what needs attention now instead of every subsystem at once.
+              </p>
+              <div className="focus-list">
+                {operatorFocusItems.map((item) => (
+                  <button
+                    key={item.title}
+                    type="button"
+                    className={`focus-item focus-${item.tone}`}
+                    onClick={() => setActiveTab(item.tab)}
+                  >
+                    <div className="workflow-header">
+                      <strong>{item.title}</strong>
+                      <span className={`status-pill ${item.tone === "ok" ? "ok" : "warn"}`}>{item.action}</span>
+                    </div>
+                    <p className="panel-note">{item.detail}</p>
+                  </button>
+                ))}
+              </div>
+            </article>
+            <article className="panel assistant-panel">
               <div className="panel-header">
                 <div>
                   <p className="section-kicker">Concierge</p>
@@ -3026,16 +3200,19 @@ export function App() {
               </div>
               {conciergeError ? <p className="feedback bad">{conciergeError}</p> : null}
             </article>
+          </section>
+
+          <section className="overview-support-grid">
             <article className="panel panel-span-5">
               <div className="panel-header">
                 <div>
                   <p className="section-kicker">Evaluation</p>
-                  <h2>Remaining Build Gaps</h2>
+                  <h2>Build gaps to close</h2>
                 </div>
                 <span className="status-pill warn">{remainingBuildGaps.filter((item) => item.state !== "ready").length} open</span>
               </div>
-              <div className="status-grid">
-                {remainingBuildGaps.map((item) => (
+              <div className="status-grid compact-status-grid">
+                {remainingBuildGaps.slice(0, 4).map((item) => (
                   <div key={item.title} className={`mini-card status-card ${item.state === "ready" ? "ready" : item.state === "watch" ? "ready" : "blocked"}`}>
                     <div className="workflow-header">
                       <span className="metric-label">{item.title}</span>
@@ -3046,29 +3223,37 @@ export function App() {
                 ))}
               </div>
             </article>
-          </section>
-
-          <section className="workflow-strip" aria-label="Guided operator workflows">
-            {workflowPlaybooks.map((workflow) => (
-              <button
-                key={workflow.id}
-                type="button"
-                className={`workflow-card workflow-${workflow.tab}`}
-                onClick={() => setActiveTab(workflow.tab)}
-              >
-                <div className="workflow-header">
-                  <span className="metric-label">{workflow.label}</span>
-                  <span className={`status-pill ${workflowTone(workflow.state)}`}>{workflow.state}</span>
+            <article className="panel panel-span-7">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Guided actions</p>
+                  <h2>Primary operator workflows</h2>
                 </div>
-                <strong>{workflow.count}</strong>
-                <span className="workflow-unit">{workflow.unit}</span>
-                <p className="panel-note">{workflow.summary}</p>
-                <div className="workflow-footer">
-                  <span>{workflow.detail}</span>
-                  <span>open {primaryTabs.find((tab) => tab.id === workflow.tab)?.label.toLowerCase()}</span>
-                </div>
-              </button>
-            ))}
+                <span className="count-pill">{workflowPlaybooks.length} lanes</span>
+              </div>
+              <div className="workflow-strip" aria-label="Guided operator workflows">
+                {workflowPlaybooks.map((workflow) => (
+                  <button
+                    key={workflow.id}
+                    type="button"
+                    className={`workflow-card workflow-${workflow.tab}`}
+                    onClick={() => setActiveTab(workflow.tab)}
+                  >
+                    <div className="workflow-header">
+                      <span className="metric-label">{workflow.label}</span>
+                      <span className={`status-pill ${workflowTone(workflow.state)}`}>{workflow.state}</span>
+                    </div>
+                    <strong>{workflow.count}</strong>
+                    <span className="workflow-unit">{workflow.unit}</span>
+                    <p className="panel-note">{workflow.summary}</p>
+                    <div className="workflow-footer">
+                      <span>{workflow.detail}</span>
+                      <span>open {primaryTabs.find((tab) => tab.id === workflow.tab)?.label.toLowerCase()}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </article>
           </section>
 
           <section className="command-grid">
@@ -5204,7 +5389,8 @@ export function App() {
                   type="button"
                   onClick={() => {
                     setEditingWorkspaceSetup(true);
-                    setWorkspaceDraft(data.workspace.settings);
+                    setWorkspaceDraft(workspaceSettings);
+                    setSettingsSection("identity");
                   }}
                 >
                   {onboardingRequired ? "continue setup" : "edit setup"}
@@ -5305,6 +5491,7 @@ export function App() {
                     onClick={() => {
                       setEditingWorkspaceSetup(true);
                       setWorkspaceDraft(workspaceSettings);
+                      setSettingsSection("identity");
                     }}
                   >
                     edit saved settings
@@ -5314,7 +5501,37 @@ export function App() {
             </div>
             {editingWorkspaceSetup || onboardingRequired ? (
             <>
+            <div className="settings-editor-shell">
+              <div className="settings-section-nav" role="tablist" aria-label="Settings sections">
+                {settingsSections.map((section) => (
+                  <button
+                    key={section.id}
+                    type="button"
+                    className={`settings-section-button ${settingsSection === section.id ? "is-active" : ""}`}
+                    onClick={() => setSettingsSection(section.id)}
+                  >
+                    <span className="tab-label">{section.label}</span>
+                    <span className="tab-summary">{section.summary}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="settings-editor-summary">
+                <div>
+                  <p className="section-kicker">Editor</p>
+                  <h3>{settingsSections.find((section) => section.id === settingsSection)?.label}</h3>
+                  <p className="panel-note">{settingsSections.find((section) => section.id === settingsSection)?.summary}</p>
+                </div>
+                <div className="summary-pill-row">
+                  {data.workspace.missing_fields.slice(0, 4).map((field) => (
+                    <span key={field} className="summary-pill">{field}</span>
+                  ))}
+                  {!data.workspace.missing_fields.length ? <span className="summary-pill">no required gaps</span> : null}
+                </div>
+              </div>
+            </div>
             <div className="onboarding-grid">
+              {settingsSection === "identity" ? (
+              <>
               <article className="mini-card">
                 <span className="metric-label">1. Studio identity</span>
                 <label className="field">
@@ -5401,6 +5618,9 @@ export function App() {
                   <strong>{frontDoorUrl}</strong>
                 </div>
               </article>
+              </>
+              ) : null}
+              {settingsSection === "storage" ? (
               <article className="mini-card">
                 <span className="metric-label">3. Shared paths</span>
                 {(["projects", "deliveries", "draft_queue", "approval_queue", "incoming_stems"] as const).map((pathKey) => (
@@ -5420,6 +5640,8 @@ export function App() {
                   </label>
                 ))}
               </article>
+              ) : null}
+              {settingsSection === "voice" ? (
               <article className="mini-card">
                 <span className="metric-label">4. Style and tone</span>
                 <label className="field">
@@ -5461,6 +5683,8 @@ export function App() {
                   {styleRescanPending ? "rescanning" : "rescan saved sources"}
                 </button>
               </article>
+              ) : null}
+              {settingsSection === "integrations" ? (
               <article className="mini-card">
                 <span className="metric-label">5. Alerts and integrations</span>
                 <label className="field">
@@ -5518,6 +5742,8 @@ export function App() {
                   ))}
                 </div>
               </article>
+              ) : null}
+              {settingsSection === "worker" ? (
               <article className="mini-card">
                 <span className="metric-label">6. Optional worker</span>
                 <label className="toggle-chip">
@@ -5677,6 +5903,8 @@ export function App() {
                   />
                 </label>
               </article>
+              ) : null}
+              {settingsSection === "modules" ? (
               <article className="mini-card module-settings-card">
                 <span className="metric-label">7. Module tuning</span>
                 <div className="module-settings-grid">
@@ -5944,6 +6172,7 @@ export function App() {
                   </div>
                 </div>
               </article>
+              ) : null}
             </div>
             <div className="onboarding-footer">
               <div className="missing-list">

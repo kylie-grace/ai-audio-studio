@@ -20,6 +20,7 @@ SPEC.loader.exec_module(MODULE)
 default_workspace_settings = MODULE.default_workspace_settings
 default_module_settings = MODULE.default_module_settings
 serialize_workspace_settings = MODULE.serialize_workspace_settings
+normalize_workspace_settings = MODULE.normalize_workspace_settings
 workspace_status = MODULE.workspace_status
 
 
@@ -162,3 +163,45 @@ def test_serialize_workspace_settings_decodes_json_and_timestamps():
     assert serialized["module_settings"]["lead_intake"]["minimum_fit_score"] == 72
     assert serialized["created_at"] == now.isoformat()
     assert serialized["updated_at"] == now.isoformat()
+
+
+def test_serialize_workspace_settings_backfills_missing_worker_fields():
+    serialized = serialize_workspace_settings(
+        {
+            "studio_name": "North Loop",
+            "deployment_mode": "single_machine",
+            "host_machine_type": "macbook-pro",
+            "public_base_url": "https://localhost",
+            "https_mode": "https_enabled",
+            "operator_name": "owner",
+            "shared_paths": "{}",
+            "style_seed": "{}",
+            "alert_destinations": "{}",
+            "integrations": "{}",
+            "worker_config": '{"enabled": false, "worker_slug": "", "worker_api_base_url": ""}',
+            "module_settings": "{}",
+            "onboarding_complete": True,
+            "created_at": None,
+            "updated_at": None,
+        }
+    )
+
+    assert serialized["worker"]["display_name"] == ""
+    assert serialized["worker"]["default_daw"] == "reaper"
+    assert serialized["worker"]["supported_daws"] == ["reaper"]
+    assert serialized["module_settings"]["session_prep"]["enabled"] is True
+
+
+def test_normalize_workspace_settings_preserves_partial_saved_payloads():
+    normalized = normalize_workspace_settings(
+        {
+            "studio_name": "Partial Room",
+            "worker": {"enabled": True, "worker_slug": "studio-mac"},
+            "module_settings": {"mix_planner": {"enabled": False}},
+        }
+    )
+
+    assert normalized["worker"]["display_name"] == ""
+    assert normalized["worker"]["adapter_capabilities"] == ["execute-reascript"]
+    assert normalized["module_settings"]["mix_planner"]["enabled"] is False
+    assert normalized["module_settings"]["mix_planner"]["default_focus"] == ["vocals", "drums", "low-end translation"]

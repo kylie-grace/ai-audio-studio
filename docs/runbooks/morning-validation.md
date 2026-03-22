@@ -7,8 +7,13 @@ Use this checklist for the first hands-on validation pass after the overnight bu
 ## Front door
 
 1. Open the control room at `http://<control-plane-ip>:3000` or the preferred HTTPS front door.
-2. Confirm the dashboard loads without blank sections or proxy failures.
-3. Confirm the new `Control Room Chat` and `Remaining Build Gaps` panels are visible on `Overview`.
+2. If LAN TLS is enabled, also verify `https://<control-plane-ip>` loads the same control room.
+3. Confirm the dashboard loads without blank sections or proxy failures.
+4. Confirm `Overview` now starts with:
+- `Operator focus`
+- `Control Room Assistant`
+- `Build gaps to close`
+- `Primary operator workflows`
 
 ## Concierge
 
@@ -28,7 +33,15 @@ Expected behavior:
 
 1. Open `Settings`.
 2. Review the `Connection Center` cards.
-3. Confirm the cards show:
+3. Click `Edit Setup`.
+4. Confirm the editor opens instead of crashing and shows section buttons for:
+- `Identity`
+- `Storage`
+- `Voice`
+- `Integrations`
+- `Worker`
+- `Modules`
+5. Confirm the cards show:
 - front door
 - n8n
 - Gmail intake
@@ -37,7 +50,7 @@ Expected behavior:
 - Facebook
 - worker runtime
 
-4. Confirm the setup editor still saves workspace settings correctly.
+6. Change one harmless field, save, and confirm the setup editor still saves workspace settings correctly.
 
 ## Worker validation
 

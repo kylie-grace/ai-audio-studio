@@ -150,13 +150,95 @@ def default_workspace_settings() -> dict[str, Any]:
     }
 
 
+def normalize_workspace_settings(settings: dict[str, Any] | None) -> dict[str, Any]:
+    defaults = default_workspace_settings()
+    raw = settings or {}
+    worker = raw.get("worker") or {}
+    module_settings = raw.get("module_settings") or {}
+
+    return {
+        **defaults,
+        **raw,
+        "studio_name": raw.get("studio_name") or defaults["studio_name"],
+        "host_machine_type": raw.get("host_machine_type") or defaults["host_machine_type"],
+        "deployment_mode": raw.get("deployment_mode") or defaults["deployment_mode"],
+        "public_base_url": raw.get("public_base_url") or defaults["public_base_url"],
+        "https_mode": raw.get("https_mode") or defaults["https_mode"],
+        "operator_name": raw.get("operator_name") or defaults["operator_name"],
+        "shared_paths": {
+            **defaults["shared_paths"],
+            **(raw.get("shared_paths") or {}),
+        },
+        "style_seed": {
+            **defaults["style_seed"],
+            **(raw.get("style_seed") or {}),
+            "source_paths": list((raw.get("style_seed") or {}).get("source_paths") or defaults["style_seed"]["source_paths"]),
+        },
+        "alert_destinations": {
+            **defaults["alert_destinations"],
+            **(raw.get("alert_destinations") or {}),
+            "email_to": list((raw.get("alert_destinations") or {}).get("email_to") or defaults["alert_destinations"]["email_to"]),
+        },
+        "integrations": {
+            **defaults["integrations"],
+            **(raw.get("integrations") or {}),
+        },
+        "worker": {
+            **defaults["worker"],
+            **worker,
+            "supported_daws": list(worker.get("supported_daws") or defaults["worker"]["supported_daws"]),
+            "adapter_capabilities": list(worker.get("adapter_capabilities") or defaults["worker"]["adapter_capabilities"]),
+        },
+        "module_settings": {
+            "lead_intake": {
+                **defaults["module_settings"]["lead_intake"],
+                **(module_settings.get("lead_intake") or {}),
+            },
+            "inbox_triage": {
+                **defaults["module_settings"]["inbox_triage"],
+                **(module_settings.get("inbox_triage") or {}),
+            },
+            "content_pipeline": {
+                **defaults["module_settings"]["content_pipeline"],
+                **(module_settings.get("content_pipeline") or {}),
+            },
+            "audio_qc": {
+                **defaults["module_settings"]["audio_qc"],
+                **(module_settings.get("audio_qc") or {}),
+            },
+            "session_prep": {
+                **defaults["module_settings"]["session_prep"],
+                **(module_settings.get("session_prep") or {}),
+            },
+            "revision_parser": {
+                **defaults["module_settings"]["revision_parser"],
+                **(module_settings.get("revision_parser") or {}),
+            },
+            "delivery_packager": {
+                **defaults["module_settings"]["delivery_packager"],
+                **(module_settings.get("delivery_packager") or {}),
+            },
+            "mix_planner": {
+                **defaults["module_settings"]["mix_planner"],
+                **(module_settings.get("mix_planner") or {}),
+                "default_focus": list(
+                    (module_settings.get("mix_planner") or {}).get("default_focus")
+                    or defaults["module_settings"]["mix_planner"]["default_focus"]
+                ),
+            },
+        },
+        "onboarding_complete": bool(raw.get("onboarding_complete", defaults["onboarding_complete"])),
+        "created_at": raw.get("created_at"),
+        "updated_at": raw.get("updated_at"),
+    }
+
+
 def serialize_workspace_settings(row) -> dict[str, Any]:
     if row is None:
         return default_workspace_settings()
 
     raw = dict(row)
-
-    return {
+    serialized = {
         "studio_name": raw["studio_name"],
         "host_machine_type": raw.get("host_machine_type") or "other",
         "deployment_mode": raw["deployment_mode"],
@@ -173,6 +255,7 @@ def serialize_workspace_settings(row) -> dict[str, Any]:
         "created_at": raw["created_at"].isoformat() if raw.get("created_at") else None,
         "updated_at": raw["updated_at"].isoformat() if raw.get("updated_at") else None,
     }
+    return normalize_workspace_settings(serialized)
 
 
 def connection_center(settings: dict[str, Any]) -> list[dict[str, Any]]:
