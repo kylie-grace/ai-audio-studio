@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 import sys
@@ -323,7 +323,21 @@ class FakePool:
         if "SELECT * FROM worker_tasks WHERE status='claimed'" in query:
             return [FakeRow(row) for row in self.worker_tasks if row.get("status") == "claimed"]
         if "SELECT * FROM audit_log" in query:
-            return list(self.audit_log)
+            rows = list(self.audit_log)
+            params_list = list(args)
+            offset = params_list.pop() if params_list else 0
+            limit = params_list.pop() if params_list else len(rows)
+            if "created_at < (" in query:
+                date_to = datetime.fromisoformat(str(params_list.pop()).replace("Z", "+00:00"))
+                if date_to.tzinfo is None:
+                    date_to = date_to.replace(tzinfo=timezone.utc)
+                rows = [row for row in rows if row.get("created_at") and row.get("created_at") < date_to + timedelta(days=1)]
+            if "created_at >=" in query:
+                date_from = datetime.fromisoformat(str(params_list.pop()).replace("Z", "+00:00"))
+                if date_from.tzinfo is None:
+                    date_from = date_from.replace(tzinfo=timezone.utc)
+                rows = [row for row in rows if row.get("created_at") and row.get("created_at") >= date_from]
+            return rows[offset : offset + limit]
         raise AssertionError(f"Unhandled fetch query: {query}")
 
     async def execute(self, query: str, *args: Any) -> str:
@@ -438,6 +452,21 @@ class FakePool:
             revision["status"] = "approved"
             return "UPDATE 1"
         if "INSERT INTO audit_log" in query:
+            if "created_at" in query:
+                self.audit_log.append(
+                    FakeRow(
+                        id=len(self.audit_log) + 1,
+                        job_id=args[0] if args else None,
+                        project_id=args[1] if len(args) > 1 else None,
+                        actor=args[2] if len(args) > 2 else "system",
+                        action=args[3] if len(args) > 3 else "audit",
+                        tier=args[4] if len(args) > 4 else 3,
+                        payload=args[5] if len(args) > 5 else None,
+                        artifact_refs=args[6] if len(args) > 6 else None,
+                        created_at=args[7] if len(args) > 7 else datetime.now(timezone.utc),
+                    )
+                )
+                return "INSERT 0 1"
             self.audit_log.append(
                 FakeRow(
                     job_id=args[0] if args else None,
@@ -1021,3 +1050,75 @@ def test_internal_audit_write_is_allowed():
     )
     assert response.status_code == 201
     assert response.json()["id"] == 1
+
+
+def test_audit_log_date_from_excludes_old_entries():
+    pool = FakePool()
+    _install_fake_pool(pool)
+    old_created_at = datetime.now(timezone.utc) - timedelta(days=3)
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).date().isoformat()
+    import asyncio
+    asyncio.run(
+        pool.execute(
+            """INSERT INTO audit_log
+               (job_id, project_id, actor, action, tier, payload, artifact_refs, created_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)""",
+            "job-old",
+            "project-1",
+            "system",
+            "old-entry",
+            3,
+            None,
+            None,
+            old_created_at,
+        )
+    )
+    client = TestClient(main.app)
+
+    response = client.get(f"/audit-log/?date_from={tomorrow}")
+
+    assert response.status_code == 200
+    assert all(entry["action"] != "old-entry" for entry in response.json())
+
+
+def test_audit_log_date_to_excludes_future_entries():
+    pool = FakePool()
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date().isoformat()
+    today = datetime.now(timezone.utc).date()
+
+    response = client.get(f"/audit-log/?date_to={yesterday}")
+
+    assert response.status_code == 200
+    items = response.json()
+    assert all(datetime.fromisoformat(entry["created_at"].replace("Z", "+00:00")).date() < today for entry in items)
+
+
+def test_audit_log_date_range_returns_matching_entries():
+    pool = FakePool()
+    _install_fake_pool(pool)
+    created_at = datetime.now(timezone.utc)
+    today = created_at.date().isoformat()
+    import asyncio
+    asyncio.run(
+        pool.execute(
+            """INSERT INTO audit_log
+               (job_id, project_id, actor, action, tier, payload, artifact_refs, created_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)""",
+            "job-today",
+            "project-1",
+            "system",
+            "today-entry",
+            3,
+            None,
+            None,
+            created_at,
+        )
+    )
+    client = TestClient(main.app)
+
+    response = client.get(f"/audit-log/?date_from={today}&date_to={today}")
+
+    assert response.status_code == 200
+    assert any(entry["action"] == "today-entry" for entry in response.json())

@@ -1,3 +1,7 @@
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
+© 2026 Kylie-Grace Mars-Snyder. Licensed under [AGPL-3.0](LICENSE). See [license/USAGE.md](license/USAGE.md) for usage intent and commercial collaboration details.
+
 # AI Audio Studio Platform
 
 > **Active build, not production-ready.** The repository now contains a strong control-plane MVP: Dockerized services, a live dashboard, DB-backed state, seeded orchestration rules, optional worker execution, and LAN/HTTPS access. It is still under construction as a product. Treat it as an operator-facing MVP foundation for `single_machine` or `control_plane_plus_worker`, not a finished turnkey system.

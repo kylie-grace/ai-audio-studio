@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """CRM API — lead and project records."""
 
 from __future__ import annotations

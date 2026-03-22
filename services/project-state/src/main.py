@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Project State Service — canonical job state, approval queue, audit log, and worker registry."""
 from fastapi import FastAPI
 import asyncpg
