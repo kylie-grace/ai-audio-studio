@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 import json
 import os
 import sys
+import importlib
+from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
@@ -18,8 +20,9 @@ from fastapi.testclient import TestClient
 ROOT = os.path.join(os.path.dirname(__file__), "../..")
 SERVICE_ROOT = os.path.join(ROOT, "services/crm-api")
 sys.path.insert(0, SERVICE_ROOT)
-
-from src import main  # type: ignore  # noqa: E402
+for module_name in [name for name in list(sys.modules) if name == "src" or name.startswith("src.")]:
+    sys.modules.pop(module_name, None)
+main = importlib.import_module("src.main")  # type: ignore  # noqa: E402
 
 
 class FakeRow(dict):
@@ -78,8 +81,16 @@ class FakePool:
 def client():
     app = main.app
     original_get_pool = main.get_pool
+    original_lifespan = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def noop_lifespan(_app):
+        yield
+
+    app.router.lifespan_context = noop_lifespan
     yield app, original_get_pool
     main.get_pool = original_get_pool
+    app.router.lifespan_context = original_lifespan
 
 
 def test_get_workspace_settings_returns_defaults_when_row_missing(client):

@@ -32,18 +32,19 @@ type ContextTabProps = {
   summarizeTime: (value: string) => string;
   fileLabel: (value?: string | null) => string;
   apiProjectStateBase: string;
+  lufsTarget: number;
 };
 
 type ContextSectionId = "projects" | "voice" | "workstation";
 
-function qcTone(value: number | null | undefined, kind: "truePeak" | "lufs") {
+function qcTone(value: number | null | undefined, kind: "truePeak" | "lufs", lufsTarget: number) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "muted";
   if (kind === "truePeak") {
     if (value > -1) return "bad";
     if (value > -3) return "warn";
     return "ok";
   }
-  const distance = Math.abs(value - -14);
+  const distance = Math.abs(value - lufsTarget);
   if (distance > 2) return "bad";
   if (distance > 1) return "warn";
   return "ok";
@@ -87,6 +88,7 @@ export function ContextTab(props: ContextTabProps) {
     summarizeTime,
     fileLabel,
     apiProjectStateBase,
+    lufsTarget,
   } = props;
 
   const [section, setSection] = useState<ContextSectionId>("projects");
@@ -471,8 +473,8 @@ export function ContextTab(props: ContextTabProps) {
                       <div className="row-main">
                         <strong>{String(report.file_path ?? "qc report")}</strong>
                         <div className="meta-inline">
-                          <span className={`metric-chip ${qcTone(Number(report.lufs_integrated), "lufs")}`}>{String(report.lufs_integrated ?? "n/a")} LUFS</span>
-                          <span className={`metric-chip ${qcTone(Number(report.true_peak_dbfs), "truePeak")}`}>TP {String(report.true_peak_dbfs ?? "n/a")}</span>
+                          <span className={`metric-chip ${qcTone(Number(report.lufs_integrated), "lufs", lufsTarget)}`}>{String(report.lufs_integrated ?? "n/a")} LUFS</span>
+                          <span className={`metric-chip ${qcTone(Number(report.true_peak_dbfs), "truePeak", lufsTarget)}`}>TP {String(report.true_peak_dbfs ?? "n/a")}</span>
                         </div>
                         <div className="muted">
                           Low-end {String(report.low_end_ratio ?? "n/a")} · Stereo {String(report.stereo_width ?? "n/a")} · Spectral {String(report.spectral_tilt_db ?? "n/a")} dB
@@ -538,6 +540,11 @@ export function ContextTab(props: ContextTabProps) {
                             <span className={`metric-chip ${leadFitTone(lead.fit_score)}`}>fit {lead.fit_score ?? "n/a"}</span>
                             {lead.created_at ? <span>{summarizeTime(lead.created_at)}</span> : null}
                           </div>
+                          {typeof lead.fit_score === "number" ? (
+                            <div className="fit-score-bar" aria-label={`fit score ${lead.fit_score}`}>
+                              <div className={`fit-score-fill ${leadFitTone(lead.fit_score)}`} style={{ width: `${Math.max(0, Math.min(100, Number(lead.fit_score)))}%` }} />
+                            </div>
+                          ) : null}
                           {lead.draft_reply ? <div className="muted notes-preview">{lead.draft_reply.slice(0, 120)}{lead.draft_reply.length > 120 ? "…" : ""}</div> : null}
                         </div>
                       </div>

@@ -237,6 +237,7 @@ services:
 
   # ── Audio QC Service ───────────────────────────────────────────────────
   audio-qc:
+    profiles: ["daw"]
     build:
       context: ../services/audio-qc
       dockerfile: Dockerfile
@@ -328,6 +329,7 @@ services:
       - "${BIND_HOST:-127.0.0.1}:8140:8140"
 
   session-prep:
+    profiles: ["daw"]
     build:
       context: ../workers/session-prep
       dockerfile: Dockerfile
@@ -354,6 +356,7 @@ services:
       - "${BIND_HOST:-127.0.0.1}:8150:8150"
 
   revision-parser:
+    profiles: ["daw"]
     build:
       context: ../workers/revision-parser
       dockerfile: Dockerfile
@@ -384,6 +387,7 @@ services:
       - "${BIND_HOST:-127.0.0.1}:8160:8160"
 
   delivery-packager:
+    profiles: ["daw"]
     build:
       context: ../workers/delivery-packager
       dockerfile: Dockerfile
@@ -437,6 +441,7 @@ services:
       - "${BIND_HOST:-127.0.0.1}:3000:3000"
 
   mix-planner:
+    profiles: ["daw"]
     build:
       context: ../workers/mix-planner
       dockerfile: Dockerfile

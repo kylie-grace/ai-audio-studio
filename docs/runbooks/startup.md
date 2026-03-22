@@ -6,6 +6,7 @@
 - Docker Desktop running
 - `/Volumes/StudioShare/` mounted if you are using shared project paths
 - `infra/.env` created from `infra/env.example`
+- `python3 -m pip install -r requirements-test.txt` if you want the full API test suite to exercise the optional FastAPI/asyncpg surfaces instead of import-skipping them
 
 ## Start The Stack
 
@@ -19,6 +20,9 @@ bash services/ollama/pull_models.sh
 
 # Start the local control plane
 docker compose --env-file infra/.env -f infra/docker-compose.yml up -d
+
+# Add the DAW profile when you want the DAW-oriented services too
+docker compose --profile daw --env-file infra/.env -f infra/docker-compose.yml up -d
 
 # First-time only: import the starter n8n workflow pack
 bash scripts/bootstrap_n8n.sh infra/.env
@@ -105,7 +109,7 @@ See:
 - [n8n-bootstrap.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/n8n-bootstrap.md)
 - [studio-worker.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/studio-worker.md)
 
-If you are running a single Mac, stop here. `docker-compose.worker.yml` is optional and only needed for a second workstation.
+If you are running `single_machine`, stop here. `docker-compose.worker.yml` is optional and only needed for `control_plane_plus_worker`.
 
 ## Stop The Stack
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import importlib
 from typing import Any
 
 import pytest
@@ -16,8 +17,9 @@ from fastapi.testclient import TestClient
 ROOT = os.path.join(os.path.dirname(__file__), "../..")
 SERVICE_ROOT = os.path.join(ROOT, "services/openclaw-orchestrator")
 sys.path.insert(0, SERVICE_ROOT)
-
-from src import main  # type: ignore  # noqa: E402
+for module_name in [name for name in list(sys.modules) if name == "src" or name.startswith("src.")]:
+    sys.modules.pop(module_name, None)
+main = importlib.import_module("src.main")  # type: ignore  # noqa: E402
 
 
 class FakePool:

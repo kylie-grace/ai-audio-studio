@@ -50,6 +50,11 @@ Execution targets:
   - desired for mastering-oriented execution and export workflows
   - should begin with bounded mastering/export-safe tasks
 
+Current truth:
+- `macos` is the validated worker runtime path today
+- `windows` support is scaffolded in path translation and workstation validation, but still needs a real workstation validation pass
+- `Wavelab` detection is scaffolded; live adapter/runtime validation is still pending
+
 ## Remaining execution order
 
 1. Persist richer listening/render review records beyond preview-only objects.

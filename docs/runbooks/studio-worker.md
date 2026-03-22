@@ -26,6 +26,7 @@ The code is split into `config`, `paths`, `runner`, `tasks`, and `adapters` so D
 - Shared storage mounted at the same path as the control plane, or `PATH_TRANSLATION_JSON` configured
 - The Mac mini control plane reachable on the LAN
 - If you are on a single Mac, you do not need this worker at all.
+- For split deployments, `WORKER_API_BASE_URL` must be set to the worker machine's reachable LAN URL. Do not leave it blank.
 
 ## Configure
 
@@ -62,6 +63,8 @@ PROTOOLS_APP_PATH="C:\\Program Files\\Avid\\Pro Tools\\ProTools.exe"
 WAVELAB_APP_PATH="C:\\Program Files\\Steinberg\\WaveLab 12\\WaveLab 12.exe"
 ```
 
+Windows workers are supported in configuration and path translation, but live DAW runtime validation is still pending. Treat that path as scaffolded until a real Windows workstation has been exercised.
+
 ## Start
 
 ```bash
@@ -72,10 +75,9 @@ docker compose --env-file infra/.env -f infra/docker-compose.worker.yml ps
 Remote worker compose defaults now assume LAN exposure:
 - `BIND_HOST=0.0.0.0`
 - `WORKER_API_BASE_URL` must be set to the worker machine's real LAN URL, for example `http://192.168.1.20:8190`
+- the worker will warn if that callback URL is blank, and the split-compose file now requires it explicitly
 
-If `WORKER_API_BASE_URL` is blank or left at loopback, the control plane will register the worker with an unusable callback address. Always set it explicitly for split deployments.
-
-For single-machine or host-native REAPER automation on the same Mac:
+For `single_machine` or host-native REAPER automation on the same Mac:
 
 ```bash
 bash scripts/install_host_studio_worker.sh
@@ -147,6 +149,8 @@ Minimal launchd program block:
 <true/>
 ```
 
+The repository includes a ready-to-adapt plist template at [scripts/com.ai-audio-studio.studio-worker.plist](/Users/kpsnyder/ai-audio-studio/scripts/com.ai-audio-studio.studio-worker.plist). Copy it into `~/Library/LaunchAgents/`, replace the placeholders, and load it with `launchctl` to keep the host worker alive across reboots.
+
 Load it with:
 
 ```bash
@@ -187,4 +191,4 @@ launchctl kickstart -k gui/$(id -u)/com.aiaudiostudio.worker
 - Set `STUDIO_WORKER_DRY_RUN_DAW=true` to validate DAW execution queueing before a real studio Mac is available
 - The control room `Setup Validation` panel can now run a one-click dry-run smoke that stages a disposable session manifest, mix plan, listening review, render plan, and execution-plan rehearsal without touching a live project
 - The same panel can now drain or resume the worker so maintenance can pause new task claims without killing in-flight process state
-- `windows` workers are now scaffolded in path translation, plugin scanning, and workstation validation, but still need live DAW runtime validation before being treated as production-ready
+- `windows` workers are scaffolded in path translation, plugin scanning, and workstation validation, but still need live DAW runtime validation before being treated as production-ready

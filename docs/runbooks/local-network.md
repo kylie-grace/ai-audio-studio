@@ -17,6 +17,7 @@ Use these layers intentionally:
   Example: `https://studio-brain.local`
 - `Direct ports` remain valid for engineering, debugging, and worker callbacks.
   Examples: `:5678`, `:8080`, `:8090`, `:8100`, `:8190`
+- `single_machine` is the default bring-up path; `control_plane_plus_worker` is the split deployment when a second Mac is available.
 
 Recommended operator progression:
 1. Start with IP access and confirm the dashboard loads.
@@ -72,6 +73,14 @@ docker compose --env-file infra/.env \
 
 This enables Caddy with `tls internal` for LAN use.
 
+If you also want the DAW-oriented services during bring-up, add the `daw` profile:
+
+```bash
+docker compose --profile daw --env-file infra/.env \
+  -f infra/docker-compose.yml \
+  up -d
+```
+
 ## Point The Hostname
 
 `CONTROL_PLANE_HOST` must resolve to the control-plane machine.
@@ -123,5 +132,5 @@ Engineering and worker traffic:
 - The dashboard is the main front door. It proxies control-plane APIs so novice operators do not need to memorize raw ports.
 - Full-network IP access is the baseline deployment posture when `BIND_HOST=0.0.0.0`.
 - Hostname/TLS is the polish layer, not a prerequisite for first successful bring-up.
-- Single-machine mode is valid. A second worker Mac is optional.
+- `single_machine` is valid. A second worker Mac is optional.
 - If you are replacing an older host or legacy dashboard, follow [legacy-cutover.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/legacy-cutover.md) before retiring it.

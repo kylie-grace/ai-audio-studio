@@ -54,6 +54,7 @@ PROJECT_STATE_URL = os.environ.get("PROJECT_STATE_URL", "http://project-state:80
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434")
 PLANNER_MODEL = os.environ.get("PLANNER_MODEL", "qwen2.5:14b-instruct")
 CLASSIFIER_MODEL = os.environ.get("CLASSIFIER_MODEL", "qwen2.5:3b")
+CONCIERGE_LLM_TIMEOUT_SECONDS = float(os.environ.get("CONCIERGE_LLM_TIMEOUT_SECONDS", "8"))
 
 _pool: asyncpg.Pool | None = None
 
@@ -248,7 +249,7 @@ def _ollama_generate(prompt: str) -> str:
             method="POST",
         )
         try:
-            with urlopen(request, timeout=45) as response:
+            with urlopen(request, timeout=CONCIERGE_LLM_TIMEOUT_SECONDS) as response:
                 payload = json.loads(response.read().decode("utf-8"))
             text = str(payload.get("response") or "").strip()
             if text:

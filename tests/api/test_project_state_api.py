@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import json
 import os
 import sys
+import importlib
 from typing import Any
 
 import pytest
@@ -18,9 +19,15 @@ from fastapi.testclient import TestClient
 ROOT = os.path.join(os.path.dirname(__file__), "../..")
 SERVICE_ROOT = os.path.join(ROOT, "services/project-state")
 sys.path.insert(0, SERVICE_ROOT)
-
-from src import main  # type: ignore  # noqa: E402
-from src.routers import alerts, approval, audit, jobs, projects, workers  # type: ignore  # noqa: E402
+for module_name in [name for name in list(sys.modules) if name == "src" or name.startswith("src.")]:
+    sys.modules.pop(module_name, None)
+main = importlib.import_module("src.main")  # type: ignore  # noqa: E402
+alerts = importlib.import_module("src.routers.alerts")  # type: ignore  # noqa: E402
+approval = importlib.import_module("src.routers.approval")  # type: ignore  # noqa: E402
+audit = importlib.import_module("src.routers.audit")  # type: ignore  # noqa: E402
+jobs = importlib.import_module("src.routers.jobs")  # type: ignore  # noqa: E402
+projects = importlib.import_module("src.routers.projects")  # type: ignore  # noqa: E402
+workers = importlib.import_module("src.routers.workers")  # type: ignore  # noqa: E402
 
 
 class FakeRow(dict):
@@ -148,6 +155,25 @@ class FakePool:
                 status="idle",
                 last_seen_at=now.replace(minute=max(now.minute - 10, 0)),
             ),
+            FakeRow(
+                id="worker-3",
+                slug="studio-mac",
+                display_name="Studio Mac",
+                platform="macos",
+                api_base_url="http://studio-mac.local:8190",
+                capabilities=["execute-soundflow", "execute-reascript"],
+                watched_paths={},
+                workstation_profile={
+                    "configured": {"default_daw": "protools", "supported_daws": ["protools", "reaper"]},
+                    "detected": {"ready": True},
+                },
+                workstation_status={
+                    "configured": {"default_daw": "protools", "supported_daws": ["protools", "reaper"]},
+                    "detected": {"ready": True},
+                },
+                status="idle",
+                last_seen_at=now,
+            ),
         ]
 
     async def fetchval(self, query: str, *args: Any) -> int:
@@ -204,22 +230,32 @@ class FakePool:
             return row
         if "SELECT * FROM projects WHERE id::text=$1 OR slug=$1" in query or "SELECT * FROM projects WHERE id=$1 OR slug=$1" in query:
             key = args[0]
-            return self.projects.get(key) or next(
+            row = self.projects.get(key) or next(
                 (row for row in self.projects.values() if row["slug"] == key),
                 None,
             )
+            return FakeRow(row) if row else None
         if "SELECT * FROM jobs WHERE id = $1" in query or "SELECT * FROM jobs WHERE id=$1" in query:
-            return self.jobs.get(args[0])
+            row = self.jobs.get(args[0])
+            return FakeRow(row) if row else None
+        if "SELECT id, status, approval_required FROM jobs WHERE id=$1" in query:
+            row = self.jobs.get(args[0])
+            return FakeRow(row) if row else None
         if "SELECT * FROM projects WHERE id=$1" in query:
-            return self.projects.get(args[0])
+            row = self.projects.get(args[0])
+            return FakeRow(row) if row else None
         if "SELECT * FROM leads WHERE id=$1" in query:
-            return self.leads.get(args[0])
+            row = self.leads.get(args[0])
+            return FakeRow(row) if row else None
         if "SELECT * FROM revisions WHERE job_id=$1" in query:
-            return next((row for row in self.revisions.values() if row["job_id"] == args[0]), None)
+            row = next((row for row in self.revisions.values() if row["job_id"] == args[0]), None)
+            return FakeRow(row) if row else None
         if "SELECT * FROM worker_nodes WHERE slug=$1" in query:
-            return next((row for row in self.worker_nodes if row["slug"] == args[0]), None)
+            row = next((row for row in self.worker_nodes if row["slug"] == args[0]), None)
+            return FakeRow(row) if row else None
         if "SELECT * FROM worker_tasks WHERE id=$1" in query:
-            return next((row for row in self.worker_tasks if row.get("id") == args[0]), None)
+            row = next((row for row in self.worker_tasks if row.get("id") == args[0]), None)
+            return FakeRow(row) if row else None
         if "INSERT INTO audit_log" in query and "RETURNING id, created_at" in query:
             entry = FakeRow(id=len(self.audit_log) + 1, created_at=now)
             self.audit_log.append(entry)
@@ -241,6 +277,10 @@ class FakePool:
             return [row for row in getattr(self, "mix_plans", []) if row.get("project_id") == args[0]]
         if "SELECT * FROM session_manifests WHERE project_id=$1" in query:
             return [row for row in getattr(self, "session_manifests", []) if row.get("project_id") == args[0]]
+        if "SELECT * FROM listening_reports WHERE project_id=$1" in query:
+            return [row for row in getattr(self, "listening_reports", []) if row.get("project_id") == args[0]]
+        if "SELECT * FROM render_reviews WHERE project_id=$1" in query:
+            return [row for row in getattr(self, "render_reviews", []) if row.get("project_id") == args[0]]
         if "SELECT * FROM worker_tasks WHERE project_id=$1" in query:
             return [row for row in self.worker_tasks if row.get("project_id") == args[0]]
         if "SELECT * FROM audit_log WHERE project_id=$1" in query:
@@ -249,20 +289,39 @@ class FakePool:
             if "status <> 'retired'" in query:
                 return [row for row in self.worker_nodes if row.get("status") != "retired"]
             return list(self.worker_nodes)
+        if "SELECT slug, display_name, status, last_seen_at, capabilities FROM worker_nodes" in query:
+            if "status <> 'retired'" in query:
+                return [row for row in self.worker_nodes if row.get("status") != "retired"]
+            return list(self.worker_nodes)
         if "SELECT * FROM worker_nodes ORDER BY slug ASC" in query:
             if "status <> 'retired'" in query:
                 return [row for row in self.worker_nodes if row.get("status") != "retired"]
             return list(self.worker_nodes)
+        if "SELECT * FROM worker_nodes WHERE status <> 'retired' ORDER BY slug ASC" in query:
+            return [row for row in self.worker_nodes if row.get("status") != "retired"]
+        if "FROM workstation_plugins" in query:
+            return []
         if "SELECT * FROM worker_tasks WHERE worker_slug=$1 AND status IN ('queued','claimed')" in query:
             return [
-                row
+                FakeRow(row)
                 for row in self.worker_tasks
                 if row.get("worker_slug") == args[0] and row.get("status") in {"queued", "claimed"}
             ]
+        if "SELECT id, worker_slug, task_type, required_capability, created_at" in query and "FROM worker_tasks" in query:
+            return [FakeRow(row) for row in self.worker_tasks if row.get("status") == "queued"]
         if "SELECT * FROM worker_tasks WHERE status='failed'" in query:
-            return [row for row in self.worker_tasks if row.get("status") == "failed"]
+            return [FakeRow(row) for row in self.worker_tasks if row.get("status") == "failed"]
+        if "SELECT * FROM worker_tasks" in query and "lease_expires_at IS NOT NULL" in query:
+            cutoff = args[0]
+            return [
+                FakeRow(row)
+                for row in self.worker_tasks
+                if row.get("status") == "claimed"
+                and row.get("lease_expires_at") is not None
+                and row.get("lease_expires_at") < cutoff
+            ]
         if "SELECT * FROM worker_tasks WHERE status='claimed'" in query:
-            return [row for row in self.worker_tasks if row.get("status") == "claimed"]
+            return [FakeRow(row) for row in self.worker_tasks if row.get("status") == "claimed"]
         if "SELECT * FROM audit_log" in query:
             return list(self.audit_log)
         raise AssertionError(f"Unhandled fetch query: {query}")
@@ -280,7 +339,7 @@ class FakePool:
             job["approved_by"] = args[0]
             job["approved_at"] = args[1]
             return "UPDATE 1"
-        if "UPDATE revisions" in query and "SET status='approved'" in query:
+        if "UPDATE revisions" in query and "SET status='approved'" in query and "approved_by" in query:
             revision = self.revisions[args[2]]
             revision["status"] = "approved"
             revision["approved_by"] = args[0]
@@ -322,10 +381,16 @@ class FakePool:
                 task["error_message"] = None
             return "UPDATE 1"
         if "UPDATE worker_nodes SET status='idle'" in query:
-            worker = next((row for row in self.worker_nodes if row["slug"] == args[1]), None)
+            slug = args[1] if len(args) > 1 else args[0]
+            worker = next((row for row in self.worker_nodes if row["slug"] == slug), None)
             if worker:
                 worker["status"] = "idle"
-                worker["last_seen_at"] = args[0]
+                if len(args) > 1:
+                    worker["last_seen_at"] = args[0]
+            return "UPDATE 1"
+        if "UPDATE jobs SET status=$1, updated_at=now() WHERE id=$2" in query:
+            job = self.jobs[args[1]]
+            job["status"] = args[0]
             return "UPDATE 1"
         if "UPDATE worker_nodes" in query and "workstation_status=$6::jsonb" in query:
             worker = next((row for row in self.worker_nodes if row["slug"] == args[7]), None)
@@ -363,6 +428,10 @@ class FakePool:
             job["status"] = "pending"
             job["error_message"] = None
             job["retry_count"] += 1
+            return "UPDATE 1"
+        if "UPDATE jobs" in query and "SET status='approved'" in query and "WHERE id=$1" in query:
+            job = self.jobs[args[0]]
+            job["status"] = "approved"
             return "UPDATE 1"
         if "UPDATE revisions" in query and "SET status='approved'" in query:
             revision = self.revisions[args[0]]
@@ -411,7 +480,7 @@ def test_status_returns_runtime_summary_counts():
     assert payload["status"] == "ok"
     assert payload["project_count"] == 1
     assert payload["approvals_waiting"] == 2
-    assert payload["worker_count"] == 2
+    assert payload["worker_count"] == 3
     assert payload["active_worker_tasks"] == 1
 
 
@@ -561,6 +630,53 @@ def test_revision_approval_queues_daw_execution_task():
     assert pool.worker_tasks[0]["task_type"] == "execute-soundflow"
 
 
+def test_revision_approval_blocks_when_worker_slug_missing():
+    pool = FakePool()
+    pool.jobs["job-revision"]["trigger_payload"] = json.dumps(
+        {
+            "daw": "protools",
+            "session_path": "/Volumes/StudioShare/projects/demo/session/demo.ptx",
+        }
+    )
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.post(
+        "/approval-queue/job-revision/approve",
+        headers={"X-Actor": "owner"},
+    )
+
+    assert response.status_code == 409
+    assert "worker is assigned" in response.json()["detail"]
+    assert pool.jobs["job-revision"]["status"] == "awaiting-approval"
+
+
+def test_revision_preview_surfaces_blocking_issue_when_worker_unassigned():
+    pool = FakePool()
+    pool.projects["project-1"] = FakeRow(
+        id="project-1",
+        slug="demo-artist",
+        client_name="Demo Artist",
+        service_type="mix",
+        status="active",
+    )
+    pool.jobs["job-revision"]["trigger_payload"] = json.dumps(
+        {
+            "daw": "protools",
+            "session_path": "/Volumes/StudioShare/projects/demo/session/demo.ptx",
+        }
+    )
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.get("/approval-queue/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    revision_job = next(item for item in payload if item["id"] == "job-revision")
+    assert "worker is assigned" in revision_job["preview"]["blocking_issue"]
+
+
 def test_worker_register_requires_worker_token_when_configured():
     pool = FakePool()
     _install_fake_pool(pool)
@@ -570,7 +686,8 @@ def test_worker_register_requires_worker_token_when_configured():
     try:
         response = client.post(
             "/workers/register",
-            json={"slug": "studio-mac", "display_name": "Studio Mac", "capabilities": []},
+            headers={"X-Actor": "owner"},
+            json={"slug": "studio-mac", "display_name": "Studio Mac", "capabilities": [], "platform": "macos", "api_base_url": "http://studio-mac.local:8190"},
         )
     finally:
         workers.WORKER_API_TOKEN = original
@@ -708,7 +825,7 @@ def test_alert_summary_reports_waiting_jobs_and_stale_workers():
     pool = FakePool()
     now = datetime.now(timezone.utc)
     pool.worker_tasks.append(FakeRow(id="failed-task", status="failed"))
-    pool.worker_tasks.append(FakeRow(id="claimed-task", status="claimed", lease_expires_at=now))
+    pool.worker_tasks.append(FakeRow(id="claimed-task", status="claimed", lease_expires_at=now.replace(year=now.year + 1)))
     pool.worker_tasks.append(FakeRow(id="expired-task", status="claimed", lease_expires_at=now.replace(year=now.year - 1)))
     _install_fake_pool(pool)
     client = TestClient(main.app)
@@ -727,6 +844,43 @@ def test_alert_summary_reports_waiting_jobs_and_stale_workers():
         "stale-worker",
         "expired-worker-lease",
     }
+
+
+def test_alert_summary_reports_unserviceable_and_missing_target_worker_tasks():
+    pool = FakePool()
+    old = datetime(2026, 3, 20, 12, 0, tzinfo=timezone.utc)
+    pool.worker_tasks.append(
+        FakeRow(
+            id="task-unserviceable",
+            status="queued",
+            worker_slug=None,
+            task_type="execute-wavelab",
+            required_capability="execute-wavelab",
+            created_at=old,
+        )
+    )
+    pool.worker_tasks.append(
+        FakeRow(
+            id="task-missing-worker",
+            status="queued",
+            worker_slug="stale-worker",
+            task_type="execute-reascript",
+            required_capability="execute-reascript",
+            created_at=old,
+        )
+    )
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.get("/alerts/summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["unserviceable_worker_tasks"][0]["task_id"] == "task-unserviceable"
+    assert payload["missing_target_worker_tasks"][0]["task_id"] == "task-missing-worker"
+    alert_slugs = {alert["slug"] for alert in payload["active_alerts"]}
+    assert "unserviceable-worker-task" in alert_slugs
+    assert "missing-target-worker" in alert_slugs
 
 
 def test_retire_worker_cancels_queued_work_and_hides_worker_from_lists():
@@ -757,7 +911,7 @@ def test_retire_worker_cancels_queued_work_and_hides_worker_from_lists():
     assert pool.jobs["job-revision"]["status"] == "failed"
 
     listed_workers = client.get("/workers/").json()
-    assert {worker["slug"] for worker in listed_workers} == {"fresh-worker"}
+    assert {worker["slug"] for worker in listed_workers} == {"fresh-worker", "studio-mac"}
 
 
 def test_runtime_recovery_snapshot_groups_stale_failed_and_claimed_work():
@@ -780,7 +934,7 @@ def test_runtime_recovery_snapshot_groups_stale_failed_and_claimed_work():
             status="claimed",
             created_at=now,
             claimed_by="fresh-worker",
-            lease_expires_at=now,
+            lease_expires_at=now.replace(year=now.year + 1),
             payload={},
             result={},
         )
@@ -804,11 +958,42 @@ def test_runtime_recovery_snapshot_groups_stale_failed_and_claimed_work():
     assert response.status_code == 200
     payload = response.json()
     assert payload["summary"]["failed_task_count"] == 1
-    assert payload["summary"]["claimed_task_count"] == 2
-    assert payload["summary"]["expired_claim_count"] == 1
+    assert payload["summary"]["claimed_task_count"] == 1
+    assert payload["summary"]["expired_claim_count"] == 0
     assert payload["summary"]["stale_worker_count"] == 1
     assert payload["failed_tasks"][0]["id"] == "task-failed"
-    assert any(task["lease_state"] == "expired" for task in payload["claimed_tasks"])
+    assert all(task["lease_state"] != "expired" for task in payload["claimed_tasks"])
+
+
+def test_runtime_recovery_auto_recovers_expired_claims():
+    pool = FakePool()
+    old = datetime(2026, 3, 20, 12, 0, tzinfo=timezone.utc)
+    pool.worker_tasks.append(
+        FakeRow(
+            id="task-expired-auto",
+            status="claimed",
+            created_at=old,
+            claimed_by="fresh-worker",
+            lease_expires_at=old,
+            payload={},
+            result={},
+            job_id="job-revision",
+        )
+    )
+    pool.jobs["job-revision"]["status"] = "in-progress"
+    pool.worker_nodes[0]["status"] = "busy"
+    _install_fake_pool(pool)
+    client = TestClient(main.app)
+
+    response = client.get("/workers/runtime/recovery")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["auto_recovered_claim_count"] == 1
+    assert payload["auto_recovered_claims"][0]["task_id"] == "task-expired-auto"
+    assert pool.worker_tasks[0]["status"] == "queued"
+    assert pool.jobs["job-revision"]["status"] == "approved"
+    assert pool.worker_nodes[0]["status"] == "idle"
 
 
 def test_direct_audit_write_requires_internal_caller():

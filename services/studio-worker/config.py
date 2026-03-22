@@ -124,6 +124,14 @@ def _valid_http_url(value: str | None) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
+def _is_loopback_or_blank(value: str | None) -> bool:
+    if not value:
+        return True
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").strip().lower()
+    return host in {"", "localhost", "127.0.0.1", "::1", "project-state"}
+
+
 def _path_access_report(path_text: str) -> dict:
     path = Path(path_text)
     report = {
@@ -173,7 +181,12 @@ def validate_startup(settings: Settings) -> dict:
         errors.append("WORKER_SLUG must not be empty")
     if not _valid_http_url(project_state_url):
         errors.append(f"PROJECT_STATE_URL is invalid: {project_state_url}")
-    if worker_api_base_url and not _valid_http_url(worker_api_base_url):
+    if not worker_api_base_url:
+        if not _is_loopback_or_blank(project_state_url):
+            errors.append("WORKER_API_BASE_URL must be set to the worker machine's reachable LAN URL for remote worker deployments.")
+        else:
+            warnings.append("WORKER_API_BASE_URL is blank; split deployments should set it explicitly.")
+    elif not _valid_http_url(worker_api_base_url):
         errors.append(f"WORKER_API_BASE_URL is invalid: {worker_api_base_url}")
 
     for slug, path_text in {

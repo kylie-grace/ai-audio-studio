@@ -1,14 +1,14 @@
 # AI Audio Studio Platform
 
-> **Active build, not production-ready.** The repository now contains a strong control-plane MVP: Dockerized services, a live dashboard, DB-backed state, seeded orchestration rules, optional worker execution, and LAN/HTTPS access. It is still under construction as a product. Treat it as an operator-facing MVP foundation for a single powerful Mac or a Mac mini plus optional studio Mac worker, not a finished turnkey system.
+> **Active build, not production-ready.** The repository now contains a strong control-plane MVP: Dockerized services, a live dashboard, DB-backed state, seeded orchestration rules, optional worker execution, and LAN/HTTPS access. It is still under construction as a product. Treat it as an operator-facing MVP foundation for `single_machine` or `control_plane_plus_worker`, not a finished turnkey system.
 
 Automated studio operations platform for independent recording studios. Reduces admin overhead by 80-90% while maintaining human control over all creative, financial, and client-facing decisions.
 
 ## Architecture
 
-Single-machine first, split-worker optional:
-- **Single Mac mode** — one Mac runs the whole Docker stack locally, including UI, n8n, Ollama, Postgres, APIs, and orchestration.
-- **Split mode** — the Mac mini runs the control plane and a second Mac runs `studio-worker` for filesystem-heavy or DAW-adjacent tasks.
+Deployment modes:
+- `single_machine` — one Mac runs the whole Docker stack locally, including UI, n8n, Ollama, Postgres, APIs, and orchestration.
+- `control_plane_plus_worker` — one host runs the control plane and a second Mac runs `studio-worker` for filesystem-heavy or DAW-adjacent tasks.
 - **Shared volume** — `/Volumes/StudioShare/` or equivalent shared mount visible to any machine executing file tasks.
 - **LAN access** — set `BIND_HOST=0.0.0.0` to expose the dashboard and APIs to the full local network by IP.
 - **HTTPS edge** — Caddy now ships in the main Compose stack as the default TLS front door.
@@ -24,7 +24,7 @@ What is solid today:
 - `openclaw` seeds default orchestration rules, starter packs, and playbooks
 - starter n8n workflows can be imported with a one-shot helper
 - internal n8n starters now default to `active: true`, while credential-gated outbound flows stay disabled until credentials exist
-- single-machine mode is the default path, with optional local or remote worker execution
+- `single_machine` is the default path, with optional local or remote worker execution
 - the control-room assistant is now backed by live stack context and local Ollama, with an explicit fallback mode if the LLM is unavailable
 
 What is still being added:
@@ -83,6 +83,14 @@ Then open the control room and complete the first-run workspace questionnaire. I
 - alert destinations
 - optional worker settings
 
+For the full DAW-capable stack, add the `daw` profile when starting Compose:
+
+```bash
+docker compose --profile daw --env-file infra/.env -f infra/docker-compose.yml up -d
+```
+
+That profile includes `audio-qc`, `session-prep`, `revision-parser`, `delivery-packager`, and `mix-planner`.
+
 Network access posture:
 - Fastest access: `http://<control-plane-ip>:3000`
 - Preferred operator URL after hostname setup: `https://$CONTROL_PLANE_HOST`
@@ -103,9 +111,9 @@ open http://localhost:5678                  # n8n workflow editor
 # http://<control-plane-ip>:3000
 ```
 
-Single-machine mode does not require `docker-compose.worker.yml`; the worker file is only for split deployments.
+`single_machine` mode does not require `docker-compose.worker.yml`; the worker file is only for `control_plane_plus_worker` deployments.
 
-For split deployments:
+For `control_plane_plus_worker` deployments:
 - keep `WORKER_API_BASE_URL` set to the worker machine's LAN URL, not loopback
 - keep `BIND_HOST=0.0.0.0` on the worker if the control plane must reach it over the LAN
 - mount shared storage before boot or configure `PATH_TRANSLATION_JSON`
@@ -135,6 +143,7 @@ The Compose project is intentionally named `ai-audio-studio` so Docker Desktop s
 ### Headless Validation
 
 ```bash
+python3 -m pip install -r requirements-test.txt
 bash scripts/preflight_env.sh infra/.env
 bash scripts/validate_stack.sh infra/env.example
 ```
@@ -147,6 +156,9 @@ Current validation is headless and MVP-oriented:
 - database migration bootstrap
 - Studio Brain UI source completeness checks
 - targeted runtime smoke checks for bootstrap, dashboard, and control-plane services
+- the API tests import-skip if `requirements-test.txt` has not been installed in the active environment
+
+Host-native worker persistence uses launchd; see [docs/runbooks/studio-worker.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/studio-worker.md) and the plist template in `scripts/com.ai-audio-studio.studio-worker.plist`.
 
 ## Service Map
 
@@ -256,12 +268,12 @@ docker compose -f infra/docker-compose.yml exec postgres \
 
 ## Deployment Modes
 
-Use single-machine mode when one Mac should do everything locally:
+Use `single_machine` when one Mac should do everything locally:
 - Start `infra/docker-compose.yml`
 - Add `--profile local-worker` if you want bounded DAW-adjacent tasks to execute on the same machine
 - Keep all tasks on the local machine unless you explicitly need a second node
 
-Use split mode when you want a dedicated worker Mac:
+Use `control_plane_plus_worker` when you want a dedicated worker Mac:
 - Start `infra/docker-compose.yml` on the control-plane machine
 - Start `infra/docker-compose.worker.yml` on the worker machine
 - Point `MAC_MINI_BASE_URL` at the control-plane host and share the same project paths
@@ -274,6 +286,7 @@ For novice-friendly operations:
 - Keep Docker Desktop filtered by the `ai-audio-studio` project name.
 - Use the seeded rule packs and supplied n8n workflow templates before creating custom automation.
 - Expect a dedicated onboarding/settings flow to replace part of the current env-driven setup over the next milestones.
+- Keep the `daw` profile off unless you want the DAW-oriented services (`audio-qc`, `session-prep`, `revision-parser`, `delivery-packager`, `mix-planner`) started.
 - Use the legacy cutover checklist before retiring any older automation host or dashboard.
 
 ## Task Files

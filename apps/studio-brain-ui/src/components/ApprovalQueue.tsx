@@ -6,6 +6,7 @@ import { EmptyState } from "./EmptyState";
 type ApprovalQueueProps = {
   approvals: any[];
   visibleApprovals: any[];
+  approvedJobIds: string[];
   operatorName: string;
   setOperatorName: (value: string) => void;
   setWorkspaceDraft: (updater: (current: any) => any) => void;
@@ -32,6 +33,7 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
   const {
     approvals,
     visibleApprovals,
+    approvedJobIds,
     operatorName,
     setOperatorName,
     setWorkspaceDraft,
@@ -47,6 +49,7 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
   } = props;
   const [expandedApprovalId, setExpandedApprovalId] = useState<string | null>(visibleApprovals[0]?.id ?? null);
   const [showOperatorInputs, setShowOperatorInputs] = useState(false);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
 
   return (
     <section className="workspace-grid">
@@ -65,8 +68,15 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
           {approvals.length ? (
             visibleApprovals.map((job) => {
               const expanded = expandedApprovalId === job.id;
+              const approved = approvedJobIds.includes(job.id);
+              const confidenceTone = (value: unknown) => {
+                const confidence = Number(value ?? 0);
+                if (confidence >= 0.8) return "ok";
+                if (confidence >= 0.6) return "warn";
+                return "bad";
+              };
               return (
-                <div key={job.id} className={`table-row approval-card ${expanded ? "is-expanded" : ""}`}>
+                <div key={job.id} className={`table-row approval-card ${expanded ? "is-expanded" : ""} ${approved ? "is-approved" : ""}`}>
                   <button
                     type="button"
                     className="approval-card-toggle"
@@ -83,7 +93,7 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
                       <p className="muted">{previewSnippet(job)}</p>
                     </div>
                     <div className="row-meta">
-                      <span className="status-pill warn">awaiting approval</span>
+                      <span className={`status-pill ${approved ? "ok" : "warn"}`}>{approved ? "queued" : "awaiting approval"}</span>
                       <span className="status-pill info">{expanded ? "collapse" : "expand"}</span>
                     </div>
                   </button>
@@ -145,7 +155,7 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
                                     <span className="muted">{String(change.parameter ?? "")} · {String(change.direction ?? "")}</span>
                                   </div>
                                   <div className="row-meta">
-                                    <span className={`status-pill ${Number(change.confidence ?? 0) >= 0.8 ? "ok" : "warn"}`}>
+                                    <span className={`status-pill ${confidenceTone(change.confidence)}`}>
                                       {Math.round(Number(change.confidence ?? 0) * 100)}%
                                     </span>
                                   </div>
@@ -156,29 +166,54 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
                         </div>
                       ) : null}
                       <div className="approval-card-footer">
-                        <label className="field compact-field approval-reject-field">
-                          <span className="metric-label">Reject reason</span>
-                          <input
-                            value={rejectReasons[job.id] ?? ""}
-                            placeholder="Optional rejection note"
-                            onChange={(event) => setRejectReasons((current) => ({ ...current, [job.id]: event.target.value }))}
-                          />
-                        </label>
+                        {rejectingId === job.id ? (
+                          <label className="field compact-field approval-reject-field">
+                            <span className="metric-label">Reject reason</span>
+                            <input
+                              value={rejectReasons[job.id] ?? ""}
+                              placeholder="Required rejection note"
+                              onChange={(event) => setRejectReasons((current) => ({ ...current, [job.id]: event.target.value }))}
+                            />
+                          </label>
+                        ) : (
+                          <div className="approval-action-note">
+                            <span className="metric-label">Execution handoff</span>
+                            <p className="panel-note">{approved ? "Approved and queued for execution. The card will clear after the next refresh." : "Approving will queue execution or routing immediately after this review."}</p>
+                          </div>
+                        )}
                         <div className="action-row">
                           <button
-                            className="action-button ok"
-                            disabled={!operatorName || pendingJobId === job.id}
+                            className="action-button primary"
+                            disabled={!operatorName || pendingJobId === job.id || approved}
                             onClick={() => handleApproval(job.id, "approve")}
                           >
-                            {pendingJobId === job.id ? "working" : "approve"}
+                            {pendingJobId === job.id ? "working" : approved ? "queued" : "approve"}
                           </button>
-                          <button
-                            className="action-button bad"
-                            disabled={!operatorName || pendingJobId === job.id}
-                            onClick={() => handleApproval(job.id, "reject")}
-                          >
-                            reject
-                          </button>
+                          {rejectingId === job.id ? (
+                            <>
+                              <button
+                                className="action-button destructive"
+                                disabled={!operatorName || pendingJobId === job.id || !(rejectReasons[job.id] ?? "").trim()}
+                                onClick={async () => {
+                                  await handleApproval(job.id, "reject");
+                                  setRejectingId(null);
+                                }}
+                              >
+                                {pendingJobId === job.id ? "working" : "confirm rejection"}
+                              </button>
+                              <button className="action-button ghost" disabled={pendingJobId === job.id} onClick={() => setRejectingId(null)}>
+                                cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              className="action-button destructive"
+                              disabled={!operatorName || pendingJobId === job.id || approved}
+                              onClick={() => setRejectingId(job.id)}
+                            >
+                              reject
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>

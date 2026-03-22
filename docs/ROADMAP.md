@@ -2,7 +2,7 @@
 
 ## Now
 - Keep turning the dashboard into a true control room: one front door, full service visibility, approvals, alerts, bootstrap state, service drilldowns, and operator actions without exposing novice users to raw service ports.
-- Treat single-machine mode as the default deployment, but do not lock the product to Mac mini language. The operator should explicitly choose what host machine the stack is running on.
+- Treat `single_machine` as the default deployment, but do not lock the product to Mac mini language. The operator should explicitly choose what host machine the stack is running on.
 - Keep the studio worker optional capacity for DAW-side execution on the same machine or a remote worker node.
 - Finish the legacy cutover so the old infra mental model is retired and the product is described consistently as `ai-audio-studio`.
 - Preserve the current reality in docs: strong control-plane MVP, not yet novice-complete product.
@@ -35,8 +35,9 @@
 - Extend the new workstation dry-run smoke into richer bounded checks per DAW target, especially SoundFlow/Pro Tools and WaveLab once those runtimes are present.
 - Keep the worker cross-platform posture honest:
   - `macos` is the validated runtime path today
-  - `windows` path translation, plugin scan roots, and workstation validation are now scaffolded
+  - `windows` path translation, plugin scan roots, and workstation validation are scaffolded
   - live Windows DAW runtime validation still needs a real workstation pass
+- Keep `Wavelab` explicit as a scaffolded target until live adapter validation exists.
 - Add worker retries, lease expiry recovery, and failure escalation for long-running execution tasks.
 - Add broader end-to-end tests that exercise Dockerized service interactions, not just unit helpers.
 - Tighten HTTPS/LAN onboarding so trusting the local Caddy certificate is a first-run step, not hidden setup knowledge.

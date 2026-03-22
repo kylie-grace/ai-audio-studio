@@ -1,750 +1,56 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AlertBanner } from "./components/AlertBanner";
-import { ApprovalQueue } from "./components/ApprovalQueue";
 import { EmptyState } from "./components/EmptyState";
 import { PrimaryTabStrip } from "./components/PrimaryTabStrip";
 import { ContextTab } from "./pages/ContextTab";
+import { OverviewTab } from "./pages/OverviewTab";
+import { OperationsTab } from "./pages/OperationsTab";
 import { SettingsTab } from "./pages/SettingsTab";
-
-type ServiceState = "healthy" | "degraded" | "offline";
-
-type ServiceRecord = {
-  key: string;
-  name: string;
-  zone: string;
-  note: string;
-  role: string;
-  url: string;
-  healthUrl: string;
-  optional?: boolean;
-  state: ServiceState;
-  detail: string;
-};
-
-type WorkerNode = {
-  id: string;
-  slug: string;
-  display_name: string;
-  platform: string;
-  host?: string | null;
-  api_base_url?: string | null;
-  status: string;
-  capabilities: string[] | string;
-  watched_paths?: Record<string, string> | string;
-  last_seen_at: string;
-};
-
-type PluginInventoryRecord = {
-  name: string;
-  plugin_format: string;
-  vendor?: string | null;
-  version?: string | null;
-  path: string;
-  file_name: string;
-  installed: boolean;
-  source_root?: string | null;
-  size_bytes?: number | null;
-  modified_at?: string | number | null;
-};
-
-type WorkstationPluginInventory = {
-  worker_slug: string;
-  plugin_count: number;
-  counts_by_format: Record<string, number>;
-  plugins: PluginInventoryRecord[];
-};
-
-type OrchestrationRule = {
-  id: string;
-  slug: string;
-  name: string;
-  trigger_module: string;
-  trigger_action: string;
-  target_module: string;
-  required_tier: number;
-  approval_required: boolean;
-  enabled: boolean;
-  style_profile_name?: string | null;
-  conditions?: Record<string, unknown> | string;
-};
-
-type RulePack = {
-  slug: string;
-  name: string;
-  description: string;
-  rule_count: number;
-};
-
-type StarterPack = {
-  slug: string;
-  name: string;
-  description: string;
-  rule_slugs: string[];
-  alert_channels: string[];
-  rules: OrchestrationRule[];
-};
-
-type Playbook = {
-  slug: string;
-  name: string;
-  summary: string;
-  n8n_workflow_slug: string;
-  trigger_module: string;
-  trigger_action: string;
-  target_module: string;
-  webhook_path: string;
-  required_context: string[];
-};
-
-type WorkerTask = {
-  id: string;
-  worker_slug?: string | null;
-  task_type: string;
-  status: string;
-  priority: string;
-  claimed_by?: string | null;
-  created_at: string;
-  completed_at?: string | null;
-  error_message?: string | null;
-  payload?: Record<string, unknown> | string;
-  result?: Record<string, unknown> | string;
-};
-
-type ApprovalItem = {
-  id: string;
-  module: string;
-  action: string;
-  created_at: string;
-  requested_by?: string | null;
-  project_id?: string | null;
-  preview?: {
-    kind?: string;
-    title?: string;
-    trigger_type?: string;
-    requested_by?: string | null;
-    trigger_payload?: Record<string, unknown>;
-    project?: {
-      id?: string;
-      slug?: string;
-      client_name?: string;
-      service_type?: string;
-      status?: string;
-    };
-    lead?: {
-      id?: string;
-      source?: string;
-      raw_input?: string;
-      normalized?: Record<string, unknown>;
-      fit_score?: number;
-      urgency_score?: number;
-      draft_reply?: string;
-    };
-    draft?: {
-      thread_id?: string;
-      message_type?: string;
-      classification?: string;
-      urgency?: string;
-      draft_subject?: string;
-      draft_body?: string;
-    };
-    drafts?: Array<{
-      platform?: string;
-      caption?: string;
-      hashtags?: string[];
-      variant_short?: string;
-      status?: string;
-    }>;
-    revision?: {
-      raw_notes?: string;
-      parsed_changes?: Array<Record<string, unknown>>;
-      soundflow_script?: string | null;
-      reascript_path?: string | null;
-      status?: string;
-    };
-  };
-};
-
-type ProjectRecord = {
-  id: string;
-  slug: string;
-  client_name: string;
-  client_email?: string | null;
-  service_type: string;
-  status: string;
-  budget_signal?: string | null;
-  timeline?: string | null;
-  notes?: string | null;
-  lead_count?: number;
-  created_at?: string;
-  updated_at?: string;
-};
-
-type AuditEntry = {
-  id?: number | string;
-  job_id?: string | null;
-  project_id?: string | null;
-  actor: string;
-  action: string;
-  tier: number;
-  payload?: Record<string, unknown> | null;
-  created_at: string;
-};
-
-type StyleProfile = {
-  id: string;
-  name: string;
-  scope: string;
-  source_type: string;
-  raw_text?: string;
-  file_paths?: string[];
-  extracted_guidance?: {
-    summary?: string;
-    tone_markers?: string[];
-    preferred_phrases?: string[];
-  } | null;
-  updated_at?: string;
-};
-
-type AlertChannel = {
-  slug: string;
-  name: string;
-  configured: boolean;
-  detail: string;
-};
-
-type AlertThreshold = {
-  slug: string;
-  name: string;
-  condition: string;
-  severity: string;
-};
-
-type AlertConfig = {
-  configured_channel_count: number;
-  channels: AlertChannel[];
-  thresholds: AlertThreshold[];
-};
-
-type AlertDeliveryResult = {
-  channel: string;
-  status: string;
-  detail: string;
-};
-
-type AlertActionResponse = {
-  status?: string;
-  event?: RuntimeAlert;
-  deliveries?: AlertDeliveryResult[];
-  dispatched_count?: number;
-  results?: Array<{
-    deliveries: AlertDeliveryResult[];
-  }>;
-};
-
-type RuntimeAlert = {
-  slug: string;
-  severity: string;
-  detail: string;
-};
-
-type RuntimeAlertSummary = {
-  approvals_waiting: number;
-  failed_worker_tasks: number;
-  claimed_worker_tasks: number;
-  expired_worker_leases: number;
-  stale_workers: Array<{
-    slug: string;
-    display_name: string;
-    status: string;
-    last_seen_at: string | null;
-  }>;
-  active_alerts: RuntimeAlert[];
-};
-
-type RuntimeRecovery = {
-  stale_workers: Array<{
-    slug: string;
-    display_name: string;
-    status: string;
-    host?: string | null;
-    api_base_url?: string | null;
-    last_seen_at: string | null;
-  }>;
-  failed_tasks: WorkerTask[];
-  claimed_tasks: Array<WorkerTask & { lease_expires_at?: string | null; lease_state?: "active" | "expired" }>;
-  summary: {
-    failed_task_count: number;
-    claimed_task_count: number;
-    expired_claim_count: number;
-    stale_worker_count: number;
-  };
-};
-
-type WorkstationProfile = {
-  host: string;
-  platform: string;
-  os_version: string;
-  deployment_mode: string;
-  dry_run_daw: boolean;
-  shared_projects_path: string;
-  delivery_path: string;
-  daws: Array<{
-    slug: string;
-    installed: boolean;
-    binary_path?: string | null;
-    automation_ready: boolean;
-    execution_mode: string;
-    notes: string;
-  }>;
-  capabilities: Record<string, boolean>;
-  permissions: Record<string, boolean>;
-  plugins?: {
-    summary?: {
-      count: number;
-      counts_by_format: Record<string, number>;
-      sample_names: string[];
-    };
-    roots?: Array<{ format: string; root: string; exists: boolean; count: number }>;
-  };
-  blockers: string[];
-  ready: boolean;
-};
-
-type ProjectDetail = {
-  project: ProjectRecord;
-  leads: Array<Record<string, unknown>>;
-  jobs: Array<Record<string, unknown>>;
-  revisions: Array<Record<string, unknown>>;
-  qc_reports: Array<Record<string, unknown>>;
-  mix_plans: Array<Record<string, unknown>>;
-  session_manifests: Array<Record<string, unknown>>;
-  listening_reports: Array<Record<string, unknown>>;
-  render_reviews: Array<Record<string, unknown>>;
-  worker_tasks: WorkerTask[];
-  audit_entries: AuditEntry[];
-  artifact_inventory: Array<{
-    artifact_id: number;
-    source: string;
-    created_at?: string | null;
-    artifact: Record<string, unknown>;
-    artifact_path?: string | null;
-    job_id?: string;
-    task_id?: string;
-    module?: string;
-    action?: string;
-    task_type?: string;
-    worker_slug?: string;
-  }>;
-  review_summary: {
-    qc_report_count: number;
-    passing_qc_count: number;
-    failing_qc_count: number;
-    revision_count: number;
-    mix_plan_count: number;
-    artifact_count: number;
-    latest_revision_status?: string | null;
-    latest_mix_plan_status?: string | null;
-  };
-  review_packet: {
-    recommended_operator_action: string;
-    latest_candidate_path?: string | null;
-    focus_flags: string[];
-    latest_manifest_status?: string | null;
-    latest_revision_status?: string | null;
-    latest_mix_plan_status?: string | null;
-    latest_qc: {
-      file_path?: string | null;
-      overall_pass?: boolean | null;
-      hard_fail_count: number;
-      warning_count: number;
-      lufs_integrated?: number | null;
-      true_peak_dbfs?: number | null;
-      low_end_ratio?: number | null;
-      stereo_width?: number | null;
-      spectral_tilt_db?: number | null;
-    };
-    latest_listening_status?: string | null;
-    latest_render_review_status?: string | null;
-  };
-};
-
-type ArtifactPreview = {
-  artifact_id: number;
-  path: string;
-  file_name: string;
-  content: string;
-};
-
-type SessionManifestPreview = {
-  project_root: string;
-  stems_dir: string;
-  session_path: string;
-  reference_count: number;
-  stem_count: number;
-  stems: Array<{ name: string; path: string; extension: string; size_bytes: number }>;
-  references: Array<{ name: string; path: string }>;
-  session_files: Array<{ name: string; path: string; type?: string }>;
-  session_details: {
-    session_type: string;
-    track_count: number;
-    track_names: string[];
-    marker_count: number;
-    markers: Array<{ index: number; position: number; name: string }>;
-    tempo_candidates: number[];
-    introspection_confidence: number;
-    primary_session_file?: string | null;
-  };
-  readiness: {
-    has_stems: boolean;
-    has_session_files: boolean;
-    ready_for_planning: boolean;
-    confidence_score: number;
-  };
-};
-
-type MixPlanPreview = {
-  status: string;
-  genre: string;
-  reference_count: number;
-  session_summary: {
-    stem_count: number;
-    reference_count: number;
-    ready_for_planning: boolean;
-  };
-  priorities: string[];
-  client_notes: string;
-  phases: Array<{ slug: string; title: string; actions: string[] }>;
-  dependency_warnings?: Array<{ slug: string; severity: string; detail: string }>;
-  risk_summary: string[];
-};
-
-type ListeningReportPreview = {
-  status: string;
-  target: string;
-  reference_count: number;
-  checks: Array<{ slug: string; status: string; detail: string }>;
-  summary: {
-    issue_count: number;
-    qc_hard_fail_count: number;
-    qc_warning_count: number;
-    reference_alignment: string;
-    focus_flags?: string[];
-  };
-  next_actions: string[];
-};
-
-type RenderPlanPreview = {
-  status: string;
-  target: string;
-  profile_count: number;
-  profiles: Array<{
-    slug: string;
-    label: string;
-    filename: string;
-    target: string;
-    sample_rate: number;
-    bit_depth: number;
-    notes: string;
-    review_gate?: string;
-    qc_required?: boolean;
-    listening_required?: boolean;
-  }>;
-  review_candidate_slug?: string;
-  follow_up: string[];
-};
-
-type ExecutionPlanPreview = {
-  status: string;
-  blockers: string[];
-  dependency_warnings?: Array<{ slug: string; severity: string; detail: string }>;
-  ready_for_operator_review: boolean;
-  recommended_next_step: string;
-  phases: Array<{ slug: string; title: string; status: string; summary: string }>;
-};
-
-type WorkstationValidation = {
-  status: string;
-  ready: boolean;
-  host: string;
-  platform: string;
-  blockers: string[];
-  checks: Array<{ slug: string; label: string; status: string; detail: string }>;
-  recommended_next_step: string;
-};
-
-type WorkstationSmokeReport = {
-  status: string;
-  result: "pass" | "review";
-  host: string;
-  platform: string;
-  dry_run_daw: boolean;
-  summary: {
-    session_ready: boolean;
-    mix_phase_count: number;
-    render_profile_count: number;
-    listening_issue_count: number;
-    execution_ready_for_review: boolean;
-    warning_count: number;
-  };
-  recommended_next_step: string;
-  validation: WorkstationValidation;
-  session_manifest: {
-    stem_count: number;
-    reference_count: number;
-    session_type: string;
-    track_count: number;
-  };
-  mix_plan: {
-    phase_count: number;
-    risk_summary: string[];
-  };
-  render_plan: {
-    profile_count: number;
-    review_candidate_slug?: string;
-  };
-  listening_report: {
-    next_actions: string[];
-    focus_flags?: string[];
-  };
-  execution_plan: {
-    blockers: string[];
-    dependency_warnings?: Array<{ slug: string; severity: string; detail: string }>;
-    recommended_next_step?: string;
-  };
-};
-
-type WorkstationRuntimeStatus = {
-  status: string;
-  worker_slug: string;
-  runtime: {
-    drain_requested: boolean;
-    current_task_id?: string | null;
-    last_status: string;
-  };
-};
-
-type BootstrapStatus = {
-  status: string;
-  workflow_count: number;
-  detail: string;
-  updated_at?: string;
-};
-
-type ServiceStatusPayload = Record<string, unknown>;
-
-type ModuleSettings = {
-  lead_intake: {
-    enabled: boolean;
-    minimum_fit_score: number;
-    response_sla_hours: number;
-    auto_create_projects: boolean;
-  };
-  inbox_triage: {
-    enabled: boolean;
-    ignore_noise: boolean;
-    high_priority_types: string[];
-  };
-  content_pipeline: {
-    enabled: boolean;
-    default_platforms: string[];
-    require_assets: boolean;
-    approval_required: boolean;
-  };
-  audio_qc: {
-    enabled: boolean;
-    default_target: string;
-    hard_fail_on_clipping: boolean;
-  };
-  session_prep: {
-    enabled: boolean;
-    filename_space_warning: boolean;
-    remote_enabled: boolean;
-  };
-  revision_parser: {
-    enabled: boolean;
-    default_daw: string;
-    confidence_threshold: number;
-  };
-  delivery_packager: {
-    enabled: boolean;
-    require_qc_pass: boolean;
-    include_manifest: boolean;
-  };
-  mix_planner: {
-    enabled: boolean;
-    default_focus: string[];
-  };
-};
-
-type WorkspaceSettings = {
-  studio_name: string;
-  host_machine_type: "mac-mini" | "mac-studio" | "macbook-pro" | "windows-pc" | "other";
-  deployment_mode: "single_machine" | "control_plane_plus_worker";
-  public_base_url: string;
-  https_mode: "local_http" | "https_enabled" | "https_terminated_elsewhere";
-  operator_name: string;
-  shared_paths: {
-    projects: string;
-    deliveries: string;
-    draft_queue: string;
-    approval_queue: string;
-    incoming_stems: string;
-  };
-  style_seed: {
-    name: string;
-    raw_text: string;
-    source_paths: string[];
-  };
-  alert_destinations: {
-    email_to: string[];
-    webhook_url: string;
-  };
-  integrations: {
-    n8n: boolean;
-    gmail_readonly: boolean;
-    gmail_send: boolean;
-    instagram: boolean;
-    facebook: boolean;
-  };
-  worker: {
-    enabled: boolean;
-    worker_slug: string;
-    worker_api_base_url: string;
-    display_name: string;
-    platform: string;
-    default_daw: string;
-    supported_daws: string[];
-    adapter_capabilities: string[];
-    dry_run_daw: boolean;
-    reaper_binary_path: string;
-    protools_app_path: string;
-    soundflow_cli_path: string;
-    notes: string;
-  };
-  module_settings: ModuleSettings;
-  onboarding_complete: boolean;
-  created_at?: string | null;
-  updated_at?: string | null;
-};
-
-type WorkspaceStatus = {
-  connection_center: Array<{
-    slug: string;
-    name: string;
-    status: "ready" | "partial" | "needs-attention" | "scaffolded";
-    configured: boolean;
-    kind: string;
-    target?: string;
-    required_fields: string[];
-    steps: string[];
-    detail: string;
-  }>;
-  readiness_checks: Array<{
-    slug: string;
-    name: string;
-    status: "ready" | "partial" | "needs-attention" | "optional";
-    detail: string;
-  }>;
-  readiness_summary: {
-    ready_count: number;
-    partial_count: number;
-    needs_attention_count: number;
-    optional_count: number;
-  };
-  settings: WorkspaceSettings;
-  onboarding_required: boolean;
-  onboarding_complete: boolean;
-  missing_fields: string[];
-  style_profile_count: number;
-};
-
-type DashboardData = {
-  refreshedAt: string | null;
-  services: ServiceRecord[];
-  workers: WorkerNode[];
-  rules: OrchestrationRule[];
-  rulePacks: RulePack[];
-  starterPacks: StarterPack[];
-  playbooks: Playbook[];
-  tasks: WorkerTask[];
-  approvals: ApprovalItem[];
-  jobHistory: Array<{
-    id: string;
-    module: string;
-    action: string;
-    status: string;
-    project_id?: string | null;
-    requested_by?: string | null;
-    approved_by?: string | null;
-    created_at: string;
-    updated_at?: string;
-  }>;
-  projects: ProjectRecord[];
-  leads: Array<{
-    id: string;
-    project_id?: string | null;
-    source: string;
-    raw_input?: string | null;
-    normalized?: {
-      artist_name?: string;
-      service_requested?: string;
-      budget_signal?: string;
-      urgency?: string;
-    } | null;
-    fit_score?: number | null;
-    urgency_score?: number | null;
-    draft_reply?: string | null;
-    created_at?: string;
-  }>;
-  auditLog: AuditEntry[];
-  styleProfiles: StyleProfile[];
-  alerts: AlertConfig;
-  runtimeAlerts: RuntimeAlertSummary;
-  runtimeRecovery: RuntimeRecovery;
-  bootstrapStatus: BootstrapStatus;
-  workspace: WorkspaceStatus;
-  workstationProfile: WorkstationProfile | null;
-  sessionManifestPreview: SessionManifestPreview | null;
-  mixPlanPreview: MixPlanPreview | null;
-  renderPlanPreview: RenderPlanPreview | null;
-  listeningReportPreview: ListeningReportPreview | null;
-  executionPlanPreview: ExecutionPlanPreview | null;
-  loadState: "loading" | "ready" | "error";
-  error: string | null;
-};
-
-type TabId = "overview" | "operations" | "automation" | "context" | "settings";
-
-type WorkflowId = "start-day" | "approvals" | "recover-runtime" | "manage-automation" | "update-setup";
-type SettingsSectionId = "identity" | "storage" | "voice" | "integrations" | "worker" | "modules";
-
-type ConciergeActionId =
-  | "refresh"
-  | "goto-settings"
-  | "goto-operations"
-  | "goto-automation"
-  | "goto-context"
-  | "run-worker-smoke"
-  | "drain-worker"
-  | "resume-worker"
-  | "test-alerts"
-  | "reseed-defaults"
-  | "apply-operator-baseline"
-  | "open-setup-editor";
-
-type ConciergeTurn = {
-  role: "assistant" | "user";
-  text: string;
-  actions?: Array<{ id: ConciergeActionId; label: string }>;
-};
-
-type ConciergeResponse = {
-  status: string;
-  mode: "llm" | "fallback";
-  reply: string;
-  actions: Array<{ id: ConciergeActionId; label: string }>;
-};
+import { AutomationTab } from "./pages/AutomationTab";
+import type {
+  AlertActionResponse,
+  AlertConfig,
+  ArtifactPreview,
+  ApprovalItem,
+  AuditEntry,
+  BootstrapStatus,
+  ConciergeActionId,
+  ConciergeResponse,
+  ConciergeTurn,
+  DashboardData,
+  ExecutionPlanPreview,
+  MixPlanPreview,
+  ModuleSettings,
+  OrchestrationRule,
+  Playbook,
+  PluginInventoryRecord,
+  ProjectDetail,
+  ProjectRecord,
+  RenderPlanPreview,
+  RulePack,
+  ServiceRecord,
+  ServiceState,
+  ServiceStatusPayload,
+  SettingsSectionId,
+  SessionManifestPreview,
+  StarterPack,
+  StyleProfile,
+  TabId,
+  RuntimeAlertSummary,
+  RuntimeRecovery,
+  WorkerNode,
+  WorkerTask,
+  WorkflowId,
+  WorkspaceSettings,
+  WorkspaceStatus,
+  WorkstationPluginInventory,
+  WorkstationProfile,
+  WorkstationRuntimeStatus,
+  WorkstationSmokeReport,
+  WorkstationValidation,
+  ListeningReportPreview,
+} from "./types";
 
 const browserHost = window.location.hostname || "localhost";
 const browserProtocol = window.location.protocol || "http:";
@@ -815,6 +121,31 @@ const serviceStatusApi: Record<string, string> = {
 
 const OPERATOR_NAME_KEY = "studioBrain.operatorName";
 const OPERATOR_TOKEN_KEY = "studioBrain.operatorToken";
+const CONCIERGE_TURNS_KEY = "studioBrain.conciergeTurns";
+
+const DEFAULT_CONCIERGE_TURNS: ConciergeTurn[] = [
+  {
+    role: "assistant",
+    text: "Ask about setup, project status, shared storage, approvals, or runtime issues. This assistant uses live control-room state and falls back to explicit setup guidance if Ollama is unavailable.",
+    actions: [
+      { id: "run-worker-smoke", label: "Run worker smoke" },
+      { id: "goto-settings", label: "Review setup" },
+      { id: "goto-operations", label: "Show live ops" },
+    ],
+  },
+];
+
+function loadStoredConciergeTurns(): ConciergeTurn[] {
+  try {
+    const raw = window.sessionStorage.getItem(CONCIERGE_TURNS_KEY);
+    if (!raw) return DEFAULT_CONCIERGE_TURNS;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || !parsed.length) return DEFAULT_CONCIERGE_TURNS;
+    return parsed.slice(-8);
+  } catch {
+    return DEFAULT_CONCIERGE_TURNS;
+  }
+}
 
 const serviceCatalog: Array<Omit<ServiceRecord, "state" | "detail">> = [
   {
@@ -1697,6 +1028,7 @@ export function App() {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  const [approvedJobIds, setApprovedJobIds] = useState<string[]>([]);
   const [pendingTaskActionId, setPendingTaskActionId] = useState<string | null>(null);
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
   const [workspaceDraft, setWorkspaceDraft] = useState<WorkspaceSettings>(defaultWorkspaceSettings());
@@ -1713,6 +1045,7 @@ export function App() {
   const [starterPackPending, setStarterPackPending] = useState<string | null>(null);
   const [starterPackMessage, setStarterPackMessage] = useState<string | null>(null);
   const [starterPackError, setStarterPackError] = useState<string | null>(null);
+  const [expandedStarterPackSlug, setExpandedStarterPackSlug] = useState<string | null>(null);
   const [maintenancePending, setMaintenancePending] = useState<"reseed" | null>(null);
   const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
   const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
@@ -1743,20 +1076,11 @@ export function App() {
   const [workstationSmokeMessage, setWorkstationSmokeMessage] = useState<string | null>(null);
   const [workstationSmokeError, setWorkstationSmokeError] = useState<string | null>(null);
   const [conciergeInput, setConciergeInput] = useState("");
-  const [conciergeTurns, setConciergeTurns] = useState<ConciergeTurn[]>([
-    {
-      role: "assistant",
-      text: "Ask about setup, project status, shared storage, approvals, or runtime issues. This assistant uses live control-room state and falls back to explicit setup guidance if Ollama is unavailable.",
-      actions: [
-        { id: "run-worker-smoke", label: "Run worker smoke" },
-        { id: "goto-settings", label: "Review setup" },
-        { id: "goto-operations", label: "Show live ops" },
-      ],
-    },
-  ]);
+  const [conciergeTurns, setConciergeTurns] = useState<ConciergeTurn[]>(() => loadStoredConciergeTurns());
   const [conciergeMode, setConciergeMode] = useState<"llm" | "fallback">("llm");
   const [conciergePending, setConciergePending] = useState(false);
   const [conciergeError, setConciergeError] = useState<string | null>(null);
+  const [approvalArrivalMessage, setApprovalArrivalMessage] = useState<string | null>(null);
   const [auditFilter, setAuditFilter] = useState("");
   const [artifactActionMessage, setArtifactActionMessage] = useState<string | null>(null);
   const [artifactActionError, setArtifactActionError] = useState<string | null>(null);
@@ -1766,6 +1090,7 @@ export function App() {
   const [reviewSaveMessage, setReviewSaveMessage] = useState<string | null>(null);
   const [reviewSaveError, setReviewSaveError] = useState<string | null>(null);
   const [showAllRules, setShowAllRules] = useState(false);
+  const previousApprovalIdsRef = useRef<string[]>([]);
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const isInitialLoad = data.loadState === "loading" && !data.refreshedAt;
@@ -1917,6 +1242,13 @@ export function App() {
   const workstationProfile = data.workstationProfile;
   const selectedProject = data.projects.find((project) => project.id === selectedProjectId) ?? data.projects[0] ?? null;
   const selectedWorker = data.workers.find((worker) => worker.slug === selectedWorkerSlug) ?? data.workers[0] ?? null;
+  const lufsTargetMap: Record<string, number> = {
+    streaming: -14,
+    broadcast: -23,
+    cinema: -27,
+    cd: -9,
+  };
+  const configuredLufsTarget = lufsTargetMap[String(workspaceSettings.module_settings.audio_qc.default_target ?? "streaming")] ?? -14;
 
   useEffect(() => {
     const storedName = window.localStorage.getItem(OPERATOR_NAME_KEY);
@@ -1941,6 +1273,10 @@ export function App() {
   }, [operatorToken]);
 
   useEffect(() => {
+    window.sessionStorage.setItem(CONCIERGE_TURNS_KEY, JSON.stringify(conciergeTurns.slice(-8)));
+  }, [conciergeTurns]);
+
+  useEffect(() => {
     document.title = `${data.workspace.settings.studio_name || "Studio Brain"} - Control Room`;
   }, [data.workspace.settings.studio_name]);
 
@@ -1963,6 +1299,24 @@ export function App() {
       setEditingWorkspaceSetup(true);
     }
   }, [data.workspace.onboarding_required]);
+
+  useEffect(() => {
+    setApprovedJobIds((current) => current.filter((jobId) => data.approvals.some((job) => job.id === jobId)));
+  }, [data.approvals]);
+
+  useEffect(() => {
+    const currentIds = data.approvals.map((job) => job.id);
+    if (!previousApprovalIdsRef.current.length) {
+      previousApprovalIdsRef.current = currentIds;
+      return;
+    }
+    const newApprovals = data.approvals.filter((job) => !previousApprovalIdsRef.current.includes(job.id));
+    if (newApprovals.length) {
+      const lead = newApprovals[0];
+      setApprovalArrivalMessage(`New approval waiting: ${lead.module} ${lead.action}.`);
+    }
+    previousApprovalIdsRef.current = currentIds;
+  }, [data.approvals]);
 
   useEffect(() => {
     if (!selectedProjectId && data.projects[0]?.id) {
@@ -2403,7 +1757,7 @@ export function App() {
     if (!text) return;
     setConciergePending(true);
     setConciergeError(null);
-    setConciergeTurns((current) => [...current, { role: "user", text }]);
+    setConciergeTurns((current) => [...current, { role: "user" as const, text }].slice(-8));
     try {
       const response = await fetch(`${API.openclaw}/concierge/respond`, {
         method: "POST",
@@ -2418,12 +1772,12 @@ export function App() {
       }
       const payload = (await response.json()) as ConciergeResponse;
       setConciergeMode(payload.mode ?? "fallback");
-      setConciergeTurns((current) => [...current, { role: "assistant", text: payload.reply, actions: payload.actions }]);
+      setConciergeTurns((current) => [...current, { role: "assistant" as const, text: payload.reply, actions: payload.actions }].slice(-8));
       setConciergeInput("");
     } catch (error) {
       setConciergeMode("fallback");
       const reply = buildFallbackConciergeReply(text);
-      setConciergeTurns((current) => [...current, reply]);
+      setConciergeTurns((current) => [...current, reply].slice(-8));
       setConciergeError(error instanceof Error ? error.message : "Unable to generate concierge response.");
     } finally {
       setConciergePending(false);
@@ -2452,11 +1806,24 @@ export function App() {
         const payload = await response.json().catch(() => null);
         throw new Error(payload?.detail ?? `${decision} failed with ${response.status}`);
       }
-      setActionMessage(decision === "approve" ? `Approved ${jobId}` : `Rejected ${jobId}`);
+      if (decision === "approve") {
+        setApprovedJobIds((current) => (current.includes(jobId) ? current : [...current, jobId]));
+      }
+      setActionMessage(
+        decision === "approve"
+          ? `Approved ${jobId} and queued it for execution or routing.`
+          : `Rejected ${jobId}.`,
+      );
       if (decision === "reject") {
         setRejectReasons((current) => ({ ...current, [jobId]: "" }));
       }
-      await refreshData();
+      if (decision === "approve") {
+        window.setTimeout(() => {
+          void refreshData();
+        }, 1200);
+      } else {
+        await refreshData();
+      }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : `Unable to ${decision} job`);
     } finally {
@@ -2849,54 +2216,6 @@ export function App() {
     workspaceSettings.worker.enabled && workspaceSettings.deployment_mode === "control_plane_plus_worker"
       ? "worker posture active"
       : "worker optional";
-  const overviewServices = data.services.filter(
-    (service) => service.zone === "Control Plane" || service.zone === "AI Runtime" || service.zone === "Production Services",
-  );
-  const automationServices = data.services.filter(
-    (service) =>
-      service.key === "openclaw" ||
-      service.key === "n8n" ||
-      service.key === "ollama" ||
-      service.zone === "Automation Modules",
-  );
-  const operationsServices = data.services.filter(
-    (service) =>
-      service.key === "project-state" ||
-      service.key === "studio-worker" ||
-      service.zone === "Production Services" ||
-      service.zone === "Execution Node",
-  );
-  const platformBackbone = [
-    {
-      key: "caddy-edge",
-      name: "Caddy Edge",
-      state: workspaceSettings.https_mode === "https_enabled" ? "healthy" : "degraded",
-      detail:
-        workspaceSettings.https_mode === "https_enabled"
-          ? "TLS enabled on-stack."
-          : workspaceSettings.https_mode === "https_terminated_elsewhere"
-            ? "TLS terminates upstream."
-            : "HTTP fallback is still active.",
-      role: "LAN and HTTPS front door for operators and service subdomains.",
-      owner: "Overview",
-    },
-    {
-      key: "postgres",
-      name: "Postgres",
-      state: data.services.some((service) => service.key === "project-state" && service.state === "healthy") ? "healthy" : "offline",
-      detail: "Backs project-state, CRM, n8n, and orchestration state.",
-      role: "Shared state fabric for workflow, context, and approvals.",
-      owner: "Overview",
-    },
-    {
-      key: "studio-brain-ui",
-      name: "Studio Brain UI",
-      state: data.loadState === "ready" ? "healthy" : data.loadState === "loading" ? "degraded" : "offline",
-      detail: data.error ?? "Operator console reachable and polling live APIs.",
-      role: "Primary novice-facing control surface.",
-      owner: "Overview",
-    },
-  ];
   const contextCards = [
     {
       label: "Studio identity",
@@ -3117,6 +2436,22 @@ export function App() {
 
       <PrimaryTabStrip tabs={primaryTabs} activeTab={activeTab} onSelect={(tabId) => setActiveTab(tabId as TabId)} badgeCounts={tabBadgeCounts} />
 
+      {approvalArrivalMessage && activeTab !== "operations" ? (
+        <section className="top-gap">
+          <AlertBanner
+            tone="info"
+            title="New item awaiting approval"
+            detail={approvalArrivalMessage}
+            actionLabel="open operations"
+            onAction={() => {
+              setActiveTab("operations");
+              setApprovalArrivalMessage(null);
+            }}
+            onDismiss={() => setApprovalArrivalMessage(null)}
+          />
+        </section>
+      ) : null}
+
       {isInitialLoad ? (
         <section className="loading-shell" aria-label="Loading control room">
           <div className="loading-grid">
@@ -3133,1532 +2468,142 @@ export function App() {
       ) : null}
 
       {!isInitialLoad && activeTab === "overview" ? (
-        <div className="tab-panel">
-          <section className="overview-lead-grid">
-            <article className="panel focus-panel">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Today</p>
-                  <h2>Operator focus</h2>
-                </div>
-                <span className={`status-pill ${activeAlertCount || data.approvals.length ? "warn" : "ok"}`}>
-                  {activeAlertCount || data.approvals.length ? "action needed" : "steady"}
-                </span>
-              </div>
-              <p className="panel-note">
-                Start here. This panel keeps the first screen anchored on what needs attention now instead of every subsystem at once.
-              </p>
-              <div className="focus-list">
-                {operatorFocusItems.map((item) => (
-                  <button
-                    key={item.title}
-                    type="button"
-                    className={`focus-item focus-${item.tone}`}
-                    onClick={() => setActiveTab(item.tab)}
-                  >
-                    <div className="workflow-header">
-                      <strong>{item.title}</strong>
-                      <span className={`status-pill ${item.tone === "ok" ? "ok" : "warn"}`}>{item.action}</span>
-                    </div>
-                    <p className="panel-note">{item.detail}</p>
-                  </button>
-                ))}
-              </div>
-            </article>
-            <article className="panel assistant-panel">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Concierge</p>
-                  <h2>Control Room Assistant</h2>
-                </div>
-                <div className="header-actions">
-                  <span className={`status-pill ${conciergeMode === "llm" ? "ok" : "warn"}`}>{conciergeMode === "llm" ? "llm live" : "fallback mode"}</span>
-                  <span className="count-pill">{conciergeTurns.length} turns</span>
-                </div>
-              </div>
-              <p className="panel-note">
-                Ask about setup, missing features, shared storage posture, integrations, approvals, or project state. Replies come from live control-room context and Ollama when available.
-              </p>
-              <div className="table-stack top-gap">
-                {conciergeTurns.slice(-6).map((turn, index) => (
-                  <div key={`${turn.role}-${index}`} className="table-row">
-                    <div className="row-main">
-                      <strong>{turn.role === "assistant" ? "control room" : operatorName || "operator"}</strong>
-                      <div className="muted">{turn.text}</div>
-                      {turn.actions?.length ? (
-                        <div className="action-row top-gap">
-                          {turn.actions.map((action) => (
-                            <button
-                              key={action.id}
-                              type="button"
-                              className="action-button"
-                              onClick={() => void runConciergeAction(action.id)}
-                            >
-                              {action.label}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="wizard-footer-actions top-gap">
-                <input
-                  value={conciergeInput}
-                  onChange={(event) => setConciergeInput(event.target.value)}
-                  placeholder="What is still missing? Run worker smoke. How do I finish Gmail?"
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      void submitConciergePrompt(conciergeInput);
-                    }
-                  }}
-                />
-                <button className="action-button ok" type="button" disabled={conciergePending} onClick={() => void submitConciergePrompt(conciergeInput)}>
-                  {conciergePending ? "thinking" : "send"}
-                </button>
-              </div>
-              {conciergeError ? <p className="feedback bad">{conciergeError}</p> : null}
-            </article>
-          </section>
-
-          <section className="overview-support-grid">
-            <article className="panel panel-span-12">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Guided actions</p>
-                  <h2>Primary operator workflows</h2>
-                </div>
-                <span className="count-pill">{workflowPlaybooks.length} lanes</span>
-              </div>
-              {conciergeMode === "fallback" ? (
-                <AlertBanner
-                  tone="warn"
-                  title="Assistant is running in fallback mode"
-                  detail="The UI is still usable, but answers are coming from deterministic local guidance because the concierge backend is unavailable."
-                />
-              ) : null}
-              <div className="workflow-strip" aria-label="Guided operator workflows">
-                {workflowPlaybooks.map((workflow) => (
-                  <button
-                    key={workflow.id}
-                    type="button"
-                    className={`workflow-card workflow-${workflow.tab}`}
-                    onClick={() => setActiveTab(workflow.tab)}
-                  >
-                    <div className="workflow-header">
-                      <span className="metric-label">{workflow.label}</span>
-                      <span className={`status-pill ${workflowTone(workflow.state)}`}>{workflow.state}</span>
-                    </div>
-                    <strong>{workflow.count}</strong>
-                    <span className="workflow-unit">{workflow.unit}</span>
-                    <p className="panel-note">{workflow.summary}</p>
-                    <div className="workflow-footer">
-                      <span>{workflow.detail}</span>
-                      <span>open {primaryTabs.find((tab) => tab.id === workflow.tab)?.label.toLowerCase()}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </article>
-          </section>
-
-          <section className="command-grid">
-            <article className="panel command-card accent-gold">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Front Door</p>
-                  <h2>Operator Access</h2>
-                </div>
-                <span className="count-pill">{workspaceSettings.https_mode === "https_enabled" ? "https preferred" : "lan by ip"}</span>
-              </div>
-              <div className="surface-grid">
-                <div className="surface-card emphasis-card">
-                  <span className="metric-label">Primary operator URL</span>
-                  <strong>{displayedFrontDoor}</strong>
-                  <p>Keep operators on one entrypoint and avoid raw service ports for normal use.</p>
-                </div>
-                <div className="surface-card">
-                  <span className="metric-label">LAN fallback</span>
-                  <strong>{frontDoorUrl}</strong>
-                  <p>Immediate full-network access while local hostname and certificate trust are still being finalized.</p>
-                </div>
-                <div className="surface-card">
-                  <span className="metric-label">Automation admin</span>
-                  <strong>{n8nUrl}</strong>
-                  <p>Reserved for engineering and workflow administration, not novice daily use.</p>
-                </div>
-              </div>
-            </article>
-
-            <article className="panel command-card accent-blue">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Zones</p>
-                  <h2>Service Coverage</h2>
-                </div>
-                <span className="status-pill ok">{zoneSummaries.length} zones mapped</span>
-              </div>
-              <div className="zone-summary-grid">
-                {zoneSummaries.map((summary) => (
-                  <div key={summary.zone} className={`mini-card zone-summary-card ${summary.accent}`}>
-                    <span className="metric-label">{summary.zone}</span>
-                    <strong>{summary.healthyCount}/{summary.services.length}</strong>
-                    <p className="panel-note">{summary.managedIn}</p>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="panel command-card accent-green">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Fabric</p>
-                  <h2>Platform Readiness</h2>
-                </div>
-                <span className={`status-pill ${readinessSummary.needs_attention_count ? "bad" : "ok"}`}>{frontDoorMode}</span>
-              </div>
-              <div className="support-health-grid">
-                {supportHealthCards.map((item) => (
-                  <div key={item.name} className={`mini-card support-health-card ${item.tone}`}>
-                    <span className="metric-label">{item.name}</span>
-                    <strong>{item.tone === "ok" ? "ready" : item.tone === "warn" ? "watch" : "attention"}</strong>
-                    <p className="panel-note">{item.detail}</p>
-                  </div>
-                ))}
-              </div>
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-12">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">DAW Foundation</p>
-                  <h2>Workstation Capability</h2>
-                </div>
-                <span className="count-pill">{workerCapabilities.length} capabilities</span>
-              </div>
-              <div className="foundation-grid">
-                <div className="foundation-column">
-                  <div className="panel-header compact-header">
-                    <div>
-                      <span className="metric-label">Readiness</span>
-                      <strong>Workstation posture</strong>
-                    </div>
-                  </div>
-                  <div className="readiness-mini-grid">
-                    {workstationReadiness.map((item) => (
-                      <div key={item.label} className={`mini-card foundation-card ${item.state}`}>
-                        <div className="workflow-header">
-                          <span className="metric-label">{item.label}</span>
-                          <span className={`status-pill ${item.state === "ready" ? "ok" : "warn"}`}>
-                            {item.state === "ready" ? "ready" : "watch"}
-                          </span>
-                        </div>
-                        <strong>{item.label}</strong>
-                        <p className="panel-note">{item.detail}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="foundation-column">
-                  <div className="panel-header compact-header">
-                    <div>
-                      <span className="metric-label">Capabilities</span>
-                      <strong>DAW execution surfaces</strong>
-                    </div>
-                  </div>
-                  <div className="module-grid">
-                    {dawCapabilityCards.map((item) => (
-                      <div key={item.name} className={`mini-card module-card foundation-capability-card ${item.state}`}>
-                        <span className="metric-label">daw capability</span>
-                        <strong>{item.name}</strong>
-                        <p className="panel-note">{item.detail}</p>
-                        <span className={`status-pill ${item.state === "ready" ? "ok" : "warn"}`}>
-                          {item.state === "ready" ? "available" : "needs worker"}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="foundation-column">
-                  <div className="panel-header compact-header">
-                    <div>
-                      <span className="metric-label">Production Coverage</span>
-                      <strong>Review surfaces</strong>
-                    </div>
-                  </div>
-                  <div className="status-grid">
-                    {dawReviewSurfaceCards.map((item) => (
-                      <div key={item.title} className={`mini-card status-card ${item.state}`}>
-                        <div className="workflow-header">
-                          <span className="metric-label">{item.title}</span>
-                          <span className={`status-pill ${item.state === "ready" ? "ok" : "warn"}`}>
-                            {item.state === "ready" ? "live" : "watch"}
-                          </span>
-                        </div>
-                        <strong>{item.title}</strong>
-                        <p className="panel-note">{item.detail}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-12">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Readiness</p>
-                  <h2>Workspace Readiness</h2>
-                </div>
-                <div className="header-actions">
-                  <span className="count-pill">{readinessSummary.ready_count} ready</span>
-                  <span className="status-pill warn">{readinessSummary.partial_count} partial</span>
-                  <span className="status-pill bad">{readinessSummary.needs_attention_count} attention</span>
-                </div>
-              </div>
-              <div className="readiness-grid">
-                {data.workspace.readiness_checks.map((check) => (
-                  <div key={check.slug} className="mini-card readiness-card">
-                    <div className="panel-header compact-header">
-                      <div>
-                        <span className="metric-label">{check.name}</span>
-                        <strong>{check.status.replace("-", " ")}</strong>
-                      </div>
-                      <span className={`status-pill ${check.status === "ready" ? "ok" : check.status === "partial" || check.status === "optional" ? "warn" : "bad"}`}>
-                        {check.status}
-                      </span>
-                    </div>
-                    <p className="panel-note">{check.detail}</p>
-                  </div>
-                ))}
-              </div>
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-12">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Backbone</p>
-                  <h2>Platform Services</h2>
-                </div>
-                <span className="count-pill">{platformBackbone.length + overviewServices.length}</span>
-              </div>
-              <div className="module-grid platform-grid">
-                {platformBackbone.map((service) => (
-                  <div key={service.key} className="mini-card module-card module-gold">
-                    <span className="metric-label">{service.owner}</span>
-                    <strong>{service.name}</strong>
-                    <p className="panel-note">{service.role}</p>
-                    <div className="meta-inline">
-                      <span>{service.detail}</span>
-                    </div>
-                    <span className={`status-pill ${statusTone(service.state)}`}>{service.state}</span>
-                  </div>
-                ))}
-                {overviewServices.map((service) => (
-                  <button
-                    key={service.key}
-                    type="button"
-                    className="mini-card module-card module-violet service-module-button"
-                    onClick={() => setSelectedServiceKey(service.key)}
-                  >
-                    <span className="metric-label">{service.zone}</span>
-                    <strong>{service.name}</strong>
-                    <p className="panel-note">{service.role}</p>
-                    <div className="meta-inline">
-                      <span>{service.note}</span>
-                    </div>
-                    <span className={`status-pill ${statusTone(service.state)}`}>{serviceLabel(service)}</span>
-                  </button>
-                ))}
-              </div>
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-12">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">DAW Foundation</p>
-                  <h2>DAW Live Preview</h2>
-                </div>
-                <span className={`status-pill ${workstationProfile?.ready ? "ok" : "warn"}`}>
-                  {workstationProfile ? (workstationProfile.ready ? "ready to stage" : "needs setup") : "worker offline"}
-                </span>
-              </div>
-              <div className="workspace-grid nested-grid">
-                <div className="panel-span-4">
-                  <div className="mini-card">
-                    <span className="metric-label">Workstation posture</span>
-                    <strong>{workstationProfile?.deployment_mode ?? "unavailable"}</strong>
-                    <p className="panel-note">{workstationProfile?.host ?? "No studio-worker profile is reachable yet."}</p>
-                    <div className="summary-pill-row">
-                      <span className="summary-pill">{workstationProfile?.platform ?? "macos"}</span>
-                      <span className="summary-pill">{workstationProfile?.dry_run_daw ? "dry run" : "live execution"}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="panel-span-4">
-                  <div className="mini-card">
-                    <span className="metric-label">Session manifest preview</span>
-                    <strong>
-                      {data.sessionManifestPreview ? `${data.sessionManifestPreview.stem_count} stems · ${data.sessionManifestPreview.reference_count} refs` : "preview unavailable"}
-                    </strong>
-                    <p className="panel-note">{data.sessionManifestPreview?.project_root ?? workspaceSettings.shared_paths.projects}</p>
-                    <div className="summary-pill-row">
-                      <span className="summary-pill">
-                        {data.sessionManifestPreview?.readiness.ready_for_planning ? "ready for planning" : "waiting for session data"}
-                      </span>
-                      {data.sessionManifestPreview ? <span className="summary-pill">{Math.round(data.sessionManifestPreview.readiness.confidence_score * 100)}% confidence</span> : null}
-                    </div>
-                  </div>
-                </div>
-                <div className="panel-span-4">
-                  <div className="mini-card">
-                    <span className="metric-label">Mix and listening previews</span>
-                    <strong>
-                      {data.mixPlanPreview ? `${data.mixPlanPreview.phases.length} plan phases` : "plan unavailable"}
-                    </strong>
-                    <p className="panel-note">
-                      {data.renderPlanPreview ? `${data.renderPlanPreview.profile_count} render profiles staged.` : "Render preview unavailable."}
-                    </p>
-                    <div className="summary-pill-row">
-                      {(data.mixPlanPreview?.priorities ?? []).slice(0, 3).map((item) => (
-                        <span key={item} className="summary-pill">
-                          {item}
-                        </span>
-                      ))}
-                      {data.executionPlanPreview ? <span className="summary-pill">{data.executionPlanPreview.ready_for_operator_review ? "operator review ready" : "blocked"}</span> : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="workspace-grid nested-grid top-gap">
-                <div className="panel-span-4 table-stack">
-                  {(workstationProfile?.daws ?? []).length ? (
-                    workstationProfile!.daws.map((daw) => (
-                      <div key={daw.slug} className="table-row">
-                        <div className="row-main">
-                          <strong>{daw.slug}</strong>
-                          <div className="muted">{daw.notes}</div>
-                          {daw.binary_path ? <div className="muted">{daw.binary_path}</div> : null}
-                        </div>
-                        <div className="row-meta">
-                          <span className={`status-pill ${daw.automation_ready ? "ok" : daw.installed ? "warn" : "bad"}`}>
-                            {daw.automation_ready ? "automation ready" : daw.installed ? "installed" : "missing"}
-                          </span>
-                          <span className="muted">{daw.execution_mode}</span>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="empty-state">No workstation profile yet. The control plane can still build plans before a real DAW node is attached.</p>
-                  )}
-                </div>
-                <div className="panel-span-4 table-stack">
-                  {data.sessionManifestPreview ? (
-                    <>
-                      <div className="table-row">
-                        <div className="row-main">
-                          <strong>{data.sessionManifestPreview.session_details.session_type}</strong>
-                          <div className="muted">
-                            {data.sessionManifestPreview.session_details.track_count} tracks · {data.sessionManifestPreview.session_details.marker_count} markers
-                          </div>
-                          <div className="muted">{data.sessionManifestPreview.session_details.primary_session_file ?? "No primary session file yet."}</div>
-                        </div>
-                      </div>
-                      {data.sessionManifestPreview.session_details.track_names.slice(0, 4).map((name) => (
-                        <div key={name} className="table-row">
-                          <div className="row-main">
-                            <strong>{name}</strong>
-                            <div className="muted">Session track</div>
-                          </div>
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <p className="empty-state">Session introspection will appear here once a DAW session file is reachable.</p>
-                  )}
-                </div>
-                <div className="panel-span-4 table-stack">
-                  {data.mixPlanPreview ? (
-                    <>
-                      {data.mixPlanPreview.phases.map((phase) => (
-                        <div key={phase.slug} className="table-row">
-                          <div className="row-main">
-                            <strong>{phase.title}</strong>
-                            <div className="muted">{phase.actions.join(" · ")}</div>
-                          </div>
-                        </div>
-                      ))}
-                      {(data.mixPlanPreview.dependency_warnings ?? []).map((warning) => (
-                        <div key={warning.slug} className="table-row compact-row">
-                          <div className="row-main">
-                            <strong>{warning.slug}</strong>
-                            <div className="muted">{warning.detail}</div>
-                          </div>
-                          <div className="row-meta">
-                            <span className={`status-pill ${warning.severity === "warn" ? "warn" : "muted"}`}>{warning.severity}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <p className="empty-state">Mix-plan previews will appear here once the worker preview endpoint is reachable.</p>
-                  )}
-                </div>
-                <div className="panel-span-4 table-stack">
-                  {data.renderPlanPreview ? (
-                    <>
-                      {data.renderPlanPreview.profiles.map((profile) => (
-                        <div key={profile.slug} className="table-row">
-                          <div className="row-main">
-                            <strong>{profile.label}</strong>
-                            <div className="muted">{profile.filename}</div>
-                            <div className="muted">{profile.sample_rate} Hz · {profile.bit_depth}-bit · {profile.target}</div>
-                            <div className="muted">{profile.review_gate ?? "internal-review"} · {profile.qc_required ? "qc required" : "qc optional"} · {profile.listening_required ? "listening required" : "listening optional"}</div>
-                          </div>
-                          <div className="row-meta">
-                            <span className={`status-pill ${profile.slug === data.renderPlanPreview?.review_candidate_slug ? "ok" : "muted"}`}>
-                              {profile.slug === data.renderPlanPreview?.review_candidate_slug ? "candidate" : "supporting"}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                      {selectedProject?.id ? (
-                        <div className="action-row">
-                          <button className="action-button" type="button" disabled={reviewSavePending === "render"} onClick={saveRenderReview}>
-                            {reviewSavePending === "render" ? "saving" : "save render review"}
-                          </button>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : (
-                    <p className="empty-state">Render profiles will appear here once preview generation is available.</p>
-                  )}
-                </div>
-                <div className="panel-span-4 table-stack">
-                  {data.listeningReportPreview ? (
-                    <>
-                      <div className="table-row">
-                        <div className="row-main">
-                          <strong>Listening summary</strong>
-                          <div className="muted">
-                            {data.listeningReportPreview.summary.qc_hard_fail_count} hard fails · {data.listeningReportPreview.summary.qc_warning_count} warnings
-                          </div>
-                          <div className="muted">Reference alignment: {data.listeningReportPreview.summary.reference_alignment}</div>
-                          {(data.listeningReportPreview.summary.focus_flags ?? []).length ? (
-                            <div className="summary-pill-row top-gap">
-                              {(data.listeningReportPreview.summary.focus_flags ?? []).map((flag) => <span key={flag} className="summary-pill">{flag}</span>)}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                      {data.listeningReportPreview.checks.map((check) => (
-                        <div key={check.slug} className="table-row">
-                          <div className="row-main">
-                            <strong>{check.slug}</strong>
-                            <div className="muted">{check.detail}</div>
-                          </div>
-                          <div className="row-meta">
-                            <span className={`status-pill ${check.status === "attention" ? "bad" : "warn"}`}>{check.status}</span>
-                          </div>
-                        </div>
-                      ))}
-                      {selectedProject?.id ? (
-                        <div className="action-row">
-                          <button className="action-button" type="button" disabled={reviewSavePending === "listening"} onClick={saveListeningReview}>
-                            {reviewSavePending === "listening" ? "saving" : "save listening review"}
-                          </button>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : (
-                    <p className="empty-state">Listening heuristics will appear here once preview generation is available.</p>
-                  )}
-                </div>
-                <div className="panel-span-4 table-stack">
-                  {data.executionPlanPreview ? (
-                    <>
-                      <div className="table-row">
-                        <div className="row-main">
-                          <strong>Execution plan</strong>
-                          <div className="muted">{data.executionPlanPreview.recommended_next_step}</div>
-                          <div className="muted">
-                            {data.executionPlanPreview.blockers.length ? data.executionPlanPreview.blockers.join(" · ") : "No blocking conditions in preview mode."}
-                          </div>
-                        </div>
-                        <div className="row-meta">
-                          <span className={`status-pill ${data.executionPlanPreview.ready_for_operator_review ? "ok" : "warn"}`}>
-                            {data.executionPlanPreview.ready_for_operator_review ? "review ready" : "blocked"}
-                          </span>
-                        </div>
-                      </div>
-                      {data.executionPlanPreview.phases.map((phase) => (
-                        <div key={phase.slug} className="table-row">
-                          <div className="row-main">
-                            <strong>{phase.title}</strong>
-                            <div className="muted">{phase.summary}</div>
-                          </div>
-                          <div className="row-meta">
-                            <span className={`status-pill ${phase.status === "ready" ? "ok" : phase.status === "watch" ? "warn" : "bad"}`}>{phase.status}</span>
-                          </div>
-                        </div>
-                      ))}
-                      {(data.executionPlanPreview.dependency_warnings ?? []).map((warning) => (
-                        <div key={warning.slug} className="table-row compact-row">
-                          <div className="row-main">
-                            <strong>{warning.slug}</strong>
-                            <div className="muted">{warning.detail}</div>
-                          </div>
-                          <div className="row-meta">
-                            <span className={`status-pill ${warning.severity === "warn" ? "warn" : "muted"}`}>{warning.severity}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <p className="empty-state">Execution-loop posture will appear here once all DAW preview surfaces are reachable.</p>
-                  )}
-                </div>
-              </div>
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-8">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Topology</p>
-                  <h2>Service Ownership Map</h2>
-                </div>
-                <span className="count-pill">{data.services.length} services</span>
-              </div>
-              <div className="zone-stack">
-                {serviceZones.map(([zone, services]) => (
-                  <section key={zone} className={`zone-card zone-${zoneAccent(zone)}`}>
-                    <div className="zone-header">
-                      <div>
-                        <h3>{zone}</h3>
-                        <p>{zoneDescriptions[zone]}</p>
-                      </div>
-                      <span className="count-pill">{services.filter((service) => service.state === "healthy").length}/{services.length}</span>
-                    </div>
-                    <div className="table-stack">
-                      {services.map((service) => (
-                        <button
-                          key={service.key}
-                          type="button"
-                          className={`table-row service-row service-button ${selectedService?.key === service.key ? "is-selected" : ""}`}
-                          onClick={() => setSelectedServiceKey(service.key)}
-                        >
-                          <div className="row-main">
-                            <strong>{service.name}</strong>
-                            <div className="muted">{service.role}</div>
-                            <div className="meta-inline">
-                              <span>{service.note}</span>
-                              <span>{service.optional ? "optional execution surface" : "proxied through the control room"}</span>
-                            </div>
-                          </div>
-                          <div className="row-meta">
-                            <span className={`status-pill ${service.optional && service.state === "offline" ? "warn" : statusTone(service.state)}`}>
-                              {serviceLabel(service)}
-                            </span>
-                            <span className="muted">{service.detail}</span>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                ))}
-              </div>
-            </article>
-
-            <aside className="panel panel-span-4">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Inspector</p>
-                  <h2>Service Drilldown</h2>
-                </div>
-                <span className={`status-pill ${selectedService ? statusTone(selectedService.state) : "warn"}`}>
-                  {selectedService ? serviceLabel(selectedService) : "none"}
-                </span>
-              </div>
-              {selectedService ? (
-                <div className="service-inspector">
-                  <div className={`mini-card service-identity-card module-${zoneAccent(selectedService.zone)}`}>
-                    <span className="metric-label">{selectedService.zone}</span>
-                    <strong>{selectedService.name}</strong>
-                    <p className="panel-note">{selectedService.role}</p>
-                    <div className="meta-inline">
-                      <span>{selectedService.note}</span>
-                      <span>managed in {serviceManagedIn(selectedService)}</span>
-                    </div>
-                  </div>
-                  <div className="mini-card">
-                    <span className="metric-label">Recommended next move</span>
-                    <strong>{servicePrimaryTab(selectedService)}</strong>
-                    <p className="panel-note">{serviceRecommendedAction(selectedService)}</p>
-                  </div>
-                  <div className="mini-card">
-                    <span className="metric-label">Dependencies</span>
-                    <div className="summary-pill-row">
-                      {serviceDependencyHints(selectedService).map((item) => (
-                        <span key={item} className="summary-pill">
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="mini-card">
-                    <div className="panel-header compact-header">
-                      <div>
-                        <span className="metric-label">Live status</span>
-                        <strong>{selectedServiceStatusState === "loading" ? "loading" : "service snapshot"}</strong>
-                      </div>
-                      <span className={`status-pill ${selectedServiceStatusState === "error" ? "bad" : selectedServiceStatusState === "ready" ? "ok" : "warn"}`}>
-                        {selectedServiceStatusState}
-                      </span>
-                    </div>
-                    {selectedServiceHighlights.length ? (
-                      <div className="status-key-grid">
-                        {selectedServiceHighlights.map((item) => (
-                          <div key={item.label} className="status-key-card">
-                            <span className="metric-label">{item.label}</span>
-                            <strong>{item.value}</strong>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="panel-note">No detailed service payload is available for this module yet.</p>
-                    )}
-                  </div>
-                  {serviceSettingsSummary(selectedService, moduleSettings).length ? (
-                    <div className="mini-card">
-                      <span className="metric-label">Saved tuning</span>
-                      <div className="summary-pill-row">
-                        {serviceSettingsSummary(selectedService, moduleSettings).map((item) => (
-                          <span key={item} className="summary-pill">
-                            {item}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  <div className="action-deck">
-                    <button
-                      className="action-button ok"
-                      type="button"
-                      onClick={() => setActiveTab(servicePrimaryTab(selectedService))}
-                    >
-                      open {primaryTabs.find((tab) => tab.id === servicePrimaryTab(selectedService))?.label.toLowerCase()}
-                    </button>
-                    <button className="action-button" type="button" onClick={() => refreshData()}>
-                      refresh state
-                    </button>
-                    <button className="action-button" type="button" onClick={() => copyServiceField(selectedServiceProxyUrl, `${selectedService.name} URL`)}>
-                      copy url
-                    </button>
-                    <button
-                      className="action-button"
-                      type="button"
-                      onClick={() => copyServiceField(selectedService.healthUrl, `${selectedService.name} health path`)}
-                    >
-                      copy health path
-                    </button>
-                  </div>
-                  {serviceInspectorMessage ? <p className="feedback ok">{serviceInspectorMessage}</p> : null}
-                  {serviceInspectorError ? <p className="feedback bad">{serviceInspectorError}</p> : null}
-                </div>
-              ) : null}
-              <div className="divider" />
-              <div className="panel-header compact-header">
-                <div>
-                  <p className="section-kicker">Platform Actions</p>
-                  <h2>Safe Operator Controls</h2>
-                </div>
-              </div>
-              <div className="table-stack">
-                <div className="table-row">
-                  <div className="row-main">
-                    <strong>Refresh control room</strong>
-                    <div className="muted">Re-poll the full stack and re-evaluate service health and readiness.</div>
-                  </div>
-                  <div className="row-meta">
-                    <button className="action-button" type="button" onClick={() => refreshData()}>
-                      refresh
-                    </button>
-                  </div>
-                </div>
-                <div className="table-row">
-                  <div className="row-main">
-                    <strong>Test alert routing</strong>
-                    <div className="muted">Verify email and webhook alert delivery without waiting for a real incident.</div>
-                  </div>
-                  <div className="row-meta">
-                    <button className="action-button" type="button" disabled={alertActionPending !== null} onClick={() => runAlertAction("test")}>
-                      {alertActionPending === "test" ? "testing" : "test alert"}
-                    </button>
-                  </div>
-                </div>
-                <div className="table-row">
-                  <div className="row-main">
-                    <strong>Reseed defaults</strong>
-                    <div className="muted">Reapply starter rules, starter packs, and shipped playbooks.</div>
-                  </div>
-                  <div className="row-meta">
-                    <button className="action-button" type="button" disabled={maintenancePending !== null} onClick={reseedAutomationDefaults}>
-                      {maintenancePending === "reseed" ? "reseeding" : "reseed"}
-                    </button>
-                  </div>
-                </div>
-                <div className="table-row">
-                  <div className="row-main">
-                    <strong>Edit workspace</strong>
-                    <div className="muted">Jump to Settings to update onboarding, deployment posture, context, and worker config.</div>
-                  </div>
-                  <div className="row-meta">
-                    <button className="action-button ok" type="button" onClick={() => setActiveTab("settings")}>
-                      settings
-                    </button>
-                  </div>
-                </div>
-              </div>
-              {maintenanceMessage ? <p className="feedback ok">{maintenanceMessage}</p> : null}
-              {maintenanceError ? <p className="feedback bad">{maintenanceError}</p> : null}
-              {alertActionMessage ? <p className="feedback ok">{alertActionMessage}</p> : null}
-              {alertActionError ? <p className="feedback bad">{alertActionError}</p> : null}
-              <div className="divider" />
-              <div className="panel-header compact-header">
-                <div>
-                  <p className="section-kicker">Support Surface</p>
-                  <h2>Stack Fabric</h2>
-                </div>
-              </div>
-              <div className="support-stack">
-                {supportSurface.map((item) => (
-                  <div key={item.name} className="support-card">
-                    <strong>{item.name}</strong>
-                    <div className="muted">{item.detail}</div>
-                  </div>
-                ))}
-              </div>
-            </aside>
-          </section>
-        </div>
+        <OverviewTab
+          activeAlertCount={activeAlertCount}
+          data={data}
+          operatorFocusItems={operatorFocusItems}
+          setActiveTab={setActiveTab}
+          conciergeMode={conciergeMode}
+          conciergeTurns={conciergeTurns}
+          operatorName={operatorName}
+          conciergePending={conciergePending}
+          conciergeInput={conciergeInput}
+          setConciergeInput={setConciergeInput}
+          submitConciergePrompt={submitConciergePrompt}
+          runConciergeAction={runConciergeAction}
+          conciergeError={conciergeError}
+          workflowPlaybooks={workflowPlaybooks}
+          workflowTone={workflowTone}
+          primaryTabs={primaryTabs}
+          workspaceSettings={workspaceSettings}
+          displayedFrontDoor={displayedFrontDoor}
+          frontDoorUrl={frontDoorUrl}
+          n8nUrl={n8nUrl}
+          zoneSummaries={zoneSummaries}
+          readinessSummary={readinessSummary}
+          frontDoorMode={frontDoorMode}
+          supportHealthCards={supportHealthCards}
+          workerCapabilities={workerCapabilities}
+          workstationReadiness={workstationReadiness}
+          dawCapabilityCards={dawCapabilityCards}
+          dawReviewSurfaceCards={dawReviewSurfaceCards}
+          workstationProfile={workstationProfile}
+          reviewSavePending={reviewSavePending}
+          saveRenderReview={saveRenderReview}
+          saveListeningReview={saveListeningReview}
+          selectedProject={selectedProject}
+          serviceZones={serviceZones}
+          zoneAccent={zoneAccent}
+          zoneDescriptions={zoneDescriptions}
+          selectedService={selectedService}
+          setSelectedServiceKey={setSelectedServiceKey}
+          serviceLabel={serviceLabel}
+          statusTone={statusTone}
+          selectedServiceStatusState={selectedServiceStatusState}
+          selectedServiceHighlights={selectedServiceHighlights}
+          moduleSettings={moduleSettings}
+          serviceSettingsSummary={serviceSettingsSummary}
+          serviceDependencyHints={serviceDependencyHints}
+          serviceManagedIn={serviceManagedIn}
+          servicePrimaryTab={servicePrimaryTab}
+          serviceRecommendedAction={serviceRecommendedAction}
+          refreshData={refreshData}
+          copyServiceField={copyServiceField}
+          selectedServiceProxyUrl={selectedServiceProxyUrl}
+          serviceInspectorMessage={serviceInspectorMessage}
+          serviceInspectorError={serviceInspectorError}
+          maintenancePending={maintenancePending}
+          reseedAutomationDefaults={reseedAutomationDefaults}
+          alertActionPending={alertActionPending}
+          runAlertAction={runAlertAction}
+          maintenanceMessage={maintenanceMessage}
+          maintenanceError={maintenanceError}
+          alertActionMessage={alertActionMessage}
+          alertActionError={alertActionError}
+          supportSurface={supportSurface}
+        />
       ) : null}
 
       {!isInitialLoad && activeTab === "operations" ? (
-        <div className="tab-panel">
-          <ApprovalQueue
-            approvals={data.approvals}
-            visibleApprovals={visibleApprovals}
-            operatorName={operatorName}
-            setOperatorName={setOperatorName}
-            setWorkspaceDraft={setWorkspaceDraft}
-            operatorToken={operatorToken}
-            setOperatorToken={setOperatorToken}
-            rejectReasons={rejectReasons}
-            setRejectReasons={setRejectReasons}
-            pendingJobId={pendingJobId}
-            handleApproval={handleApproval}
-            actionMessage={actionMessage}
-            actionError={actionError}
-            summarizeTime={summarizeTime}
-          />
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-12">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Execution Fabric</p>
-                  <h2>Operational Service Modules</h2>
-                </div>
-                <span className="count-pill">{operationsServices.length}</span>
-              </div>
-              <div className="module-grid platform-grid">
-                {operationsServices.map((service) => (
-                  <button
-                    key={service.key}
-                    type="button"
-                    className={`mini-card module-card module-${zoneAccent(service.zone)} service-module-button`}
-                    onClick={() => setSelectedServiceKey(service.key)}
-                  >
-                    <span className="metric-label">{service.zone}</span>
-                    <strong>{service.name}</strong>
-                    <p className="panel-note">{service.role}</p>
-                    <div className="meta-inline">
-                      <span>{service.note}</span>
-                      <span>{serviceRecommendedAction(service)}</span>
-                    </div>
-                    <span className={`status-pill ${statusTone(service.state)}`}>{serviceLabel(service)}</span>
-                  </button>
-                ))}
-              </div>
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-12">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Escalation</p>
-                  <h2>Live Alerts</h2>
-                </div>
-                <div className="header-actions">
-                  <span className="count-pill">{activeAlertCount}</span>
-                  <button className="action-button" disabled={alertActionPending !== null} onClick={() => runAlertAction("test")}>
-                    {alertActionPending === "test" ? "testing" : "test alert"}
-                  </button>
-                  <button
-                    className="action-button ok"
-                    disabled={alertActionPending !== null || !data.runtimeAlerts.active_alerts.length}
-                    onClick={() => runAlertAction("dispatch")}
-                  >
-                    {alertActionPending === "dispatch" ? "dispatching" : "dispatch active"}
-                  </button>
-                </div>
-              </div>
-              <div className="alert-summary-grid">
-                <div className="mini-card">
-                  <span className="metric-label">Approval backlog</span>
-                  <strong>{data.runtimeAlerts.approvals_waiting}</strong>
-                </div>
-                <div className="mini-card">
-                  <span className="metric-label">Failed tasks</span>
-                  <strong>{data.runtimeAlerts.failed_worker_tasks}</strong>
-                </div>
-                <div className="mini-card">
-                  <span className="metric-label">Claimed tasks</span>
-                  <strong>{data.runtimeAlerts.claimed_worker_tasks}</strong>
-                </div>
-                <div className="mini-card">
-                  <span className="metric-label">Expired leases</span>
-                  <strong>{data.runtimeAlerts.expired_worker_leases}</strong>
-                </div>
-                <div className="mini-card">
-                  <span className="metric-label">Stale workers</span>
-                  <strong>{data.runtimeAlerts.stale_workers.length}</strong>
-                </div>
-              </div>
-              <div className="workspace-grid nested-grid">
-                <div className="panel-span-7 table-stack top-gap">
-                  {data.runtimeAlerts.active_alerts.length ? (
-                    data.runtimeAlerts.active_alerts.map((alert) => (
-                      <div key={alert.slug} className="table-row">
-                        <div className="row-main">
-                          <strong>{alert.slug}</strong>
-                          <div className="muted">{alert.detail}</div>
-                        </div>
-                        <div className="row-meta">
-                          <span className={`status-pill ${alert.severity === "bad" ? "bad" : "warn"}`}>{alert.severity}</span>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="empty-state">No live alert thresholds are currently tripped.</p>
-                  )}
-                </div>
-                <div className="panel-span-5 table-stack top-gap">
-                  {data.alerts.channels.map((channel) => (
-                    <div key={channel.slug} className="table-row">
-                      <div className="row-main">
-                        <strong>{channel.name}</strong>
-                        <div className="muted">{channel.detail}</div>
-                      </div>
-                      <div className="row-meta">
-                        <span className={`status-pill ${channel.configured ? "ok" : "warn"}`}>
-                          {channel.configured ? "configured" : "needs setup"}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {alertActionMessage ? <p className="feedback ok">{alertActionMessage}</p> : null}
-              {alertActionError ? <p className="feedback bad">{alertActionError}</p> : null}
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-12">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Workstation</p>
-                  <h2>Setup Validation</h2>
-                </div>
-                <div className="header-actions">
-                  <button
-                    type="button"
-                    className="action-button"
-                    onClick={() => void refreshWorkstationValidation()}
-                    disabled={workstationValidationState === "loading"}
-                  >
-                    {workstationValidationState === "loading" ? "Refreshing…" : "Refresh validation"}
-                  </button>
-                  <button
-                    type="button"
-                    className={`action-button ${workstationSmoke?.result === "pass" ? "ok" : ""}`}
-                    onClick={() => void runWorkstationSmoke()}
-                    disabled={workstationSmokePending}
-                  >
-                    {workstationSmokePending ? "Running smoke…" : "Run dry-run smoke"}
-                  </button>
-                  <button
-                    type="button"
-                    className="action-button"
-                    onClick={() => void updateWorkstationRuntime(workstationRuntime?.runtime.drain_requested ? "resume" : "drain")}
-                    disabled={workstationRuntimePending !== null}
-                  >
-                    {workstationRuntimePending === "drain"
-                      ? "Draining…"
-                      : workstationRuntimePending === "resume"
-                        ? "Resuming…"
-                        : workstationRuntime?.runtime.drain_requested
-                          ? "Resume worker"
-                          : "Drain worker"}
-                  </button>
-                  <span className={`status-pill ${workstationValidation?.ready ? "ok" : "warn"}`}>
-                    {workstationValidation ? (workstationValidation.ready ? "ready" : "needs review") : "unavailable"}
-                  </span>
-                </div>
-              </div>
-              <div className="workspace-grid nested-grid">
-                <div className="panel-span-4">
-                  <div className="mini-card">
-                    <span className="metric-label">Recommended next step</span>
-                    <strong>{workstationValidation?.recommended_next_step ?? "Waiting for worker validation."}</strong>
-                    <p className="panel-note">{workstationValidation?.host ?? "No workstation host reported yet."}</p>
-                  </div>
-                  <div className="mini-card top-gap">
-                    <span className="metric-label">Dry-run smoke</span>
-                    <strong>
-                      {workstationSmoke
-                        ? workstationSmoke.result === "pass"
-                          ? "pass"
-                          : "review"
-                        : "not run yet"}
-                    </strong>
-                    <p className="panel-note">
-                      {workstationSmoke
-                        ? `${workstationSmoke.session_manifest.track_count} tracks · ${workstationSmoke.render_plan.profile_count} render profiles · ${workstationSmoke.execution_plan.blockers.length} blockers`
-                        : "Runs a safe planning-chain rehearsal against the current workstation without touching a real session."}
-                    </p>
-                  </div>
-                  <div className="mini-card top-gap">
-                    <span className="metric-label">Worker runtime</span>
-                    <strong>
-                      {workstationRuntime
-                        ? workstationRuntime.runtime.drain_requested
-                          ? "draining"
-                          : workstationRuntime.runtime.last_status
-                        : "unavailable"}
-                    </strong>
-                    <p className="panel-note">
-                      {workstationRuntime
-                        ? `${workstationRuntime.worker_slug} · ${workstationRuntime.runtime.current_task_id ? `active task ${workstationRuntime.runtime.current_task_id}` : "no active task"}`
-                        : "Runtime status has not been loaded yet."}
-                    </p>
-                  </div>
-                </div>
-                <div className="panel-span-8">
-                  <div className="readiness-grid">
-                    {(workstationValidation?.checks ?? []).map((check) => (
-                      <div key={check.slug} className="mini-card readiness-card">
-                        <div className="panel-header compact-header">
-                          <div>
-                            <span className="metric-label">{check.label}</span>
-                            <strong>{check.status.replace("-", " ")}</strong>
-                          </div>
-                          <span className={`status-pill ${check.status === "ready" ? "ok" : check.status === "needs-attention" ? "bad" : "warn"}`}>
-                            {check.status}
-                          </span>
-                        </div>
-                        <p className="panel-note">{check.detail}</p>
-                      </div>
-                    ))}
-                    {workstationValidationState === "loading" ? <p className="empty-state">Validating workstation setup…</p> : null}
-                    {workstationValidationState === "error" ? <p className="empty-state">Workstation validation is not available yet.</p> : null}
-                  </div>
-                </div>
-              </div>
-              {workstationSmoke ? (
-                <div className="workspace-grid nested-grid top-gap">
-                  <div className="panel-span-4">
-                    <div className="mini-card">
-                      <span className="metric-label">Smoke summary</span>
-                      <strong>{workstationSmoke.summary.execution_ready_for_review ? "planning chain ready" : "review before live use"}</strong>
-                      <p className="panel-note">
-                        {workstationSmoke.summary.mix_phase_count} mix phases · {workstationSmoke.summary.warning_count} dependency warnings ·
-                        {" "}
-                        {workstationSmoke.summary.listening_issue_count} listening issues tracked
-                      </p>
-                    </div>
-                  </div>
-                  <div className="panel-span-8">
-                    <div className="table-stack">
-                      <div className="table-row">
-                        <div className="row-main">
-                          <strong>Session rehearsal</strong>
-                          <div className="muted">
-                            {workstationSmoke.session_manifest.session_type} · {workstationSmoke.session_manifest.stem_count} stems ·
-                            {" "}
-                            {workstationSmoke.session_manifest.reference_count} references
-                          </div>
-                        </div>
-                        <div className="row-meta">
-                          <span className={`status-pill ${workstationSmoke.summary.session_ready ? "ok" : "warn"}`}>
-                            {workstationSmoke.summary.session_ready ? "ready" : "review"}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="table-row">
-                        <div className="row-main">
-                          <strong>Execution review</strong>
-                          <div className="muted">{workstationSmoke.execution_plan.recommended_next_step ?? workstationSmoke.recommended_next_step}</div>
-                        </div>
-                        <div className="row-meta">
-                          <span className={`status-pill ${workstationSmoke.summary.execution_ready_for_review ? "ok" : "warn"}`}>
-                            {workstationSmoke.summary.execution_ready_for_review ? "operator-ready" : "needs review"}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="table-row">
-                        <div className="row-main">
-                          <strong>Next actions</strong>
-                          <div className="muted">
-                            {(workstationSmoke.listening_report.next_actions ?? []).slice(0, 2).join(" · ") || "No listening follow-up required."}
-                          </div>
-                        </div>
-                        <div className="row-meta">
-                          <span className="status-pill warn">{workstationSmoke.execution_plan.blockers.length} blockers</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-              {workstationSmokeMessage ? <p className="feedback ok">{workstationSmokeMessage}</p> : null}
-              {workstationSmokeError ? <p className="feedback bad">{workstationSmokeError}</p> : null}
-              {workstationRuntimeState === "error" ? <p className="feedback bad">Worker runtime controls are not available yet.</p> : null}
-              {workstationRuntimeMessage ? <p className="feedback ok">{workstationRuntimeMessage}</p> : null}
-              {workstationRuntimeError ? <p className="feedback bad">{workstationRuntimeError}</p> : null}
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-12">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Recovery</p>
-                  <h2>Runtime Recovery</h2>
-                </div>
-                <div className="header-actions">
-                  <span className="count-pill">{data.runtimeRecovery.summary.failed_task_count} failed</span>
-                  <span className="status-pill warn">{data.runtimeRecovery.summary.claimed_task_count} claimed</span>
-                  <span className="status-pill bad">{data.runtimeRecovery.summary.expired_claim_count} expired</span>
-                </div>
-              </div>
-              <div className="recovery-grid">
-                <div className="mini-card recovery-card">
-                  <span className="metric-label">Failed tasks ready to requeue</span>
-                  <strong>{data.runtimeRecovery.summary.failed_task_count}</strong>
-                  <p className="panel-note">Failed execution can be requeued directly from the task feed once the cause is understood.</p>
-                  <div className="table-stack top-gap">
-                    {data.runtimeRecovery.failed_tasks.slice(0, 3).map((task) => (
-                      <div key={task.id} className="table-row">
-                        <div className="row-main">
-                          <strong>{task.task_type}</strong>
-                          <div className="muted">{task.error_message ?? "Worker task failed."}</div>
-                        </div>
-                        <div className="row-meta">
-                          <span className="status-pill bad">failed</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="mini-card recovery-card">
-                  <span className="metric-label">Claimed tasks</span>
-                  <strong>{data.runtimeRecovery.summary.claimed_task_count}</strong>
-                  <p className="panel-note">Expired leases indicate stranded execution and should be released or requeued.</p>
-                  <div className="table-stack top-gap">
-                    {data.runtimeRecovery.claimed_tasks.slice(0, 3).map((task) => (
-                      <div key={task.id} className="table-row">
-                        <div className="row-main">
-                          <strong>{task.task_type}</strong>
-                          <div className="muted">{task.claimed_by ?? task.worker_slug ?? "unassigned"}</div>
-                        </div>
-                        <div className="row-meta">
-                          <span className={`status-pill ${task.lease_state === "expired" ? "bad" : "warn"}`}>{task.lease_state ?? "claimed"}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="mini-card recovery-card">
-                  <span className="metric-label">Stale workers</span>
-                  <strong>{data.runtimeRecovery.summary.stale_worker_count}</strong>
-                  <p className="panel-note">Usually points to a stopped local worker loop, dead second Mac, or network issue.</p>
-                  <div className="table-stack top-gap">
-                    {data.runtimeRecovery.stale_workers.slice(0, 3).map((worker) => (
-                      <div key={worker.slug} className="table-row">
-                        <div className="row-main">
-                          <strong>{worker.display_name}</strong>
-                          <div className="muted">{worker.slug}</div>
-                        </div>
-                        <div className="row-meta">
-                          <span className="status-pill warn">stale</span>
-                          <button
-                            className="action-button bad"
-                            disabled={!operatorName || pendingTaskActionId === worker.slug}
-                            onClick={() => retireWorker(worker.slug)}
-                          >
-                            {pendingTaskActionId === worker.slug ? "working" : "retire"}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </article>
-            <article className="panel panel-span-5">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Execution</p>
-                  <h2>Worker Nodes</h2>
-                </div>
-                <span className="count-pill">{data.workers.length}</span>
-              </div>
-              <div className="table-stack">
-                {data.workers.length ? (
-                  data.workers.map((worker) => (
-                    <div key={worker.id} className="table-row">
-                      <div className="row-main">
-                        <strong>{worker.display_name}</strong>
-                        <div className="muted">{worker.slug} · {worker.platform} · {worker.host ?? "no host"}</div>
-                        <div className="meta-inline">
-                          <span>{asArray(worker.capabilities).join(", ")}</span>
-                        </div>
-                      </div>
-                      <div className="row-meta">
-                        <span className={`status-pill ${statusTone(worker.status)}`}>{worker.status}</span>
-                        <span className="muted">{worker.api_base_url ? "worker api reachable" : "no api url"}</span>
-                        <span className="muted">seen {summarizeTime(worker.last_seen_at)}</span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="empty-state">No worker registrations yet. Single-machine mode remains fully usable.</p>
-                )}
-              </div>
-            </article>
-            <article className="panel panel-span-7">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Runtime</p>
-                  <h2>Task Feed</h2>
-                </div>
-                <span className="count-pill">{data.tasks.length}</span>
-              </div>
-              <div className="table-stack">
-                {data.tasks.length ? (
-                  data.tasks.slice(0, 8).map((task) => (
-                    <div key={task.id} className="table-row">
-                      <div className="row-main">
-                        <strong>{task.task_type}</strong>
-                        <div className="muted">{task.worker_slug ?? task.claimed_by ?? "unassigned"} · {task.priority}</div>
-                        {task.error_message ? <div className="muted">{task.error_message}</div> : null}
-                      </div>
-                      <div className="row-meta">
-                        <span className={`status-pill ${statusTone(task.status)}`}>{task.status}</span>
-                        <span className="muted">{summarizeTime(task.created_at)}</span>
-                        {task.status === "queued" || task.status === "claimed" || task.status === "failed" ? (
-                          <div className="action-row">
-                            {task.status === "claimed" ? (
-                              <button
-                                className="action-button"
-                                disabled={!operatorName || pendingTaskActionId === task.id}
-                                onClick={() => handleTaskRecovery(task.id, "release")}
-                              >
-                                {pendingTaskActionId === task.id ? "working" : "release"}
-                              </button>
-                            ) : null}
-                            {task.status === "queued" || task.status === "claimed" ? (
-                              <button
-                                className="action-button bad"
-                                disabled={!operatorName || pendingTaskActionId === task.id}
-                                onClick={() => handleTaskRecovery(task.id, task.status === "claimed" ? "stop" : "cancel")}
-                              >
-                                {pendingTaskActionId === task.id ? "working" : task.status === "claimed" ? "stop" : "cancel"}
-                              </button>
-                            ) : null}
-                            {task.status === "failed" ? (
-                              <button
-                                className="action-button ok"
-                                disabled={!operatorName || pendingTaskActionId === task.id}
-                                onClick={() => handleTaskRecovery(task.id, "requeue")}
-                              >
-                                {pendingTaskActionId === task.id ? "working" : "requeue"}
-                              </button>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="empty-state">No worker tasks have been processed yet.</p>
-                )}
-              </div>
-              {taskActionMessage ? <p className="feedback ok">{taskActionMessage}</p> : null}
-              {taskActionError ? <p className="feedback bad">{taskActionError}</p> : null}
-              <p className="panel-note">Historical smoke-test failures stay visible until the backing rows are cleared.</p>
-            </article>
-            <article className="panel panel-span-12">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Audit</p>
-                  <h2>Recent Activity</h2>
-                </div>
-                <div className="header-actions">
-                  <input
-                    value={auditFilter}
-                    onChange={(event) => setAuditFilter(event.target.value)}
-                    placeholder="filter actor, action, project, or job"
-                  />
-                  <span className="count-pill">{filteredAuditLog.length}</span>
-                </div>
-              </div>
-              <div className="table-stack">
-                {filteredAuditLog.length ? (
-                  filteredAuditLog.map((entry) => (
-                    <div key={`${entry.id ?? entry.created_at}-${entry.action}`} className="table-row">
-                      <div className="row-main">
-                        <strong>{entry.action}</strong>
-                        <div className="muted">{entry.actor} · tier {entry.tier}</div>
-                        <div className="meta-inline">
-                          {entry.project_id ? <span>project {entry.project_id}</span> : null}
-                          {entry.job_id ? <span>job {entry.job_id}</span> : null}
-                          <span>{summarizeTime(entry.created_at)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="empty-state">{data.auditLog.length ? "No audit entries match the current filter." : "No recent audit activity is available yet."}</p>
-                )}
-              </div>
-            </article>
-          </section>
-        </div>
+        <OperationsTab
+          data={data}
+          visibleApprovals={visibleApprovals}
+          approvedJobIds={approvedJobIds}
+          operatorName={operatorName}
+          setOperatorName={setOperatorName}
+          setWorkspaceDraft={setWorkspaceDraft}
+          operatorToken={operatorToken}
+          setOperatorToken={setOperatorToken}
+          rejectReasons={rejectReasons}
+          setRejectReasons={setRejectReasons}
+          pendingJobId={pendingJobId}
+          handleApproval={handleApproval}
+          actionMessage={actionMessage}
+          actionError={actionError}
+          summarizeTime={summarizeTime}
+          activeAlertCount={activeAlertCount}
+          alertActionPending={alertActionPending}
+          runAlertAction={runAlertAction}
+          alertActionMessage={alertActionMessage}
+          alertActionError={alertActionError}
+          workstationValidationState={workstationValidationState}
+          refreshWorkstationValidation={refreshWorkstationValidation}
+          workstationSmoke={workstationSmoke}
+          runWorkstationSmoke={runWorkstationSmoke}
+          workstationSmokePending={workstationSmokePending}
+          workstationRuntime={workstationRuntime}
+          updateWorkstationRuntime={updateWorkstationRuntime}
+          workstationRuntimePending={workstationRuntimePending}
+          workstationValidation={workstationValidation}
+          workstationRuntimeState={workstationRuntimeState}
+          workstationSmokeMessage={workstationSmokeMessage}
+          workstationSmokeError={workstationSmokeError}
+          workstationRuntimeMessage={workstationRuntimeMessage}
+          workstationRuntimeError={workstationRuntimeError}
+          pendingTaskActionId={pendingTaskActionId}
+          retireWorker={retireWorker}
+          handleTaskRecovery={handleTaskRecovery}
+          taskActionMessage={taskActionMessage}
+          taskActionError={taskActionError}
+          auditFilter={auditFilter}
+          setAuditFilter={setAuditFilter}
+          filteredAuditLog={filteredAuditLog}
+        />
       ) : null}
 
       {!isInitialLoad && activeTab === "automation" ? (
-        <div className="tab-panel">
-          <section className="workspace-grid">
-            <article className="panel panel-span-4 automation-panel automation-cyan">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Automation</p>
-                  <h2>Bootstrap + Maintenance</h2>
-                </div>
-                <span className={`status-pill ${data.bootstrapStatus.status === "imported" || data.bootstrapStatus.status === "skipped" ? "ok" : "warn"}`}>
-                  {bootstrapStatusLabel(data.bootstrapStatus.status)}
-                </span>
-              </div>
-              <div className="stat-strip">
-                <div>
-                  <span className="metric-label">Starter workflows</span>
-                  <strong>{data.bootstrapStatus.workflow_count}</strong>
-                </div>
-                <div>
-                  <span className="metric-label">Rules active</span>
-                  <strong>{enabledRuleCount}</strong>
-                </div>
-                <div>
-                  <span className="metric-label">Alert channels</span>
-                  <strong>{configuredAlertCount}/{data.alerts.channels.length}</strong>
-                </div>
-              </div>
-              <div className="header-actions top-gap">
-                <button className="action-button" disabled={maintenancePending !== null} onClick={reseedAutomationDefaults}>
-                  {maintenancePending === "reseed" ? "reseeding" : "reseed defaults"}
-                </button>
-                <button
-                  className="action-button ok"
-                  disabled={starterPackPending !== null || !activeStarterPack}
-                  onClick={() => activeStarterPack && applyStarterPack(activeStarterPack.slug)}
-                >
-                  {starterPackPending && activeStarterPack ? "applying" : "reapply live posture"}
-                </button>
-              </div>
-              <p className="panel-note">{data.bootstrapStatus.detail}</p>
-              <p className="panel-note">Active posture: {activeStarterPack?.name ?? "custom or mixed rule state"}</p>
-              {maintenanceMessage ? <p className="feedback ok">{maintenanceMessage}</p> : null}
-              {maintenanceError ? <p className="feedback bad">{maintenanceError}</p> : null}
-            </article>
-
-            <article className="panel panel-span-8 automation-panel automation-violet">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Inventory</p>
-                  <h2>Automation Health</h2>
-                </div>
-                <span className="count-pill">{automationServices.length}</span>
-              </div>
-              <div className="module-grid">
-                {automationServices.map((service) => (
-                  <div key={service.key} className={`mini-card module-card module-${zoneAccent(service.zone)}`}>
-                    <span className="metric-label">{service.zone}</span>
-                    <strong>{service.name}</strong>
-                    <p className="panel-note">{service.role}</p>
-                    <div className="meta-inline">
-                      <span>{service.note}</span>
-                      <span>{serviceManagedIn(service)}</span>
-                    </div>
-                    <span className={`status-pill ${statusTone(service.state)}`}>{serviceLabel(service)}</span>
-                  </div>
-                ))}
-              </div>
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-4">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Automations</p>
-                  <h2>Starter Packs</h2>
-                </div>
-                <span className="count-pill">{data.starterPacks.length}</span>
-              </div>
-              <div className="table-stack">
-                {data.starterPacks.length ? (
-                  data.starterPacks.map((pack) => (
-                    <div key={pack.slug} className="table-row">
-                      <div className="row-main">
-                        <strong>{pack.name}</strong>
-                        <div className="muted">{pack.description}</div>
-                        <div className="muted">{pack.rules.length} rule(s) · alerts via {pack.alert_channels.join(", ")}</div>
-                      </div>
-                      <div className="row-meta">
-                        <span className={`status-pill ${activeStarterPack?.slug === pack.slug ? "ok" : "warn"}`}>
-                          {activeStarterPack?.slug === pack.slug ? "active posture" : "available"}
-                        </span>
-                        <button className="action-button" disabled={starterPackPending !== null} onClick={() => applyStarterPack(pack.slug)}>
-                          {starterPackPending === pack.slug ? "applying" : "apply"}
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="empty-state">No starter packs available yet.</p>
-                )}
-              </div>
-              {starterPackMessage ? <p className="feedback ok">{starterPackMessage}</p> : null}
-              {starterPackError ? <p className="feedback bad">{starterPackError}</p> : null}
-            </article>
-
-            <article className="panel panel-span-4">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Rules</p>
-                  <h2>Rule Inventory</h2>
-                </div>
-                <div className="header-actions">
-                  <span className="count-pill">showing {visibleRules.length} of {data.rules.length}</span>
-                  {data.rules.length > 10 ? (
-                    <button className="action-button subtle" type="button" onClick={() => setShowAllRules((current) => !current)}>
-                      {showAllRules ? "show less" : "show all"}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-              <div className="table-stack">
-                {visibleRules.map((rule) => (
-                  <div key={rule.id} className="table-row">
-                    <div className="row-main">
-                      <strong>{rule.name}</strong>
-                      <div className="muted">{rule.trigger_module}.{rule.trigger_action} → {rule.target_module}</div>
-                      <div className="meta-inline">
-                        <span>tier {rule.required_tier}</span>
-                        <span>{rule.approval_required ? "approval required" : "auto-allowed"}</span>
-                      </div>
-                    </div>
-                    <div className="row-meta">
-                      <span className={`status-pill ${rule.enabled ? "ok" : "warn"}`}>{rule.enabled ? "enabled" : "disabled"}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="panel panel-span-4">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Playbooks</p>
-                  <h2>Starter Automations</h2>
-                </div>
-                <span className="count-pill">{data.playbooks.length}</span>
-              </div>
-              <div className="table-stack">
-                {data.playbooks.length ? (
-                  data.playbooks.map((playbook) => (
-                    <div key={playbook.slug} className="table-row">
-                      <div className="row-main">
-                        <strong>{playbook.name}</strong>
-                        <div className="muted">{playbook.trigger_module}.{playbook.trigger_action} → {playbook.target_module}</div>
-                        <div className="muted">{playbook.summary}</div>
-                      </div>
-                      <div className="row-meta">
-                        <span className="status-pill ok">prebuilt</span>
-                        <span className="muted">{playbook.n8n_workflow_slug}</span>
-                        <div className="action-row">
-                          <a className="action-button" href={n8nWorkflowUrl(n8nUrl, playbook.n8n_workflow_slug)} target="_blank" rel="noreferrer">
-                            open in n8n
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="empty-state">No starter automations are available yet.</p>
-                )}
-              </div>
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-12">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Rule Packs</p>
-                  <h2>Seeded Automation Surfaces</h2>
-                </div>
-                <span className="count-pill">{data.rulePacks.length}</span>
-              </div>
-              <div className="module-grid">
-                {data.rulePacks.map((pack) => (
-                  <div key={pack.slug} className="mini-card module-card module-cyan">
-                    <span className="metric-label">rule pack</span>
-                    <strong>{pack.name}</strong>
-                    <p className="panel-note">{pack.description}</p>
-                    <span className="status-pill ok">{pack.rule_count} rules</span>
-                  </div>
-                ))}
-              </div>
-            </article>
-          </section>
-        </div>
+        <AutomationTab
+          data={data}
+          bootstrapStatusLabel={bootstrapStatusLabel}
+          enabledRuleCount={enabledRuleCount}
+          configuredAlertCount={configuredAlertCount}
+          maintenancePending={maintenancePending}
+          reseedAutomationDefaults={reseedAutomationDefaults}
+          activeStarterPack={activeStarterPack}
+          starterPackPending={starterPackPending}
+          applyStarterPack={applyStarterPack}
+          maintenanceMessage={maintenanceMessage}
+          maintenanceError={maintenanceError}
+          starterPackMessage={starterPackMessage}
+          starterPackError={starterPackError}
+          expandedStarterPackSlug={expandedStarterPackSlug}
+          setExpandedStarterPackSlug={setExpandedStarterPackSlug}
+          showAllRules={showAllRules}
+          setShowAllRules={setShowAllRules}
+          visibleRules={visibleRules}
+          n8nWorkflowUrl={n8nWorkflowUrl}
+          n8nUrl={n8nUrl}
+        />
       ) : null}
 
       {!isInitialLoad && activeTab === "context" ? (
@@ -4692,6 +2637,7 @@ export function App() {
           summarizeTime={summarizeTime}
           fileLabel={fileLabel}
           apiProjectStateBase={API.projectState}
+          lufsTarget={configuredLufsTarget}
         />
       ) : null}
 
