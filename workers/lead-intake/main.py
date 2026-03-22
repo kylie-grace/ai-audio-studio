@@ -174,6 +174,13 @@ async def load_module_settings(pool: asyncpg.Pool) -> dict:
     return json.loads(value) if isinstance(value, str) else dict(value)
 
 
+async def require_module_enabled(pool: asyncpg.Pool, module_key: str) -> dict:
+    module_settings = (await load_module_settings(pool)).get(module_key, {})
+    if not module_settings.get("enabled", True):
+        raise HTTPException(status_code=423, detail=f"{module_key} disabled in workspace settings")
+    return module_settings
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -201,6 +208,7 @@ async def status():
 @app.post("/webhook/lead-intake", status_code=201)
 async def webhook_lead_intake(body: LeadIntakeBody):
     pool = await get_pool()
+    await require_module_enabled(pool, "lead_intake")
     normalized = normalize_lead(body.raw_text, body.form_fields)
     fit_score = score_fit(normalized)
     urgency_score = score_urgency(normalized)

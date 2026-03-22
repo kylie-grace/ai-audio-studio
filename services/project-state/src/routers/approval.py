@@ -134,6 +134,10 @@ async def _build_approval_preview(pool, job) -> dict:
                 "reascript_path": revision["reascript_path"],
                 "status": revision["status"],
             }
+            validation = await _validate_revision_execution_ready(pool, job, revision)
+            if validation["blocking_issue"]:
+                preview["blocking_issue"] = validation["blocking_issue"]
+            preview["execution_readiness"] = validation
 
     return preview
 
@@ -232,6 +236,46 @@ async def _queue_revision_execution_if_applicable(pool, job, approver: str, appr
     )
 
 
+async def _validate_revision_execution_ready(pool, job, revision=None) -> dict:
+    trigger_payload = _decode_jsonb(job.get("trigger_payload")) or {}
+    daw = trigger_payload.get("daw")
+    worker_slug = trigger_payload.get("worker_slug")
+    worker = None
+    blocking_issue = None
+    required_capability = None
+    script_path = None
+    if daw == "protools":
+        required_capability = "execute-soundflow"
+        script_path = revision["soundflow_script"] if revision is not None else None
+    elif daw == "reaper":
+        required_capability = "execute-reascript"
+        script_path = revision["reascript_path"] if revision is not None else None
+    elif job["module"] == "revision-parser":
+        blocking_issue = "Revision approval is missing a supported DAW target."
+
+    if not blocking_issue and not worker_slug:
+        blocking_issue = "Revision approval cannot queue execution until a worker is assigned."
+
+    if worker_slug:
+        worker = await pool.fetchrow("SELECT * FROM worker_nodes WHERE slug=$1 AND status <> 'retired'", worker_slug)
+        if worker is None and not blocking_issue:
+            blocking_issue = f"Assigned worker '{worker_slug}' is not registered."
+    if worker is not None and required_capability:
+        capabilities = _decode_jsonb(worker.get("capabilities")) or []
+        if required_capability not in capabilities and not blocking_issue:
+            blocking_issue = f"Worker '{worker_slug}' does not advertise {required_capability}."
+    if required_capability and not script_path and not blocking_issue:
+        blocking_issue = f"{required_capability} is required, but no executable script artifact was generated."
+
+    return {
+        "worker_slug": worker_slug,
+        "worker_registered": worker is not None,
+        "required_capability": required_capability,
+        "script_ready": bool(script_path),
+        "blocking_issue": blocking_issue,
+    }
+
+
 @router.get("/")
 async def list_approval_queue():
     pool = await get_pool()
@@ -255,6 +299,14 @@ async def approve_job(job_id: str, x_actor: str = Header(...), x_operator_token:
     job = await pool.fetchrow("SELECT * FROM jobs WHERE id = $1", job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if job["module"] == "revision-parser":
+        revision = await pool.fetchrow(
+            "SELECT * FROM revisions WHERE job_id=$1 ORDER BY created_at DESC LIMIT 1",
+            job_id,
+        )
+        validation = await _validate_revision_execution_ready(pool, job, revision)
+        if validation["blocking_issue"]:
+            raise HTTPException(status_code=409, detail=validation["blocking_issue"])
     try:
         validate_transition(job["status"], "approved", job["approval_required"])
     except ValueError as e:

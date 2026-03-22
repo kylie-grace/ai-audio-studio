@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import json
+import os
 
 from fastapi import APIRouter, HTTPException
 from fastapi import Header
@@ -13,10 +14,12 @@ from ..db import get_pool
 from ..fsm import validate_transition
 
 router = APIRouter()
-WORKER_API_TOKEN = __import__("os").environ.get("WORKER_API_TOKEN", "")
-_RAW = __import__("os").environ.get("AUTHORIZED_ACTORS", "owner")
+WORKER_API_TOKEN = os.environ.get("WORKER_API_TOKEN", "")
+_RAW = os.environ.get("AUTHORIZED_ACTORS", "owner")
 AUTHORIZED_ACTORS: set[str] = {a.strip() for a in _RAW.split(",") if a.strip()}
-OPERATOR_API_TOKEN = __import__("os").environ.get("OPERATOR_API_TOKEN", "")
+OPERATOR_API_TOKEN = os.environ.get("OPERATOR_API_TOKEN", "")
+STALE_WORKER_MINUTES = int(os.environ.get("STALE_WORKER_MINUTES", "5"))
+QUEUE_ALERT_MINUTES = int(os.environ.get("QUEUE_ALERT_MINUTES", "5"))
 
 
 def decode_jsonb(value):
@@ -155,6 +158,63 @@ async def _append_audit(pool, task, actor: str, action: str, payload: dict | Non
         action,
         json.dumps(payload or {}),
     )
+
+
+def _task_payload(row) -> dict:
+    payload = decode_jsonb(row.get("payload"))
+    return payload if isinstance(payload, dict) else {}
+
+
+def _worker_capabilities(row) -> list[str]:
+    capabilities = decode_jsonb(row.get("capabilities")) or []
+    if isinstance(capabilities, list):
+        return [str(item) for item in capabilities]
+    return []
+
+
+async def recover_expired_claims(pool) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    rows = await pool.fetch(
+        """SELECT * FROM worker_tasks
+           WHERE status='claimed' AND lease_expires_at IS NOT NULL AND lease_expires_at < $1
+           ORDER BY lease_expires_at ASC""",
+        now,
+    )
+    recovered: list[dict] = []
+    for row in rows:
+        await pool.execute(
+            """UPDATE worker_tasks
+               SET status='queued',
+                   claimed_by=NULL,
+                   claimed_at=NULL,
+                   lease_expires_at=NULL,
+                   updated_at=now()
+               WHERE id=$1""",
+            row["id"],
+        )
+        if row.get("claimed_by"):
+            await pool.execute(
+                "UPDATE worker_nodes SET status='idle', updated_at=now() WHERE slug=$1 AND status='busy'",
+                row["claimed_by"],
+            )
+        if row.get("job_id") is not None:
+            job = await pool.fetchrow("SELECT id, status, approval_required FROM jobs WHERE id=$1", row["job_id"])
+            if job is not None and job["status"] == "in-progress":
+                fallback_status = "approved" if job["approval_required"] else "pending"
+                await pool.execute(
+                    "UPDATE jobs SET status=$1, updated_at=now() WHERE id=$2",
+                    fallback_status,
+                    row["job_id"],
+                )
+        await _append_audit(
+            pool,
+            row,
+            "system:lease-recovery",
+            "auto-requeue-expired-lease",
+            {"task_id": str(row["id"]), "claimed_by": row.get("claimed_by")},
+        )
+        recovered.append({"task_id": str(row["id"]), "claimed_by": row.get("claimed_by")})
+    return recovered
 
 
 @router.get("/")
@@ -377,8 +437,9 @@ async def get_worker_task(task_id: str):
 @router.get("/runtime/recovery")
 async def runtime_recovery_snapshot():
     pool = await get_pool()
+    recovered_claims = await recover_expired_claims(pool)
     now = datetime.now(timezone.utc)
-    stale_cutoff = now - timedelta(minutes=5)
+    stale_cutoff = now - timedelta(minutes=STALE_WORKER_MINUTES)
 
     workers = await pool.fetch("SELECT * FROM worker_nodes WHERE status <> 'retired' ORDER BY slug ASC")
     failed_tasks = await pool.fetch(
@@ -415,7 +476,9 @@ async def runtime_recovery_snapshot():
             "claimed_task_count": len(claimed_tasks),
             "expired_claim_count": expired_claim_count,
             "stale_worker_count": len(stale_workers),
+            "auto_recovered_claim_count": len(recovered_claims),
         },
+        "auto_recovered_claims": recovered_claims,
     }
 
 
@@ -515,6 +578,7 @@ async def enqueue_worker_task(body: EnqueueWorkerTaskBody):
 async def claim_worker_task(body: ClaimWorkerTaskBody, x_worker_token: str | None = Header(default=None)):
     require_worker_token(x_worker_token)
     pool = await get_pool()
+    await recover_expired_claims(pool)
     worker = await pool.fetchrow("SELECT * FROM worker_nodes WHERE slug=$1", body.worker_slug)
     if worker is None:
         raise HTTPException(status_code=404, detail="Worker not found")

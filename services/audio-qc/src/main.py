@@ -47,6 +47,13 @@ async def load_module_settings(pool: asyncpg.Pool) -> dict:
     return json.loads(value) if isinstance(value, str) else dict(value)
 
 
+async def require_module_enabled(pool: asyncpg.Pool, module_key: str) -> dict:
+    module_settings = (await load_module_settings(pool)).get(module_key, {})
+    if not module_settings.get("enabled", True):
+        raise HTTPException(status_code=423, detail=f"{module_key} disabled in workspace settings")
+    return module_settings
+
+
 class RunQCBody(BaseModel):
     project_id: str
     file_path: str
@@ -205,6 +212,7 @@ async def status():
 @app.post("/qc/run", status_code=201)
 async def run_qc(body: RunQCBody):
     pool = await get_pool()
+    await require_module_enabled(pool, "audio_qc")
     project = await pool.fetchrow("SELECT id FROM projects WHERE id=$1", body.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -261,6 +269,8 @@ async def get_report(report_id: str):
 
 @app.post("/qc/compare-preview")
 async def compare_preview(body: QCComparePreviewBody):
+    pool = await get_pool()
+    await require_module_enabled(pool, "audio_qc")
     candidate = body.candidate
     reference = body.reference
     return {

@@ -14,7 +14,7 @@ services:
       WORKER_SLUG: "${WORKER_SLUG:-studio-mac}"
       WORKER_DISPLAY_NAME: "${WORKER_DISPLAY_NAME:-Studio Mac}"
       WORKER_PLATFORM: "${WORKER_PLATFORM:-macos}"
-      WORKER_API_BASE_URL: "${WORKER_API_BASE_URL:-http://127.0.0.1:8190}"
+      WORKER_API_BASE_URL: "${WORKER_API_BASE_URL:-}"
       WORKER_CAPABILITIES: "${WORKER_CAPABILITIES:-session-prep,revision-parser,delivery-packager}"
       POLL_INTERVAL_SECONDS: "${POLL_INTERVAL_SECONDS:-5}"
       STUDIO_WORKER_DRY_RUN_DAW: "${STUDIO_WORKER_DRY_RUN_DAW:-true}"
@@ -31,4 +31,4 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "${BIND_HOST:-127.0.0.1}:8190:8190"
+      - "${BIND_HOST:-0.0.0.0}:8190:8190"

@@ -12,6 +12,7 @@ Single-machine first, split-worker optional:
 - **Shared volume** — `/Volumes/StudioShare/` or equivalent shared mount visible to any machine executing file tasks.
 - **LAN access** — set `BIND_HOST=0.0.0.0` to expose the dashboard and APIs to the full local network by IP.
 - **HTTPS edge** — Caddy now ships in the main Compose stack as the default TLS front door.
+- **Remote worker LAN routing** — remote worker deployments must set a real `WORKER_API_BASE_URL` and mount shared storage before registration.
 
 ## Product Status
 
@@ -103,6 +104,12 @@ open http://localhost:5678                  # n8n workflow editor
 ```
 
 Single-machine mode does not require `docker-compose.worker.yml`; the worker file is only for split deployments.
+
+For split deployments:
+- keep `WORKER_API_BASE_URL` set to the worker machine's LAN URL, not loopback
+- keep `BIND_HOST=0.0.0.0` on the worker if the control plane must reach it over the LAN
+- mount shared storage before boot or configure `PATH_TRANSLATION_JSON`
+- see [studio-worker.md](/Users/kpsnyder/ai-audio-studio/docs/runbooks/studio-worker.md)
 
 HTTPS front door:
 The main Compose stack now serves the dashboard at `https://$CONTROL_PLANE_HOST` through Caddy with an internal LAN certificate.

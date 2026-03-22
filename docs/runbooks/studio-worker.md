@@ -69,6 +69,12 @@ docker compose --env-file infra/.env -f infra/docker-compose.worker.yml up -d
 docker compose --env-file infra/.env -f infra/docker-compose.worker.yml ps
 ```
 
+Remote worker compose defaults now assume LAN exposure:
+- `BIND_HOST=0.0.0.0`
+- `WORKER_API_BASE_URL` must be set to the worker machine's real LAN URL, for example `http://192.168.1.20:8190`
+
+If `WORKER_API_BASE_URL` is blank or left at loopback, the control plane will register the worker with an unusable callback address. Always set it explicitly for split deployments.
+
 For single-machine or host-native REAPER automation on the same Mac:
 
 ```bash
@@ -81,6 +87,72 @@ PROJECT_STATE_URL=http://127.0.0.1:8080 \
 WORKER_CAPABILITIES=session-prep,revision-parser,delivery-packager,execute-soundflow,execute-reascript \
 STUDIO_WORKER_DRY_RUN_DAW=false \
 bash scripts/start_host_studio_worker.sh infra/env.example
+```
+
+## Shared storage
+
+The worker assumes shared storage is already mounted. This repo does not provision SMB/NFS for you.
+
+Recommended baseline:
+- control plane and worker both mount the same share root, ideally `/Volumes/StudioShare`
+- create at least:
+  - `/Volumes/StudioShare/projects`
+  - `/Volumes/StudioShare/deliveries`
+  - `/Volumes/StudioShare/draft-queue`
+  - `/Volumes/StudioShare/approval-queue`
+  - `/Volumes/StudioShare/incoming-stems`
+- if mount points differ between machines, define `PATH_TRANSLATION_JSON`
+
+Example SMB mount on macOS:
+
+```bash
+mkdir -p /Volumes/StudioShare
+open "smb://studio-share.local/StudioShare"
+```
+
+Example Windows mapping:
+
+```powershell
+New-PSDrive -Name Z -PSProvider FileSystem -Root "\\studio-share\StudioShare" -Persist
+```
+
+Then translate:
+
+```bash
+PATH_TRANSLATION_JSON={"/Volumes/StudioShare":"Z:\\StudioShare"}
+```
+
+## launchd persistence for host mode
+
+For host-native Mac workers, use `launchd` so the worker comes back after reboot.
+
+Example plist path:
+
+```text
+~/Library/LaunchAgents/com.aiaudiostudio.worker.plist
+```
+
+Minimal launchd program block:
+
+```xml
+<key>ProgramArguments</key>
+<array>
+  <string>/bin/zsh</string>
+  <string>-lc</string>
+  <string>cd /Users/your-user/ai-audio-studio && bash scripts/start_host_studio_worker.sh /Users/your-user/.ai-audio-studio-worker.env</string>
+</array>
+<key>RunAtLoad</key>
+<true/>
+<key>KeepAlive</key>
+<true/>
+```
+
+Load it with:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.aiaudiostudio.worker.plist 2>/dev/null || true
+launchctl load ~/Library/LaunchAgents/com.aiaudiostudio.worker.plist
+launchctl kickstart -k gui/$(id -u)/com.aiaudiostudio.worker
 ```
 
 ## Verify
@@ -109,6 +181,7 @@ bash scripts/start_host_studio_worker.sh infra/env.example
 - It claims one queued task at a time
 - On success it posts structured result data back to the Mac mini
 - On failure it marks the task and linked job failed
+- Expired claimed-task leases are now auto-recovered by `project-state`; crashed workers no longer leave claims stuck forever
 - `execute-soundflow` and `execute-reascript` now support workstation readiness reporting, generated DAW-specific revision artifacts, Reaper session introspection, preview execution-loop planning, and disposable working-copy staging before execution
 - for host-mode REAPER automation, `execute-reascript` can now dispatch to the configured REAPER binary when `STUDIO_WORKER_DRY_RUN_DAW=false`
 - Set `STUDIO_WORKER_DRY_RUN_DAW=true` to validate DAW execution queueing before a real studio Mac is available

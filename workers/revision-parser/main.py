@@ -44,6 +44,13 @@ async def load_module_settings(pool: asyncpg.Pool) -> dict:
     return json.loads(value) if isinstance(value, str) else dict(value)
 
 
+async def require_module_enabled(pool: asyncpg.Pool, module_key: str) -> dict:
+    module_settings = (await load_module_settings(pool)).get(module_key, {})
+    if not module_settings.get("enabled", True):
+        raise HTTPException(status_code=423, detail=f"{module_key} disabled in workspace settings")
+    return module_settings
+
+
 class ParseRevisionsBody(BaseModel):
     project_id: str
     raw_notes: str = Field(min_length=1)
@@ -271,6 +278,7 @@ async def status():
 @app.post("/parse-revisions", status_code=201)
 async def parse_revisions(body: ParseRevisionsBody):
     pool = await get_pool()
+    await require_module_enabled(pool, "revision_parser")
     project = await pool.fetchrow("SELECT * FROM projects WHERE id=$1", body.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")

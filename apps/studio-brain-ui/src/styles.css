@@ -258,6 +258,26 @@ code {
   letter-spacing: -0.02em;
 }
 
+.tab-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.count-badge {
+  min-width: 22px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(226, 161, 90, 0.18);
+  border: 1px solid rgba(226, 161, 90, 0.24);
+  color: var(--text-strong);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+}
+
 .tab-summary {
   color: var(--text-soft);
   font-size: 0.82rem;
@@ -1506,6 +1526,289 @@ code {
   background: rgba(229, 139, 139, 0.14);
 }
 
+.action-button.subtle {
+  border-color: rgba(85, 192, 214, 0.18);
+  background: rgba(85, 192, 214, 0.08);
+}
+
+.alert-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 17, 28, 0.78);
+}
+
+.alert-banner strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.alert-banner p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.alert-banner.ok {
+  border-color: rgba(126, 211, 159, 0.28);
+  background: rgba(126, 211, 159, 0.12);
+}
+
+.alert-banner.warn {
+  border-color: rgba(226, 161, 90, 0.28);
+  background: rgba(226, 161, 90, 0.12);
+}
+
+.alert-banner.bad {
+  border-color: rgba(239, 130, 119, 0.3);
+  background: rgba(239, 130, 119, 0.14);
+}
+
+.alert-banner.info {
+  border-color: rgba(85, 192, 214, 0.25);
+  background: rgba(85, 192, 214, 0.1);
+}
+
+.empty-state-card {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.empty-state-card strong {
+  font-size: 0.98rem;
+}
+
+.empty-state-card p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.empty-state-icon {
+  color: var(--accent-sea);
+  font-size: 1.2rem;
+}
+
+.approval-card {
+  display: grid;
+  gap: 0;
+  padding: 0;
+}
+
+.approval-card-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  width: 100%;
+  padding: 16px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.approval-card.is-expanded {
+  border-color: rgba(85, 192, 214, 0.26);
+  background: rgba(85, 192, 214, 0.04);
+}
+
+.approval-card-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 16px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.approval-preview-title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.approval-preview-block {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.approval-preview-block p,
+.approval-preview-block pre {
+  margin: 0;
+}
+
+.approval-card-footer {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.approval-reject-field {
+  min-width: 260px;
+}
+
+.compact-field {
+  margin: 0;
+}
+
+.context-shell {
+  margin-bottom: 12px;
+}
+
+.context-subnav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.context-subnav-button {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-subnav-button.is-active {
+  border-color: rgba(138, 140, 245, 0.34);
+  background: rgba(138, 140, 245, 0.1);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22);
+}
+
+.project-row.is-selected {
+  border-color: rgba(85, 192, 214, 0.42);
+  background: rgba(85, 192, 214, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(85, 192, 214, 0.14);
+}
+
+.metric-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.metric-chip.ok {
+  color: #b8ecc9;
+  border-color: rgba(126, 211, 159, 0.28);
+  background: rgba(126, 211, 159, 0.12);
+}
+
+.metric-chip.warn {
+  color: #f0c58c;
+  border-color: rgba(226, 161, 90, 0.28);
+  background: rgba(226, 161, 90, 0.12);
+}
+
+.metric-chip.bad {
+  color: #ffc0bc;
+  border-color: rgba(239, 130, 119, 0.3);
+  background: rgba(239, 130, 119, 0.14);
+}
+
+.metric-chip.muted {
+  color: var(--text-dim);
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.toggle-card {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.toggle-card p {
+  margin: 6px 0 0;
+}
+
+.integration-guidance-list {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 8, 14, 0.74);
+  backdrop-filter: blur(10px);
+}
+
+.settings-modal {
+  width: min(1280px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(4, 12, 21, 0.96);
+  box-shadow: 0 34px 90px rgba(0, 0, 0, 0.44);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settings-modal-body {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.settings-sheet-sidebar {
+  padding: 20px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: auto;
+}
+
+.settings-sheet-content {
+  padding: 20px 24px 24px;
+  overflow: auto;
+  display: grid;
+  gap: 18px;
+}
+
+.settings-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .wizard-footer-actions {
   display: flex;
   gap: 10px;
@@ -1634,7 +1937,9 @@ code {
   .status-key-grid,
   .module-settings-grid,
   .inline-form-grid,
-  .tab-strip {
+  .tab-strip,
+  .context-subnav,
+  .settings-modal-body {
     grid-template-columns: 1fr;
   }
 
@@ -1657,6 +1962,11 @@ code {
 
   .panel-span-12 {
     grid-column: auto;
+  }
+
+  .settings-modal .onboarding-grid,
+  .settings-modal .module-settings-grid {
+    grid-template-columns: 1fr;
   }
 }
 

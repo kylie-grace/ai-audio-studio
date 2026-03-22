@@ -37,6 +37,17 @@ WORKER_URLS = {
     "delivery-packager": "http://delivery-packager:8170/package-delivery",
     "mix-planner": "http://mix-planner:8180/mix-plan",
 }
+MODULE_KEY_ALIASES = {
+    "lead-intake": "lead_intake",
+    "inbox-triage": "inbox_triage",
+    "social-drafting": "content_pipeline",
+    "content-pipeline": "content_pipeline",
+    "session-prep": "session_prep",
+    "revision-parser": "revision_parser",
+    "delivery-packager": "delivery_packager",
+    "mix-planner": "mix_planner",
+    "audio-qc": "audio_qc",
+}
 
 CRM_API_URL = os.environ.get("CRM_API_URL", "http://crm-api:8090")
 PROJECT_STATE_URL = os.environ.get("PROJECT_STATE_URL", "http://project-state:8080")
@@ -181,6 +192,22 @@ def fetch_optional_json(url: str) -> dict | list | None:
 def load_workspace_settings() -> dict:
     payload = fetch_json(f"{CRM_API_URL}/workspace-settings")
     return payload if isinstance(payload, dict) else {}
+
+
+def module_settings_for(module_name: str) -> dict:
+    settings = load_workspace_settings()
+    module_key = MODULE_KEY_ALIASES.get(module_name, module_name.replace("-", "_"))
+    module_settings = settings.get("module_settings") or {}
+    value = module_settings.get(module_key) or {}
+    return value if isinstance(value, dict) else {}
+
+
+def assert_module_enabled(module_name: str) -> dict:
+    module_key = MODULE_KEY_ALIASES.get(module_name, module_name.replace("-", "_"))
+    module_settings = module_settings_for(module_name)
+    if not module_settings.get("enabled", True):
+        raise HTTPException(status_code=423, detail=f"{module_key} disabled in workspace settings")
+    return module_settings
 
 
 def load_runtime_alerts() -> dict:
@@ -668,6 +695,7 @@ async def create_rule(body: CreateRuleBody):
 
 @app.post("/dispatch", status_code=201)
 async def dispatch(body: DispatchBody):
+    assert_module_enabled(body.module)
     try:
         check_permission(body.action, body.tier)
     except PermissionError as exc:
@@ -719,6 +747,7 @@ async def dispatch_by_trigger(body: TriggerDispatchBody):
     )
     if rule is None:
         raise HTTPException(status_code=404, detail="No enabled orchestration rule matched this trigger")
+    assert_module_enabled(rule["target_module"])
 
     try:
         check_permission("create_job", rule["required_tier"])

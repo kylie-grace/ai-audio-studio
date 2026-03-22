@@ -14,6 +14,8 @@ fi
 required_vars=(
   POSTGRES_PASSWORD
   N8N_PASSWORD
+  OPERATOR_API_TOKEN
+  WORKER_API_TOKEN
 )
 
 path_vars=(
@@ -25,6 +27,21 @@ for key in "${required_vars[@]}"; do
   value="$(grep -E "^${key}=" "${ENV_FILE}" | tail -n 1 | cut -d= -f2- || true)"
   if [[ -z "${value}" ]]; then
     echo "Required env var ${key} is missing or empty in ${ENV_FILE}" >&2
+    exit 1
+  fi
+done
+
+default_tokens=(
+  "OPERATOR_API_TOKEN:change-me-operator-token"
+  "WORKER_API_TOKEN:change-me-worker-token"
+)
+
+for token_spec in "${default_tokens[@]}"; do
+  key="${token_spec%%:*}"
+  insecure_value="${token_spec#*:}"
+  value="$(grep -E "^${key}=" "${ENV_FILE}" | tail -n 1 | cut -d= -f2- || true)"
+  if [[ "${value}" = "${insecure_value}" ]]; then
+    echo "Required env var ${key} still uses the insecure default value in ${ENV_FILE}" >&2
     exit 1
   fi
 done

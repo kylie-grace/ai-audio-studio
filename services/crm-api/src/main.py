@@ -22,6 +22,7 @@ from .style_profiles import (
 )
 from .workspace_settings import (
     default_workspace_settings,
+    normalize_workspace_settings,
     serialize_workspace_settings,
     workspace_status,
 )
@@ -518,6 +519,12 @@ class WorkspaceSettingsPatch(BaseModel):
 @app.patch("/workspace-settings")
 async def patch_workspace_settings(body: WorkspaceSettingsPatch):
     pool = await get_pool()
+    existing = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    current_settings = serialize_workspace_settings(existing)
+    patch_payload = body.model_dump(exclude_none=True)
+    if not patch_payload:
+        raise HTTPException(status_code=422, detail="No fields provided to update")
+    normalized_patch = normalize_workspace_settings({**current_settings, **patch_payload})
     updates: list[str] = ["updated_at = now()"]
     values: list = []
     idx = 1
@@ -526,21 +533,18 @@ async def patch_workspace_settings(body: WorkspaceSettingsPatch):
     json_fields = ["alert_destinations", "integrations", "module_settings", "shared_paths", "style_seed"]
 
     for field in simple_fields:
-        val = getattr(body, field)
+        val = normalized_patch.get(field)
         if val is not None:
             updates.append(f"{field} = ${idx}")
             values.append(val)
             idx += 1
 
     for field in json_fields:
-        val = getattr(body, field)
+        val = normalized_patch.get(field)
         if val is not None:
             updates.append(f"{field} = ${idx}::jsonb")
             values.append(json.dumps(val))
             idx += 1
-
-    if len(updates) == 1:
-        raise HTTPException(status_code=422, detail="No fields provided to update")
 
     await pool.execute(
         f"UPDATE workspace_settings SET {', '.join(updates)} WHERE singleton = TRUE",

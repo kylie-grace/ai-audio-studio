@@ -43,6 +43,13 @@ async def load_module_settings(pool: asyncpg.Pool) -> dict:
     return json.loads(value) if isinstance(value, str) else dict(value)
 
 
+async def require_module_enabled(pool: asyncpg.Pool, module_key: str) -> dict:
+    module_settings = (await load_module_settings(pool)).get(module_key, {})
+    if not module_settings.get("enabled", True):
+        raise HTTPException(status_code=423, detail=f"{module_key} disabled in workspace settings")
+    return module_settings
+
+
 class PrepareSessionBody(BaseModel):
     source_dir: str
     project_id: str | None = None
@@ -81,6 +88,7 @@ async def status():
 @app.post("/prepare-session", status_code=201)
 async def prepare_session(body: PrepareSessionBody):
     pool = await get_pool()
+    await require_module_enabled(pool, "session_prep")
     source_dir = Path(body.source_dir)
     if not source_dir.exists() or not source_dir.is_dir():
         raise HTTPException(status_code=404, detail="Source directory not found")

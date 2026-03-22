@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
 
+import { AlertBanner } from "./components/AlertBanner";
+import { ApprovalQueue } from "./components/ApprovalQueue";
+import { EmptyState } from "./components/EmptyState";
+import { PrimaryTabStrip } from "./components/PrimaryTabStrip";
+import { ContextTab } from "./pages/ContextTab";
+import { SettingsTab } from "./pages/SettingsTab";
+
 type ServiceState = "healthy" | "degraded" | "offline";
 
 type ServiceRecord = {
@@ -1209,6 +1216,21 @@ function summarizeTime(value: string) {
   });
 }
 
+function humanizeMissingField(field: string) {
+  const labels: Record<string, string> = {
+    studio_name: "studio name",
+    operator_name: "primary operator",
+    public_base_url: "operator front door",
+    "shared_paths.projects": "projects path",
+    "shared_paths.deliveries": "deliveries path",
+    "shared_paths.approval_queue": "approval queue path",
+    "style_seed.raw_text": "tone and voice seed",
+    "worker.worker_slug": "worker slug",
+    "worker.worker_api_base_url": "worker API URL",
+  };
+  return labels[field] ?? field.replace(/_/g, " ").replace(/\./g, " / ");
+}
+
 function fileLabel(path: string | null | undefined) {
   if (!path) return "unavailable";
   return path.split("/").pop() || path;
@@ -1743,6 +1765,7 @@ export function App() {
   const [reviewSavePending, setReviewSavePending] = useState<"listening" | "render" | null>(null);
   const [reviewSaveMessage, setReviewSaveMessage] = useState<string | null>(null);
   const [reviewSaveError, setReviewSaveError] = useState<string | null>(null);
+  const [showAllRules, setShowAllRules] = useState(false);
 
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const isInitialLoad = data.loadState === "loading" && !data.refreshedAt;
@@ -1879,7 +1902,7 @@ export function App() {
   const selectedServiceHighlights = serviceStatusHighlights(selectedServiceStatus);
   const selectedServiceProxyUrl = selectedService ? `${frontDoorUrl}${serviceProxyBase[selectedService.key] ?? ""}` : frontDoorUrl;
   const visibleApprovals = data.approvals.slice(0, 8);
-  const visibleRules = data.rules.slice(0, 10);
+  const visibleRules = showAllRules ? data.rules : data.rules.slice(0, 10);
   const normalizedAuditFilter = auditFilter.trim().toLowerCase();
   const filteredAuditLog = data.auditLog.filter((entry) => {
     if (!normalizedAuditFilter) return true;
@@ -2555,6 +2578,9 @@ export function App() {
   }
 
   async function applyStarterPack(slug: string) {
+    if (!window.confirm(`Apply ${slug} to the live automation posture? This can disable rules outside the selected pack.`)) {
+      return;
+    }
     setStarterPackPending(slug);
     setStarterPackMessage(null);
     setStarterPackError(null);
@@ -2584,6 +2610,9 @@ export function App() {
   }
 
   async function reseedAutomationDefaults() {
+    if (!window.confirm("Reseed the default automation posture? This can overwrite the current live rule mix.")) {
+      return;
+    }
     setMaintenancePending("reseed");
     setMaintenanceMessage(null);
     setMaintenanceError(null);
@@ -2798,6 +2827,10 @@ export function App() {
   const onboardingRequired = data.workspace.onboarding_required;
   const onboardingMissingCount = data.workspace.missing_fields.length;
   const onboardingStepCount = 7;
+  const tabBadgeCounts: Record<string, number> = {
+    operations: data.approvals.length + activeAlertCount,
+    settings: onboardingMissingCount,
+  };
   const settingsPills = [
     workspaceSettings.studio_name || "unnamed studio",
     workspaceSettings.operator_name || "operator missing",
@@ -3082,19 +3115,7 @@ export function App() {
         </div>
       </section>
 
-      <nav className="tab-strip" aria-label="Primary control surfaces">
-        {primaryTabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            className={`tab-button ${tab.accent} ${activeTab === tab.id ? "is-active" : ""}`}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            <span className="tab-label">{tab.label}</span>
-            {activeTab === tab.id ? <span className="tab-summary">{tab.summary}</span> : null}
-          </button>
-        ))}
-      </nav>
+      <PrimaryTabStrip tabs={primaryTabs} activeTab={activeTab} onSelect={(tabId) => setActiveTab(tabId as TabId)} badgeCounts={tabBadgeCounts} />
 
       {isInitialLoad ? (
         <section className="loading-shell" aria-label="Loading control room">
@@ -3203,27 +3224,7 @@ export function App() {
           </section>
 
           <section className="overview-support-grid">
-            <article className="panel panel-span-5">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Evaluation</p>
-                  <h2>Build gaps to close</h2>
-                </div>
-                <span className="status-pill warn">{remainingBuildGaps.filter((item) => item.state !== "ready").length} open</span>
-              </div>
-              <div className="status-grid compact-status-grid">
-                {remainingBuildGaps.slice(0, 4).map((item) => (
-                  <div key={item.title} className={`mini-card status-card ${item.state === "ready" ? "ready" : item.state === "watch" ? "ready" : "blocked"}`}>
-                    <div className="workflow-header">
-                      <span className="metric-label">{item.title}</span>
-                      <span className={`status-pill ${item.state === "ready" ? "ok" : "warn"}`}>{item.state === "ready" ? "ready" : item.state}</span>
-                    </div>
-                    <p className="panel-note">{item.detail}</p>
-                  </div>
-                ))}
-              </div>
-            </article>
-            <article className="panel panel-span-7">
+            <article className="panel panel-span-12">
               <div className="panel-header">
                 <div>
                   <p className="section-kicker">Guided actions</p>
@@ -3231,6 +3232,13 @@ export function App() {
                 </div>
                 <span className="count-pill">{workflowPlaybooks.length} lanes</span>
               </div>
+              {conciergeMode === "fallback" ? (
+                <AlertBanner
+                  tone="warn"
+                  title="Assistant is running in fallback mode"
+                  detail="The UI is still usable, but answers are coming from deterministic local guidance because the concierge backend is unavailable."
+                />
+              ) : null}
               <div className="workflow-strip" aria-label="Guided operator workflows">
                 {workflowPlaybooks.map((workflow) => (
                   <button
@@ -3328,7 +3336,7 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <p className="section-kicker">DAW Foundation</p>
-                  <h2>Workstation Readiness</h2>
+                  <h2>Workstation Capability</h2>
                 </div>
                 <span className="count-pill">{workerCapabilities.length} capabilities</span>
               </div>
@@ -3479,7 +3487,7 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <p className="section-kicker">DAW Foundation</p>
-                  <h2>Workstation Readiness</h2>
+                  <h2>DAW Live Preview</h2>
                 </div>
                 <span className={`status-pill ${workstationProfile?.ready ? "ok" : "warn"}`}>
                   {workstationProfile ? (workstationProfile.ready ? "ready to stage" : "needs setup") : "worker offline"}
@@ -3949,6 +3957,23 @@ export function App() {
 
       {!isInitialLoad && activeTab === "operations" ? (
         <div className="tab-panel">
+          <ApprovalQueue
+            approvals={data.approvals}
+            visibleApprovals={visibleApprovals}
+            operatorName={operatorName}
+            setOperatorName={setOperatorName}
+            setWorkspaceDraft={setWorkspaceDraft}
+            operatorToken={operatorToken}
+            setOperatorToken={setOperatorToken}
+            rejectReasons={rejectReasons}
+            setRejectReasons={setRejectReasons}
+            pendingJobId={pendingJobId}
+            handleApproval={handleApproval}
+            actionMessage={actionMessage}
+            actionError={actionError}
+            summarizeTime={summarizeTime}
+          />
+
           <section className="workspace-grid">
             <article className="panel panel-span-12">
               <div className="panel-header">
@@ -3978,175 +4003,6 @@ export function App() {
                 ))}
               </div>
             </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-8">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Action Queue</p>
-                  <h2>Approvals</h2>
-                </div>
-                <span className="count-pill">showing {visibleApprovals.length} of {data.approvals.length}</span>
-              </div>
-              <div className="table-stack">
-                {data.approvals.length ? (
-                  visibleApprovals.map((job) => (
-                    <div key={job.id} className="table-row approval-row">
-                      <div className="row-main">
-                        <strong>{job.module}</strong>
-                        <div className="muted">{job.action}</div>
-                        <div className="meta-inline">
-                          <span>{job.requested_by ?? "system"}</span>
-                          <span>{summarizeTime(job.created_at)}</span>
-                        </div>
-                        {job.preview?.title ? <div className="approval-preview-title">{job.preview.title}</div> : null}
-                        {job.preview?.project ? (
-                          <div className="meta-inline">
-                            <span>{job.preview.project.client_name}</span>
-                            <span>{job.preview.project.service_type}</span>
-                            <span>{job.preview.project.status}</span>
-                          </div>
-                        ) : null}
-                        {job.preview?.lead ? (
-                          <div className="approval-preview-block">
-                            <strong>Draft reply</strong>
-                            <p>{job.preview.lead.draft_reply}</p>
-                            <div className="meta-inline">
-                              <span>fit {job.preview.lead.fit_score ?? "n/a"}</span>
-                              <span>urgency {job.preview.lead.urgency_score ?? "n/a"}</span>
-                            </div>
-                            <p className="muted">{job.preview.lead.raw_input}</p>
-                          </div>
-                        ) : null}
-                        {job.preview?.draft ? (
-                          <div className="approval-preview-block">
-                            <strong>{job.preview.draft.draft_subject}</strong>
-                            <p>{job.preview.draft.draft_body}</p>
-                            <div className="meta-inline">
-                              <span>{job.preview.draft.message_type}</span>
-                              <span>{job.preview.draft.urgency}</span>
-                            </div>
-                          </div>
-                        ) : null}
-                        {job.preview?.drafts?.length ? (
-                          <div className="approval-preview-block">
-                            <strong>Draft variants</strong>
-                            <div className="table-stack compact-stack">
-                              {job.preview.drafts.map((draft) => (
-                                <div key={`${job.id}-${draft.platform}`} className="table-row compact-row">
-                                  <div className="row-main">
-                                    <strong>{draft.platform}</strong>
-                                    <p className="muted">{draft.caption}</p>
-                                  </div>
-                                  <div className="row-meta">
-                                    <span className="status-pill warn">{draft.status}</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                        {job.preview?.revision ? (
-                          <div className="approval-preview-block">
-                            <strong>Revision plan</strong>
-                            <p className="muted">{job.preview.revision.raw_notes}</p>
-                            {job.preview.revision.parsed_changes?.length ? (
-                              <div className="table-stack compact-stack">
-                                {(job.preview.revision.parsed_changes as Array<Record<string, unknown>>).slice(0, 8).map((change, idx) => (
-                                  <div key={idx} className="table-row compact-row">
-                                    <div className="row-main">
-                                      <strong>{String(change.element ?? "mix")}</strong>
-                                      <span className="muted">{String(change.parameter ?? "")} · {String(change.direction ?? "")}</span>
-                                    </div>
-                                    <div className="row-meta">
-                                      <span className={`status-pill ${Number(change.confidence ?? 0) >= 0.8 ? "ok" : "warn"}`}>
-                                        {Math.round(Number(change.confidence ?? 0) * 100)}%
-                                      </span>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : null}
-                            <div className="meta-inline">
-                              <span>{job.preview.revision.reascript_path ? "ReaScript generated" : "no script"}</span>
-                              <span>{job.preview.revision.soundflow_script ? "SoundFlow generated" : null}</span>
-                              <span>{job.preview.revision.status}</span>
-                            </div>
-                          </div>
-                        ) : null}
-                        <label className="field compact-field">
-                          <span className="metric-label">Reject reason</span>
-                          <input
-                            value={rejectReasons[job.id] ?? ""}
-                            placeholder="Optional rejection note"
-                            onChange={(event) => setRejectReasons((current) => ({ ...current, [job.id]: event.target.value }))}
-                          />
-                        </label>
-                      </div>
-                      <div className="row-meta">
-                        <span className="status-pill warn">awaiting approval</span>
-                        <div className="action-row">
-                          <button
-                            className="action-button ok"
-                            disabled={!operatorName || pendingJobId === job.id}
-                            onClick={() => handleApproval(job.id, "approve")}
-                          >
-                            {pendingJobId === job.id ? "working" : "approve"}
-                          </button>
-                          <button
-                            className="action-button bad"
-                            disabled={!operatorName || pendingJobId === job.id}
-                            onClick={() => handleApproval(job.id, "reject")}
-                          >
-                            reject
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="empty-state">No items are waiting for approval.</p>
-                )}
-              </div>
-            </article>
-
-            <aside className="panel panel-span-4">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Operator</p>
-                  <h2>Control Inputs</h2>
-                </div>
-                <span className="count-pill">{operatorName}</span>
-              </div>
-              <div className="operator-grid">
-                <label className="field">
-                  <span className="metric-label">Approval actor</span>
-                  <input
-                    value={operatorName}
-                    onChange={(event) => {
-                      const nextName = event.target.value;
-                      setOperatorName(nextName);
-                      setWorkspaceDraft((current) => ({ ...current, operator_name: nextName }));
-                    }}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">Operator token</span>
-                  <input
-                    type="password"
-                    value={operatorToken}
-                    placeholder="Required when OPERATOR_API_TOKEN is set"
-                    onChange={(event) => setOperatorToken(event.target.value)}
-                  />
-                </label>
-              </div>
-              <p className="panel-note">
-                Approval actions send `X-Actor` and `X-Operator-Token`. Keep this panel set before operating the queue.
-              </p>
-              {actionMessage ? <p className="feedback ok">{actionMessage}</p> : null}
-              {actionError ? <p className="feedback bad">{actionError}</p> : null}
-            </aside>
           </section>
 
           <section className="workspace-grid">
@@ -4655,7 +4511,7 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <p className="section-kicker">Inventory</p>
-                  <h2>Automation Module Directory</h2>
+                  <h2>Automation Health</h2>
                 </div>
                 <span className="count-pill">{automationServices.length}</span>
               </div>
@@ -4718,7 +4574,14 @@ export function App() {
                   <p className="section-kicker">Rules</p>
                   <h2>Rule Inventory</h2>
                 </div>
-                <span className="count-pill">showing {visibleRules.length} of {data.rules.length}</span>
+                <div className="header-actions">
+                  <span className="count-pill">showing {visibleRules.length} of {data.rules.length}</span>
+                  {data.rules.length > 10 ? (
+                    <button className="action-button subtle" type="button" onClick={() => setShowAllRules((current) => !current)}>
+                      {showAllRules ? "show less" : "show all"}
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <div className="table-stack">
                 {visibleRules.map((rule) => (
@@ -4799,1428 +4662,75 @@ export function App() {
       ) : null}
 
       {!isInitialLoad && activeTab === "context" ? (
-        <div className="tab-panel">
-          <section className="workspace-grid">
-            <article className="panel panel-span-5">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Context</p>
-                  <h2>Studio Context Board</h2>
-                </div>
-                <span className="count-pill">{data.styleProfiles.length} profiles</span>
-              </div>
-              <div className="context-card-grid">
-                {contextCards.map((card) => (
-                  <div key={card.label} className="snapshot-card">
-                    <span className="metric-label">{card.label}</span>
-                    <strong>{card.value}</strong>
-                    <p>{card.detail}</p>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="panel panel-span-7">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Voice</p>
-                  <h2>Style Profiles</h2>
-                </div>
-                <div className="header-actions">
-                  <span className="count-pill">{data.styleProfiles.length}</span>
-                  <button className="action-button" type="button" disabled={styleRescanPending} onClick={rescanStyleSources}>
-                    {styleRescanPending ? "rescanning" : "rescan style sources"}
-                  </button>
-                </div>
-              </div>
-              <div className="table-stack">
-                {data.styleProfiles.length ? (
-                  data.styleProfiles.slice(0, 8).map((profile) => (
-                    <div key={profile.id} className="table-row">
-                      <div className="row-main">
-                        <strong>{profile.name}</strong>
-                        <div className="muted">{profile.scope} · {profile.source_type}</div>
-                        <div className="muted">
-                          {profile.extracted_guidance?.summary ?? "No guidance summary extracted yet. Add seed text or rescan saved source files."}
-                        </div>
-                        <div className="meta-inline">
-                          <span>updated {profile.updated_at ? summarizeTime(profile.updated_at) : "n/a"}</span>
-                          {profile.extracted_guidance?.tone_markers?.slice(0, 3).map((marker) => (
-                            <span key={`${profile.id}-${marker}`}>{marker}</span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="row-meta">
-                        <span className="status-pill ok">active context</span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="empty-state">No style profiles have been ingested yet.</p>
-                )}
-              </div>
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-5">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Knowledge</p>
-                  <h2>Active Voice Preview</h2>
-                </div>
-                <span className="count-pill">{latestStyleProfile?.name ?? "seed only"}</span>
-              </div>
-              <div className="context-preview-card">
-                <span className="metric-label">How the system will sound</span>
-                <p className="context-preview-copy">{voicePreview}</p>
-                <div className="summary-pill-row">
-                  {(latestStyleProfile?.extracted_guidance?.preferred_phrases ?? workspaceSettings.style_seed.source_paths).slice(0, 4).map((item) => (
-                    <span key={item} className="summary-pill">
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </article>
-
-            <article className="panel panel-span-3">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Context Feed</p>
-                  <h2>Source Inputs</h2>
-                </div>
-                <span className="count-pill">{styleSourceCount}</span>
-              </div>
-              <div className="table-stack">
-                {workspaceSettings.style_seed.source_paths.length ? (
-                  workspaceSettings.style_seed.source_paths.slice(0, 6).map((sourcePath) => (
-                    <div key={sourcePath} className="table-row compact-row">
-                      <div className="row-main">
-                        <strong>{sourcePath.split("/").pop() || sourcePath}</strong>
-                        <div className="muted">{sourcePath}</div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="empty-state">No saved style source files yet. Paste a tone seed or add source paths in Settings.</p>
-                )}
-              </div>
-            </article>
-
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-5">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Workstations</p>
-                  <h2>Plugin Inventory</h2>
-                </div>
-                <span className="count-pill">{workstationPlugins?.plugin_count ?? workstationProfile?.plugins?.summary?.count ?? 0} plugins</span>
-              </div>
-              <div className="segmented-list">
-                {data.workers.map((worker) => (
-                  <button
-                    key={worker.slug}
-                    type="button"
-                    className={`segment-button ${selectedWorker?.slug === worker.slug ? "is-active" : ""}`}
-                    onClick={() => setSelectedWorkerSlug(worker.slug)}
-                  >
-                    <span>{worker.display_name}</span>
-                    <span className={`status-pill ${statusTone(worker.status)}`}>{worker.status}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="table-stack top-gap">
-                {workstationPluginsState === "loading" ? <p className="empty-state">Loading plugin inventory…</p> : null}
-                {workstationPlugins ? (
-                  <>
-                    <div className="summary-pill-row">
-                      {Object.entries(workstationPlugins.counts_by_format).map(([pluginFormat, count]) => (
-                        <span key={pluginFormat} className="summary-pill">
-                          {pluginFormat}: {count}
-                        </span>
-                      ))}
-                    </div>
-                    {workstationPlugins.plugins.slice(0, 10).map((plugin) => (
-                      <div key={`${plugin.plugin_format}-${plugin.path}`} className="table-row compact-row">
-                        <div className="row-main">
-                          <strong>{plugin.name}</strong>
-                          <div className="muted">{plugin.vendor ?? "unknown vendor"} · {plugin.plugin_format}</div>
-                          <div className="muted">{plugin.path}</div>
-                        </div>
-                        <div className="row-meta">
-                          <span className={`status-pill ${plugin.installed ? "ok" : "warn"}`}>{plugin.installed ? "installed" : "missing"}</span>
-                        </div>
-                      </div>
-                    ))}
-                    {!workstationPlugins.plugins.length ? <p className="empty-state">No plugins discovered yet on the selected workstation.</p> : null}
-                  </>
-                ) : null}
-                {workstationPluginsState === "error" ? <p className="empty-state">Plugin inventory is not available yet for the selected workstation.</p> : null}
-              </div>
-            </article>
-
-            <article className="panel panel-span-7">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Projects</p>
-                  <h2>Project Detail</h2>
-                </div>
-                <span className="count-pill">{projectDetail?.review_summary.artifact_count ?? projectDetail?.artifact_inventory.length ?? 0} artifacts</span>
-              </div>
-              <div className="segmented-list">
-                {data.projects.slice(0, 8).map((project) => (
-                  <button
-                    key={project.id}
-                    type="button"
-                    className={`segment-button ${selectedProject?.id === project.id ? "is-active" : ""}`}
-                    onClick={() => setSelectedProjectId(project.id)}
-                  >
-                    <span>{project.client_name}</span>
-                    <span className={`status-pill ${project.status === "complete" ? "ok" : project.status === "lead" ? "warn" : "muted"}`}>{project.status}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="workspace-grid nested-grid top-gap">
-                <div className="panel-span-4">
-                  <div className="mini-card">
-                    <span className="metric-label">Selected project</span>
-                    <strong>{selectedProject?.client_name ?? "No project selected"}</strong>
-                    <p className="panel-note">{selectedProject?.service_type ?? "Project detail will appear here once CRM has at least one project."}</p>
-                    <div className="summary-pill-row">
-                      {selectedProject?.budget_signal ? <span className="summary-pill">{selectedProject.budget_signal}</span> : null}
-                      {selectedProject?.timeline ? <span className="summary-pill">{selectedProject.timeline}</span> : null}
-                      {selectedProject?.lead_count !== undefined ? <span className="summary-pill">{selectedProject.lead_count} leads</span> : null}
-                    </div>
-                  </div>
-                </div>
-                <div className="panel-span-4">
-                  <div className="mini-card">
-                    <span className="metric-label">Pipeline evidence</span>
-                    <strong>
-                      {projectDetail ? `${projectDetail.jobs.length} jobs · ${projectDetail.worker_tasks.length} worker tasks` : "Loading project detail"}
-                    </strong>
-                    <p className="panel-note">
-                      {projectDetail ? `${projectDetail.revisions.length} revisions · ${projectDetail.qc_reports.length} qc reports · ${projectDetail.mix_plans.length} mix plans` : "Project detail is loading."}
-                    </p>
-                    <div className="summary-pill-row">
-                      {projectDetail ? <span className="summary-pill">{projectDetail.review_summary.passing_qc_count} qc pass</span> : null}
-                      {projectDetail ? <span className="summary-pill">{projectDetail.review_summary.failing_qc_count} qc review</span> : null}
-                    </div>
-                  </div>
-                </div>
-                <div className="panel-span-4">
-                  <div className="mini-card">
-                    <span className="metric-label">Review candidate</span>
-                    <strong>{fileLabel(projectDetail?.review_packet.latest_candidate_path)}</strong>
-                    <p className="panel-note">
-                      {projectDetail?.review_packet.recommended_operator_action ?? "Artifacts and candidate renders will appear here after worker execution or packaging."}
-                    </p>
-                    <div className="summary-pill-row">
-                      {projectDetail?.review_packet.focus_flags.map((flag) => <span key={flag} className="summary-pill">{flag}</span>)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="table-stack top-gap">
-                {projectDetailState === "loading" ? <p className="empty-state">Loading project timeline…</p> : null}
-                {projectDetail?.artifact_inventory.slice(0, 10).map((entry, index) => {
-                  const artifact = entry.artifact ?? {};
-                  const artifactPath =
-                    entry.artifact_path ??
-                    (artifact.path as string | undefined) ??
-                    (artifact.manifest_path as string | undefined);
-                  return (
-                    <div key={`${entry.source}-${entry.job_id ?? entry.task_id ?? index}`} className="table-row compact-row">
-                      <div className="row-main">
-                        <strong>{fileLabel(artifactPath)}</strong>
-                        <div className="muted">
-                          {(artifact.kind as string | undefined) ?? (artifact.type as string | undefined) ?? "artifact"} · {entry.source}
-                        </div>
-                        <div className="muted">{artifactPath ?? JSON.stringify(artifact)}</div>
-                      </div>
-                      <div className="row-meta">
-                        <span className="muted">{entry.created_at ? summarizeTime(entry.created_at) : "n/a"}</span>
-                        {selectedProject?.id ? (
-                          <>
-                            <button className="action-button" type="button" onClick={() => previewArtifact(selectedProject.id, entry.artifact_id)}>
-                              preview
-                            </button>
-                            {artifactPath ? (
-                              <a
-                                className="action-button"
-                                href={`${API.projectState}/projects/${selectedProject.id}/artifacts/${entry.artifact_id}/download`}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                download
-                              </a>
-                            ) : null}
-                          </>
-                        ) : null}
-                        {artifactPath ? (
-                          <button className="action-button" type="button" onClick={() => copyArtifactValue(artifactPath, "Artifact path")}>
-                            copy path
-                          </button>
-                        ) : (
-                          <button className="action-button" type="button" onClick={() => copyArtifactValue(JSON.stringify(artifact, null, 2), "Artifact payload")}>
-                            copy payload
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-                {projectDetailState === "error" ? <p className="empty-state">Project detail could not be loaded yet.</p> : null}
-                {projectDetail && !projectDetail.artifact_inventory.length ? (
-                  <p className="empty-state">This project does not have artifact history yet. Approvals and worker executions will start filling it in.</p>
-                ) : null}
-                {artifactPreview ? (
-                  <div className="approval-preview-block top-gap">
-                    <strong>{artifactPreview.file_name}</strong>
-                    <div className="muted">{artifactPreview.path}</div>
-                    <pre className="code-preview">{artifactPreview.content}</pre>
-                  </div>
-                ) : null}
-                {artifactPreviewState === "loading" ? <p className="empty-state">Loading artifact preview…</p> : null}
-                {artifactActionMessage ? <p className="feedback ok">{artifactActionMessage}</p> : null}
-                {artifactActionError ? <p className="feedback bad">{artifactActionError}</p> : null}
-              </div>
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-12">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Review Surface</p>
-                  <h2>Project Review Stack</h2>
-                </div>
-                <span className="count-pill">
-                  {projectDetail ? `${projectDetail.review_summary.passing_qc_count}/${projectDetail.review_summary.qc_report_count} qc pass · ${projectDetail.review_summary.artifact_count} artifacts` : "loading"}
-                </span>
-              </div>
-              <div className="workspace-grid nested-grid">
-                <div className="panel-span-4 table-stack">
-                  <div className="table-row">
-                    <div className="row-main">
-                      <strong>Session manifests</strong>
-                      <div className="muted">Session readiness, prep reports, and discovered assets.</div>
-                    </div>
-                  </div>
-                  {projectDetail?.session_manifests.slice(0, 4).map((manifest, index) => (
-                    <div key={`${manifest.id ?? index}`} className="table-row compact-row">
-                      <div className="row-main">
-                        <strong>{String(manifest.status ?? "pending")}</strong>
-                        <div className="muted">{String(manifest.session_path ?? manifest.prep_report_path ?? "No session path recorded")}</div>
-                      </div>
-                      <div className="row-meta">
-                        <span className="muted">{String((manifest.stems as unknown[] | undefined)?.length ?? 0)} stems</span>
-                      </div>
-                    </div>
-                  ))}
-                  {projectDetail && !projectDetail.session_manifests.length ? <p className="empty-state">No session manifests yet.</p> : null}
-                </div>
-                <div className="panel-span-4 table-stack">
-                  <div className="table-row">
-                    <div className="row-main">
-                      <strong>QC reports</strong>
-                      <div className="muted">Rendered candidate checks and pass/fail posture.</div>
-                    </div>
-                  </div>
-                  {projectDetail?.qc_reports.slice(0, 4).map((report, index) => (
-                    <div key={`${report.id ?? index}`} className="table-row compact-row">
-                      <div className="row-main">
-                        <strong>{String(report.file_path ?? "qc report")}</strong>
-                        <div className="muted">{String(report.lufs_integrated ?? "n/a")} LUFS · TP {String(report.true_peak_dbfs ?? "n/a")}</div>
-                        <div className="muted">
-                          Low-end {String(report.low_end_ratio ?? "n/a")} · Stereo {String(report.stereo_width ?? "n/a")} · Spectral {String(report.spectral_tilt_db ?? "n/a")} dB
-                        </div>
-                      </div>
-                      <div className="row-meta">
-                        <span className={`status-pill ${report.overall_pass ? "ok" : "bad"}`}>{report.overall_pass ? "pass" : "review"}</span>
-                      </div>
-                    </div>
-                  ))}
-                  {projectDetail && !projectDetail.qc_reports.length ? <p className="empty-state">No QC reports yet.</p> : null}
-                </div>
-                <div className="panel-span-4 table-stack">
-                  <div className="table-row">
-                    <div className="row-main">
-                      <strong>Mix and revision plans</strong>
-                      <div className="muted">Planned execution posture and recent revision artifacts.</div>
-                    </div>
-                  </div>
-                  {projectDetail?.mix_plans.slice(0, 3).map((plan, index) => (
-                    <div key={`${plan.id ?? index}`} className="table-row compact-row">
-                      <div className="row-main">
-                        <strong>{String(plan.status ?? "draft")}</strong>
-                        <div className="muted">{String((plan.plan_json as Record<string, unknown> | undefined)?.target ?? "Mix plan")}</div>
-                      </div>
-                    </div>
-                  ))}
-                  {projectDetail?.revisions.slice(0, 3).map((revision, index) => (
-                    <div key={`${revision.id ?? index}`} className="table-row compact-row">
-                      <div className="row-main">
-                        <strong>{String(revision.status ?? "parsed")}</strong>
-                        <div className="muted">{String(revision.raw_notes ?? "Revision notes unavailable")}</div>
-                      </div>
-                    </div>
-                  ))}
-                  {projectDetail && !projectDetail.mix_plans.length && !projectDetail.revisions.length ? <p className="empty-state">No mix plans or revisions yet.</p> : null}
-                </div>
-                <div className="panel-span-12">
-                  <div className="mini-card">
-                    <span className="metric-label">Review summary</span>
-                    <strong>
-                      {projectDetail
-                        ? `${projectDetail.review_summary.revision_count} revisions · ${projectDetail.review_summary.mix_plan_count} mix plans · ${projectDetail.review_summary.failing_qc_count} qc issues`
-                        : "Loading review summary"}
-                    </strong>
-                    <div className="summary-pill-row">
-                      {projectDetail?.review_summary.latest_revision_status ? <span className="summary-pill">revision {projectDetail.review_summary.latest_revision_status}</span> : null}
-                      {projectDetail?.review_summary.latest_mix_plan_status ? <span className="summary-pill">mix plan {projectDetail.review_summary.latest_mix_plan_status}</span> : null}
-                      {projectDetail ? <span className="summary-pill">{projectDetail.review_summary.artifact_count} artifacts</span> : null}
-                    </div>
-                    {projectDetail ? (
-                      <p className="panel-note top-gap">
-                        {projectDetail.review_packet.recommended_operator_action}
-                        {projectDetail.review_packet.latest_qc.file_path ? ` Latest QC target: ${projectDetail.review_packet.latest_qc.file_path}.` : ""}
-                      </p>
-                    ) : null}
-                    {projectDetail ? (
-                      <div className="summary-pill-row top-gap">
-                        <span className="summary-pill">{projectDetail.listening_reports.length} listening reports</span>
-                        <span className="summary-pill">{projectDetail.render_reviews.length} render reviews</span>
-                        {projectDetail.review_packet.latest_listening_status ? <span className="summary-pill">listening {projectDetail.review_packet.latest_listening_status}</span> : null}
-                        {projectDetail.review_packet.latest_render_review_status ? <span className="summary-pill">render {projectDetail.review_packet.latest_render_review_status}</span> : null}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="panel-span-12">
-                  <div className="mini-card">
-                    <div className="panel-header compact-header">
-                      <div>
-                        <span className="metric-label">Delivery history</span>
-                        <strong>{deliveryHistory.length ? `${deliveryHistory.length} delivery-facing artifacts` : "No delivery history yet"}</strong>
-                      </div>
-                      {projectDetail ? <span className="count-pill">{projectDetail.render_reviews.length} render reviews</span> : null}
-                    </div>
-                    <div className="table-stack top-gap">
-                      {deliveryHistory.map((entry) => (
-                        <div key={`${entry.artifactId}-${entry.summary}`} className="table-row compact-row">
-                          <div className="row-main">
-                            <strong>{entry.summary}</strong>
-                            <div className="muted">{entry.kind} · {entry.source}{entry.workerSlug ? ` · ${entry.workerSlug}` : ""}</div>
-                          </div>
-                          <div className="row-meta">
-                            <span className="muted">{entry.createdAt ? summarizeTime(entry.createdAt) : "n/a"}</span>
-                            {selectedProject?.id ? (
-                              <>
-                                <button className="action-button" type="button" onClick={() => previewArtifact(selectedProject.id, entry.artifactId)}>
-                                  preview
-                                </button>
-                                {entry.path ? (
-                                  <a
-                                    className="action-button"
-                                    href={`${API.projectState}/projects/${selectedProject.id}/artifacts/${entry.artifactId}/download`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    download
-                                  </a>
-                                ) : null}
-                              </>
-                            ) : null}
-                          </div>
-                        </div>
-                      ))}
-                      {projectDetail && !deliveryHistory.length ? (
-                        <p className="empty-state">Delivery-facing renders, manifests, and stem packages will appear here once packaging or review bounces have been generated.</p>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-                {reviewSaveMessage ? <p className="feedback ok">{reviewSaveMessage}</p> : null}
-                {reviewSaveError ? <p className="feedback bad">{reviewSaveError}</p> : null}
-              </div>
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-7">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">CRM</p>
-                  <h2>Active Projects</h2>
-                </div>
-                <span className="count-pill">{data.projects.length} projects</span>
-              </div>
-              <div className="table-stack">
-                {data.projects.length ? (
-                  data.projects.map((project) => (
-                    <button key={project.id} type="button" className={`table-row service-button ${selectedProject?.id === project.id ? "is-selected" : ""}`} onClick={() => setSelectedProjectId(project.id)}>
-                      <div className="row-main">
-                        <strong>{project.client_name}</strong>
-                        <div className="muted">{project.service_type}</div>
-                        <div className="meta-inline">
-                          <span>{project.status}</span>
-                          {project.budget_signal && project.budget_signal !== "unknown" ? (
-                            <span>budget: {project.budget_signal}</span>
-                          ) : null}
-                          {project.timeline ? <span>{project.timeline}</span> : null}
-                          <span>{project.lead_count ?? 0} leads</span>
-                          {project.updated_at ? <span>updated {summarizeTime(project.updated_at)}</span> : null}
-                        </div>
-                        {project.notes ? (
-                          <div className="muted notes-preview">{project.notes.slice(0, 100)}{project.notes.length > 100 ? "…" : ""}</div>
-                        ) : null}
-                      </div>
-                      <div className="row-meta">
-                        <span className={`status-pill ${project.status === "active" ? "ok" : project.status === "complete" ? "muted" : "warn"}`}>
-                          {project.status}
-                        </span>
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <p className="empty-state">No projects have been created yet. Lead intake auto-creates projects on first inquiry.</p>
-                )}
-              </div>
-            </article>
-
-            <article className="panel panel-span-5">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Recent Intake</p>
-                  <h2>Lead Signals</h2>
-                </div>
-                <span className="count-pill">{data.leads.length}</span>
-              </div>
-              <div className="table-stack">
-                {data.leads.length ? (
-                  data.leads.slice(0, 8).map((lead) => {
-                    const normalized = lead.normalized as { artist_name?: string; service_requested?: string; budget_signal?: string; urgency?: string } | null;
-                    return (
-                      <div key={lead.id} className="table-row compact-row">
-                        <div className="row-main">
-                          <strong>{normalized?.artist_name ?? lead.source}</strong>
-                          <div className="muted">{normalized?.service_requested ?? lead.source}</div>
-                          <div className="meta-inline">
-                            {normalized?.budget_signal && normalized.budget_signal !== "unknown" ? (
-                              <span>budget: {normalized.budget_signal}</span>
-                            ) : null}
-                            {normalized?.urgency ? <span>{normalized.urgency}</span> : null}
-                            <span>fit {lead.fit_score ?? "n/a"}</span>
-                            {lead.created_at ? <span>{summarizeTime(lead.created_at)}</span> : null}
-                          </div>
-                          {lead.draft_reply ? (
-                            <div className="muted notes-preview">{lead.draft_reply.slice(0, 120)}{lead.draft_reply.length > 120 ? "…" : ""}</div>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <p className="empty-state">No lead signals in CRM yet.</p>
-                )}
-              </div>
-            </article>
-          </section>
-
-          <section className="workspace-grid">
-            <article className="panel panel-span-12">
-              <div className="panel-header">
-                <div>
-                  <p className="section-kicker">Activity</p>
-                  <h2>Job History</h2>
-                </div>
-                <span className="count-pill">{data.jobHistory.length} completed</span>
-              </div>
-              <div className="table-stack">
-                {data.jobHistory.length ? (
-                  data.jobHistory.slice(0, 20).map((job) => (
-                    <div key={job.id} className="table-row compact-row">
-                      <div className="row-main">
-                        <strong>{job.module}</strong>
-                        <div className="muted">{job.action}</div>
-                        <div className="meta-inline">
-                          {job.approved_by ? <span>approved by {job.approved_by}</span> : null}
-                          {job.requested_by ? <span>from {job.requested_by}</span> : null}
-                          {job.updated_at ? <span>{summarizeTime(job.updated_at)}</span> : null}
-                        </div>
-                      </div>
-                      <div className="row-meta">
-                        <span className="status-pill ok">{job.status}</span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="empty-state">No completed jobs yet. Approve items from the Operations queue to see history here.</p>
-                )}
-              </div>
-            </article>
-          </section>
-        </div>
+        <ContextTab
+          data={data}
+          contextCards={contextCards}
+          latestStyleProfile={latestStyleProfile}
+          voicePreview={voicePreview}
+          workspaceSettings={workspaceSettings}
+          styleSourceCount={styleSourceCount}
+          styleRescanPending={styleRescanPending}
+          rescanStyleSources={rescanStyleSources}
+          workstationPlugins={workstationPlugins}
+          workstationPluginsState={workstationPluginsState}
+          workstationProfile={workstationProfile}
+          selectedWorker={selectedWorker}
+          setSelectedWorkerSlug={setSelectedWorkerSlug}
+          selectedProject={selectedProject}
+          setSelectedProjectId={setSelectedProjectId}
+          projectDetail={projectDetail}
+          projectDetailState={projectDetailState}
+          artifactPreview={artifactPreview}
+          artifactPreviewState={artifactPreviewState}
+          artifactActionMessage={artifactActionMessage}
+          artifactActionError={artifactActionError}
+          previewArtifact={previewArtifact}
+          copyArtifactValue={copyArtifactValue}
+          deliveryHistory={deliveryHistory}
+          reviewSaveMessage={reviewSaveMessage}
+          reviewSaveError={reviewSaveError}
+          summarizeTime={summarizeTime}
+          fileLabel={fileLabel}
+          apiProjectStateBase={API.projectState}
+        />
       ) : null}
 
       {!isInitialLoad && activeTab === "settings" ? (
-        <div className="tab-panel">
-          <section className={`panel onboarding-panel ${onboardingRequired ? "needs-setup" : "is-complete"}`}>
-            <div className="panel-header onboarding-header">
-              <div>
-                <p className="section-kicker">Bootstrap</p>
-                <h2>{editingWorkspaceSetup || onboardingRequired ? "First-run onboarding" : "Workspace settings"}</h2>
-                <p className="panel-note">
-                  {onboardingRequired
-                    ? "Capture the studio identity, deployment posture, paths, style seed, alerts, and optional worker details."
-                    : "Review the saved workspace settings, then jump into operations without reopening the questionnaire."}
-                </p>
-              </div>
-              <div className="onboarding-header-actions">
-                <span className={`status-pill ${onboardingRequired ? "warn" : "ok"}`}>
-                  {onboardingRequired ? `${onboardingMissingCount} items missing` : "configured"}
-                </span>
-                <button
-                  className="action-button"
-                  type="button"
-                  onClick={() => {
-                    setEditingWorkspaceSetup(true);
-                    setWorkspaceDraft(workspaceSettings);
-                    setSettingsSection("identity");
-                  }}
-                >
-                  {onboardingRequired ? "continue setup" : "edit setup"}
-                </button>
-              </div>
-            </div>
-            <div className="settings-snapshot-grid">
-              <article className="snapshot-card">
-                <span className="metric-label">Saved workspace</span>
-                <strong>{workspaceSettings.studio_name || "Unnamed studio"}</strong>
-                <p>{workspaceSettings.operator_name || "owner"} · {workspaceSettings.host_machine_type} · {workspaceSettings.deployment_mode === "control_plane_plus_worker" ? "control plane + worker" : "single machine"}</p>
-              </article>
-              <article className="snapshot-card">
-                <span className="metric-label">LAN front door</span>
-                <strong>{frontDoorUrl}</strong>
-                <p>{frontDoorMode}</p>
-              </article>
-              <article className="snapshot-card">
-                <span className="metric-label">Operator front door</span>
-                <strong>{workspaceSettings.public_base_url || frontDoorUrl}</strong>
-                <p>{workspaceSettings.https_mode.replace(/_/g, " ")}</p>
-              </article>
-              <article className="snapshot-card">
-                <span className="metric-label">Readiness</span>
-                <strong>{integrationReadinessLabel}</strong>
-                <p>{data.workspace.style_profile_count} style profile(s) · {styleSourceCount} reference file(s)</p>
-              </article>
-              <article className="snapshot-card">
-                <span className="metric-label">Integrations</span>
-                <strong>{readyConnectionCount}/{connectionCenter.length} ready</strong>
-                <p>{alertEmailCount} alert destination(s) · {workerPostureLabel}</p>
-              </article>
-              <article className="snapshot-card">
-                <span className="metric-label">Module posture</span>
-                <strong>{moduleEnabledCount}/{Object.keys(moduleSettings).length} enabled</strong>
-                <p>Persisted tuning now drives service status and operator defaults.</p>
-              </article>
-            </div>
-            <div className="settings-snapshot-grid top-gap">
-              {connectionCenter.map((connection) => (
-                <article key={connection.slug} className="snapshot-card">
-                  <div className="panel-header compact-header">
-                    <div>
-                      <span className="metric-label">{connection.name}</span>
-                      <strong>{connection.kind.replace(/-/g, " ")}</strong>
-                    </div>
-                    <span
-                      className={`status-pill ${
-                        connection.status === "ready"
-                          ? "ok"
-                          : connection.status === "needs-attention"
-                            ? "bad"
-                            : "warn"
-                      }`}
-                    >
-                      {connection.status}
-                    </span>
-                  </div>
-                  <p className="panel-note">{connection.detail}</p>
-                  {connection.target ? <p className="muted">{connection.target}</p> : null}
-                  <div className="summary-pill-row top-gap">
-                    {connection.required_fields.slice(0, 3).map((field) => (
-                      <span key={field} className="summary-pill">{field}</span>
-                    ))}
-                  </div>
-                  <div className="table-stack top-gap">
-                    {connection.steps.slice(0, 2).map((step) => (
-                      <div key={step} className="table-row">
-                        <div className="row-main">
-                          <strong>Next step</strong>
-                          <div className="muted">{step}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </article>
-              ))}
-            </div>
-            <div className="onboarding-actions-bar">
-              <div className="summary-pill-row onboarding-steps-row">
-                {settingsPills.map((pill) => (
-                  <span key={pill} className="summary-pill">{pill}</span>
-                ))}
-                <span className="summary-pill">{onboardingStepCount} steps</span>
-              </div>
-              <div className="onboarding-actions">
-                <button className="action-button" type="button" onClick={refreshData}>refresh workspace</button>
-                {editingWorkspaceSetup || onboardingRequired ? (
-                  !onboardingRequired ? (
-                    <button className="action-button" type="button" onClick={() => setEditingWorkspaceSetup(false)}>
-                      close editor
-                    </button>
-                  ) : null
-                ) : (
-                  <button
-                    className="action-button ok"
-                    type="button"
-                    onClick={() => {
-                      setEditingWorkspaceSetup(true);
-                      setWorkspaceDraft(workspaceSettings);
-                      setSettingsSection("identity");
-                    }}
-                  >
-                    edit saved settings
-                  </button>
-                )}
-              </div>
-            </div>
-            {editingWorkspaceSetup || onboardingRequired ? (
-            <>
-            <div className="settings-editor-shell">
-              <div className="settings-section-nav" role="tablist" aria-label="Settings sections">
-                {settingsSections.map((section) => (
-                  <button
-                    key={section.id}
-                    type="button"
-                    className={`settings-section-button ${settingsSection === section.id ? "is-active" : ""}`}
-                    onClick={() => setSettingsSection(section.id)}
-                  >
-                    <span className="tab-label">{section.label}</span>
-                    <span className="tab-summary">{section.summary}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="settings-editor-summary">
-                <div>
-                  <p className="section-kicker">Editor</p>
-                  <h3>{settingsSections.find((section) => section.id === settingsSection)?.label}</h3>
-                  <p className="panel-note">{settingsSections.find((section) => section.id === settingsSection)?.summary}</p>
-                </div>
-                <div className="summary-pill-row">
-                  {data.workspace.missing_fields.slice(0, 4).map((field) => (
-                    <span key={field} className="summary-pill">{field}</span>
-                  ))}
-                  {!data.workspace.missing_fields.length ? <span className="summary-pill">no required gaps</span> : null}
-                </div>
-              </div>
-            </div>
-            <div className="onboarding-grid">
-              {settingsSection === "identity" ? (
-              <>
-              <article className="mini-card">
-                <span className="metric-label">1. Studio identity</span>
-                <label className="field">
-                  <span className="metric-label">Studio name</span>
-                  <input
-                    value={workspaceDraft.studio_name}
-                    onChange={(event) => setWorkspaceDraft((current) => ({ ...current, studio_name: event.target.value }))}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">Deployment mode</span>
-                  <select
-                    value={workspaceDraft.deployment_mode}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        deployment_mode: event.target.value as WorkspaceSettings["deployment_mode"],
-                        worker: {
-                          ...current.worker,
-                          enabled: event.target.value === "control_plane_plus_worker",
-                        },
-                      }))}
-                  >
-                    <option value="single_machine">Single machine</option>
-                    <option value="control_plane_plus_worker">Control plane + worker</option>
-                  </select>
-                </label>
-                <label className="field">
-                  <span className="metric-label">Host machine</span>
-                  <select
-                    value={workspaceDraft.host_machine_type}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        host_machine_type: event.target.value as WorkspaceSettings["host_machine_type"],
-                      }))}
-                  >
-                    <option value="mac-mini">Mac mini</option>
-                    <option value="mac-studio">Mac Studio</option>
-                    <option value="macbook-pro">MacBook Pro</option>
-                    <option value="windows-pc">Windows PC</option>
-                    <option value="other">Other</option>
-                  </select>
-                </label>
-                <label className="field">
-                  <span className="metric-label">Primary operator</span>
-                  <input
-                    value={workspaceDraft.operator_name}
-                    onChange={(event) => {
-                      const nextName = event.target.value;
-                      setWorkspaceDraft((current) => ({ ...current, operator_name: nextName }));
-                      setOperatorName(nextName);
-                    }}
-                  />
-                </label>
-              </article>
-              <article className="mini-card">
-                <span className="metric-label">2. Posture</span>
-                <label className="field">
-                  <span className="metric-label">Public front door</span>
-                  <input
-                    value={workspaceDraft.public_base_url}
-                    placeholder={frontDoorUrl}
-                    onChange={(event) => setWorkspaceDraft((current) => ({ ...current, public_base_url: event.target.value }))}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">HTTPS mode</span>
-                  <select
-                    value={workspaceDraft.https_mode}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        https_mode: event.target.value as WorkspaceSettings["https_mode"],
-                      }))}
-                  >
-                    <option value="local_http">LAN HTTP</option>
-                    <option value="https_enabled">HTTPS on this stack</option>
-                    <option value="https_terminated_elsewhere">HTTPS terminated upstream</option>
-                  </select>
-                </label>
-                <div className="mini-inline-note">
-                  <span>Live LAN view</span>
-                  <strong>{frontDoorUrl}</strong>
-                </div>
-              </article>
-              </>
-              ) : null}
-              {settingsSection === "storage" ? (
-              <article className="mini-card">
-                <span className="metric-label">3. Shared paths</span>
-                {(["projects", "deliveries", "draft_queue", "approval_queue", "incoming_stems"] as const).map((pathKey) => (
-                  <label key={pathKey} className="field">
-                    <span className="metric-label">{pathKey.replace(/_/g, " ")}</span>
-                    <input
-                      value={workspaceDraft.shared_paths[pathKey]}
-                      onChange={(event) =>
-                        setWorkspaceDraft((current) => ({
-                          ...current,
-                          shared_paths: {
-                            ...current.shared_paths,
-                            [pathKey]: event.target.value,
-                          },
-                        }))}
-                    />
-                  </label>
-                ))}
-              </article>
-              ) : null}
-              {settingsSection === "voice" ? (
-              <article className="mini-card">
-                <span className="metric-label">4. Style and tone</span>
-                <label className="field">
-                  <span className="metric-label">Style profile name</span>
-                  <input
-                    value={workspaceDraft.style_seed.name}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        style_seed: { ...current.style_seed, name: event.target.value },
-                      }))}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">Tone and voice seed</span>
-                  <textarea
-                    value={workspaceDraft.style_seed.raw_text}
-                    placeholder="How should this studio sound in email, content, and client-facing drafts?"
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        style_seed: { ...current.style_seed, raw_text: event.target.value },
-                      }))}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">Reference files</span>
-                  <textarea
-                    value={workspaceDraft.style_seed.source_paths.join("\n")}
-                    placeholder="/path/to/brand-guide.txt"
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        style_seed: { ...current.style_seed, source_paths: parseDelimitedList(event.target.value) },
-                      }))}
-                  />
-                </label>
-                <button className="action-button" type="button" disabled={styleRescanPending} onClick={rescanStyleSources}>
-                  {styleRescanPending ? "rescanning" : "rescan saved sources"}
-                </button>
-              </article>
-              ) : null}
-              {settingsSection === "integrations" ? (
-              <article className="mini-card">
-                <span className="metric-label">5. Alerts and integrations</span>
-                <label className="field">
-                  <span className="metric-label">Alert emails</span>
-                  <textarea
-                    value={workspaceDraft.alert_destinations.email_to.join("\n")}
-                    placeholder="ops@studio.com"
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        alert_destinations: {
-                          ...current.alert_destinations,
-                          email_to: parseDelimitedList(event.target.value),
-                        },
-                      }))}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">Alert webhook</span>
-                  <input
-                    value={workspaceDraft.alert_destinations.webhook_url}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        alert_destinations: {
-                          ...current.alert_destinations,
-                          webhook_url: event.target.value,
-                        },
-                      }))}
-                  />
-                </label>
-                <div className="toggle-grid">
-                  {([
-                    ["n8n", "n8n"],
-                    ["gmail_readonly", "Gmail read-only"],
-                    ["gmail_send", "Gmail send"],
-                    ["instagram", "Instagram"],
-                    ["facebook", "Facebook"],
-                  ] as const).map(([key, label]) => (
-                    <label key={key} className="toggle-chip">
-                      <input
-                        type="checkbox"
-                        checked={workspaceDraft.integrations[key]}
-                        onChange={(event) =>
-                          setWorkspaceDraft((current) => ({
-                            ...current,
-                            integrations: {
-                              ...current.integrations,
-                              [key]: event.target.checked,
-                            },
-                          }))}
-                      />
-                      <span>{label}</span>
-                    </label>
-                  ))}
-                </div>
-              </article>
-              ) : null}
-              {settingsSection === "worker" ? (
-              <article className="mini-card">
-                <span className="metric-label">6. Optional worker</span>
-                <label className="toggle-chip">
-                  <input
-                    type="checkbox"
-                    checked={workspaceDraft.worker.enabled}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        worker: { ...current.worker, enabled: event.target.checked },
-                        deployment_mode: event.target.checked ? "control_plane_plus_worker" : "single_machine",
-                      }))}
-                  />
-                  <span>Enable worker configuration</span>
-                </label>
-                <label className="field">
-                  <span className="metric-label">Worker slug</span>
-                  <input
-                    value={workspaceDraft.worker.worker_slug}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        worker: { ...current.worker, worker_slug: event.target.value },
-                      }))}
-                    disabled={!workspaceDraft.worker.enabled}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">Worker API URL</span>
-                  <input
-                    value={workspaceDraft.worker.worker_api_base_url}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        worker: { ...current.worker, worker_api_base_url: event.target.value },
-                      }))}
-                    disabled={!workspaceDraft.worker.enabled}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">Display name</span>
-                  <input
-                    value={workspaceDraft.worker.display_name}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        worker: { ...current.worker, display_name: event.target.value },
-                      }))}
-                    disabled={!workspaceDraft.worker.enabled}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">Default DAW</span>
-                  <select
-                    value={workspaceDraft.worker.default_daw}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        worker: { ...current.worker, default_daw: event.target.value },
-                      }))}
-                    disabled={!workspaceDraft.worker.enabled}
-                  >
-                    <option value="reaper">Reaper</option>
-                    <option value="protools">Pro Tools</option>
-                  </select>
-                </label>
-                <label className="toggle-chip">
-                  <input
-                    type="checkbox"
-                    checked={workspaceDraft.worker.dry_run_daw}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        worker: { ...current.worker, dry_run_daw: event.target.checked },
-                      }))}
-                    disabled={!workspaceDraft.worker.enabled}
-                  />
-                  <span>Keep DAW execution in dry run</span>
-                </label>
-                <label className="field">
-                  <span className="metric-label">Supported DAWs</span>
-                  <input
-                    value={workspaceDraft.worker.supported_daws.join(", ")}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        worker: {
-                          ...current.worker,
-                          supported_daws: event.target.value.split(",").map((item) => item.trim()).filter(Boolean),
-                        },
-                      }))}
-                    disabled={!workspaceDraft.worker.enabled}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">Adapter capabilities</span>
-                  <input
-                    value={workspaceDraft.worker.adapter_capabilities.join(", ")}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        worker: {
-                          ...current.worker,
-                          adapter_capabilities: event.target.value.split(",").map((item) => item.trim()).filter(Boolean),
-                        },
-                      }))}
-                    disabled={!workspaceDraft.worker.enabled}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">Reaper binary path</span>
-                  <input
-                    value={workspaceDraft.worker.reaper_binary_path}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        worker: { ...current.worker, reaper_binary_path: event.target.value },
-                      }))}
-                    disabled={!workspaceDraft.worker.enabled}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">Pro Tools app path</span>
-                  <input
-                    value={workspaceDraft.worker.protools_app_path}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        worker: { ...current.worker, protools_app_path: event.target.value },
-                      }))}
-                    disabled={!workspaceDraft.worker.enabled}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">SoundFlow CLI path</span>
-                  <input
-                    value={workspaceDraft.worker.soundflow_cli_path}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        worker: { ...current.worker, soundflow_cli_path: event.target.value },
-                      }))}
-                    disabled={!workspaceDraft.worker.enabled}
-                  />
-                </label>
-                <label className="field">
-                  <span className="metric-label">Operator notes</span>
-                  <textarea
-                    value={workspaceDraft.worker.notes}
-                    onChange={(event) =>
-                      setWorkspaceDraft((current) => ({
-                        ...current,
-                        worker: { ...current.worker, notes: event.target.value },
-                      }))}
-                    disabled={!workspaceDraft.worker.enabled}
-                    rows={4}
-                  />
-                </label>
-              </article>
-              ) : null}
-              {settingsSection === "modules" ? (
-              <article className="mini-card module-settings-card">
-                <span className="metric-label">7. Module tuning</span>
-                <div className="module-settings-grid">
-                  <div className="module-setting-block">
-                    <div className="module-setting-head">
-                      <strong>Lead intake</strong>
-                      <label className="toggle-chip">
-                        <input
-                          type="checkbox"
-                          checked={workspaceDraft.module_settings.lead_intake.enabled}
-                          onChange={(event) =>
-                            setWorkspaceDraft((current) => ({
-                              ...current,
-                              module_settings: {
-                                ...current.module_settings,
-                                lead_intake: { ...current.module_settings.lead_intake, enabled: event.target.checked },
-                              },
-                            }))}
-                        />
-                        <span>enabled</span>
-                      </label>
-                    </div>
-                    <div className="inline-form-grid">
-                      <label className="field">
-                        <span className="metric-label">Min fit score</span>
-                        <input
-                          type="number"
-                          value={workspaceDraft.module_settings.lead_intake.minimum_fit_score}
-                          onChange={(event) =>
-                            setWorkspaceDraft((current) => ({
-                              ...current,
-                              module_settings: {
-                                ...current.module_settings,
-                                lead_intake: {
-                                  ...current.module_settings.lead_intake,
-                                  minimum_fit_score: Number(event.target.value) || 0,
-                                },
-                              },
-                            }))}
-                        />
-                      </label>
-                      <label className="field">
-                        <span className="metric-label">Reply SLA hours</span>
-                        <input
-                          type="number"
-                          value={workspaceDraft.module_settings.lead_intake.response_sla_hours}
-                          onChange={(event) =>
-                            setWorkspaceDraft((current) => ({
-                              ...current,
-                              module_settings: {
-                                ...current.module_settings,
-                                lead_intake: {
-                                  ...current.module_settings.lead_intake,
-                                  response_sla_hours: Number(event.target.value) || 0,
-                                },
-                              },
-                            }))}
-                        />
-                      </label>
-                    </div>
-                  </div>
-                  <div className="module-setting-block">
-                    <div className="module-setting-head">
-                      <strong>Inbox triage</strong>
-                      <label className="toggle-chip">
-                        <input
-                          type="checkbox"
-                          checked={workspaceDraft.module_settings.inbox_triage.enabled}
-                          onChange={(event) =>
-                            setWorkspaceDraft((current) => ({
-                              ...current,
-                              module_settings: {
-                                ...current.module_settings,
-                                inbox_triage: { ...current.module_settings.inbox_triage, enabled: event.target.checked },
-                              },
-                            }))}
-                        />
-                        <span>enabled</span>
-                      </label>
-                    </div>
-                    <label className="field">
-                      <span className="metric-label">Priority classes</span>
-                      <input
-                        value={workspaceDraft.module_settings.inbox_triage.high_priority_types.join(", ")}
-                        onChange={(event) =>
-                          setWorkspaceDraft((current) => ({
-                            ...current,
-                            module_settings: {
-                              ...current.module_settings,
-                              inbox_triage: {
-                                ...current.module_settings.inbox_triage,
-                                high_priority_types: parseDelimitedList(event.target.value),
-                              },
-                            },
-                          }))}
-                      />
-                    </label>
-                  </div>
-                  <div className="module-setting-block">
-                    <div className="module-setting-head">
-                      <strong>Content pipeline</strong>
-                      <label className="toggle-chip">
-                        <input
-                          type="checkbox"
-                          checked={workspaceDraft.module_settings.content_pipeline.enabled}
-                          onChange={(event) =>
-                            setWorkspaceDraft((current) => ({
-                              ...current,
-                              module_settings: {
-                                ...current.module_settings,
-                                content_pipeline: { ...current.module_settings.content_pipeline, enabled: event.target.checked },
-                              },
-                            }))}
-                        />
-                        <span>enabled</span>
-                      </label>
-                    </div>
-                    <label className="field">
-                      <span className="metric-label">Default platforms</span>
-                      <input
-                        value={workspaceDraft.module_settings.content_pipeline.default_platforms.join(", ")}
-                        onChange={(event) =>
-                          setWorkspaceDraft((current) => ({
-                            ...current,
-                            module_settings: {
-                              ...current.module_settings,
-                              content_pipeline: {
-                                ...current.module_settings.content_pipeline,
-                                default_platforms: parseDelimitedList(event.target.value),
-                              },
-                            },
-                          }))}
-                      />
-                    </label>
-                  </div>
-                  <div className="module-setting-block">
-                    <div className="module-setting-head">
-                      <strong>Audio QC</strong>
-                      <label className="toggle-chip">
-                        <input
-                          type="checkbox"
-                          checked={workspaceDraft.module_settings.audio_qc.enabled}
-                          onChange={(event) =>
-                            setWorkspaceDraft((current) => ({
-                              ...current,
-                              module_settings: {
-                                ...current.module_settings,
-                                audio_qc: { ...current.module_settings.audio_qc, enabled: event.target.checked },
-                              },
-                            }))}
-                        />
-                        <span>enabled</span>
-                      </label>
-                    </div>
-                    <label className="field">
-                      <span className="metric-label">Default target</span>
-                      <select
-                        value={workspaceDraft.module_settings.audio_qc.default_target}
-                        onChange={(event) =>
-                          setWorkspaceDraft((current) => ({
-                            ...current,
-                            module_settings: {
-                              ...current.module_settings,
-                              audio_qc: { ...current.module_settings.audio_qc, default_target: event.target.value },
-                            },
-                          }))}
-                      >
-                        <option value="streaming">streaming</option>
-                        <option value="broadcast">broadcast</option>
-                        <option value="club">club</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div className="module-setting-block">
-                    <div className="module-setting-head">
-                      <strong>Revision parser</strong>
-                      <label className="toggle-chip">
-                        <input
-                          type="checkbox"
-                          checked={workspaceDraft.module_settings.revision_parser.enabled}
-                          onChange={(event) =>
-                            setWorkspaceDraft((current) => ({
-                              ...current,
-                              module_settings: {
-                                ...current.module_settings,
-                                revision_parser: { ...current.module_settings.revision_parser, enabled: event.target.checked },
-                              },
-                            }))}
-                        />
-                        <span>enabled</span>
-                      </label>
-                    </div>
-                    <div className="inline-form-grid">
-                      <label className="field">
-                        <span className="metric-label">Default DAW</span>
-                        <select
-                          value={workspaceDraft.module_settings.revision_parser.default_daw}
-                          onChange={(event) =>
-                            setWorkspaceDraft((current) => ({
-                              ...current,
-                              module_settings: {
-                                ...current.module_settings,
-                                revision_parser: { ...current.module_settings.revision_parser, default_daw: event.target.value },
-                              },
-                            }))}
-                        >
-                          <option value="reaper">reaper</option>
-                          <option value="protools">protools</option>
-                        </select>
-                      </label>
-                      <label className="field">
-                        <span className="metric-label">Confidence floor</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="1"
-                          step="0.01"
-                          value={workspaceDraft.module_settings.revision_parser.confidence_threshold}
-                          onChange={(event) =>
-                            setWorkspaceDraft((current) => ({
-                              ...current,
-                              module_settings: {
-                                ...current.module_settings,
-                                revision_parser: {
-                                  ...current.module_settings.revision_parser,
-                                  confidence_threshold: Number(event.target.value) || 0,
-                                },
-                              },
-                            }))}
-                        />
-                      </label>
-                    </div>
-                  </div>
-                  <div className="module-setting-block">
-                    <div className="module-setting-head">
-                      <strong>Delivery + planning</strong>
-                    </div>
-                    <div className="summary-pill-row">
-                      {workspaceDraft.module_settings.mix_planner.default_focus.map((item) => (
-                        <span key={item} className="summary-pill">
-                          {item}
-                        </span>
-                      ))}
-                      <span className="summary-pill">
-                        {workspaceDraft.module_settings.delivery_packager.require_qc_pass ? "qc required" : "qc optional"}
-                      </span>
-                    </div>
-                    <label className="field">
-                      <span className="metric-label">Mix focus priorities</span>
-                      <input
-                        value={workspaceDraft.module_settings.mix_planner.default_focus.join(", ")}
-                        onChange={(event) =>
-                          setWorkspaceDraft((current) => ({
-                            ...current,
-                            module_settings: {
-                              ...current.module_settings,
-                              mix_planner: {
-                                ...current.module_settings.mix_planner,
-                                default_focus: parseDelimitedList(event.target.value),
-                              },
-                            },
-                          }))}
-                      />
-                    </label>
-                  </div>
-                </div>
-              </article>
-              ) : null}
-            </div>
-            <div className="onboarding-footer">
-              <div className="missing-list">
-                <span className="metric-label">Still missing</span>
-                <strong>{data.workspace.missing_fields.length ? data.workspace.missing_fields.join(", ") : "Nothing required is missing."}</strong>
-              </div>
-              <div className="wizard-footer-actions">
-                <button className="action-button" disabled={onboardingSaving} onClick={refreshData}>refresh now</button>
-                <button className="action-button ok" disabled={onboardingSaving} onClick={saveWorkspaceSettings}>
-                  {onboardingSaving ? "saving" : "save settings"}
-                </button>
-              </div>
-            </div>
-            </>
-            ) : (
-              <div className="settings-summary-layout">
-                <article className="mini-card settings-summary-card">
-                  <span className="metric-label">Saved deployment posture</span>
-                  <strong>{workspaceSettings.deployment_mode === "control_plane_plus_worker" ? "control plane + worker" : "single machine"}</strong>
-                  <p className="panel-note">{workspaceSettings.public_base_url || frontDoorUrl}</p>
-                  <div className="summary-pill-row">
-                    <span className="summary-pill">{workspaceSettings.https_mode.replace(/_/g, " ")}</span>
-                    <span className="summary-pill">{workspaceSettings.operator_name || "owner"}</span>
-                    <span className="summary-pill">{workerPostureLabel}</span>
-                  </div>
-                </article>
-                <article className="mini-card settings-summary-card">
-                  <span className="metric-label">Shared paths</span>
-                  <strong>{workspaceSettings.shared_paths.projects}</strong>
-                  <p className="panel-note">Drafts: {workspaceSettings.shared_paths.draft_queue}</p>
-                  <p className="panel-note">Approvals: {workspaceSettings.shared_paths.approval_queue}</p>
-                </article>
-                <article className="mini-card settings-summary-card">
-                  <span className="metric-label">Style and alert posture</span>
-                  <strong>{workspaceSettings.style_seed.name || "Default Studio Tone"}</strong>
-                  <p className="panel-note">{alertEmailCount} email destination(s) · {integrationFlags} integrations enabled</p>
-                  <div className="action-row">
-                    <button className="action-button" type="button" disabled={styleRescanPending} onClick={rescanStyleSources}>
-                      {styleRescanPending ? "rescanning" : "rescan style sources"}
-                    </button>
-                  </div>
-                </article>
-              </div>
-            )}
-            {onboardingMessage ? <p className="feedback ok">{onboardingMessage}</p> : null}
-            {onboardingError ? <p className="feedback bad">{onboardingError}</p> : null}
-          </section>
-        </div>
+        <SettingsTab
+          data={data}
+          onboardingRequired={onboardingRequired}
+          onboardingMissingCount={onboardingMissingCount}
+          editingWorkspaceSetup={editingWorkspaceSetup}
+          setEditingWorkspaceSetup={setEditingWorkspaceSetup}
+          workspaceSettings={workspaceSettings}
+          workspaceDraft={workspaceDraft}
+          setWorkspaceDraft={setWorkspaceDraft}
+          settingsSection={settingsSection}
+          setSettingsSection={setSettingsSection}
+          settingsSections={settingsSections}
+          humanizeMissingField={humanizeMissingField}
+          connectionCenter={connectionCenter}
+          settingsPills={settingsPills}
+          onboardingStepCount={onboardingStepCount}
+          refreshData={refreshData}
+          saveWorkspaceSettings={saveWorkspaceSettings}
+          onboardingSaving={onboardingSaving}
+          onboardingMessage={onboardingMessage}
+          onboardingError={onboardingError}
+          frontDoorUrl={frontDoorUrl}
+          frontDoorMode={frontDoorMode}
+          integrationReadinessLabel={integrationReadinessLabel}
+          alertEmailCount={alertEmailCount}
+          workerPostureLabel={workerPostureLabel}
+          moduleEnabledCount={moduleEnabledCount}
+          moduleSettings={moduleSettings}
+          styleSourceCount={styleSourceCount}
+          integrationFlags={integrationFlags}
+          styleRescanPending={styleRescanPending}
+          rescanStyleSources={rescanStyleSources}
+          parseDelimitedList={parseDelimitedList}
+          setOperatorName={setOperatorName}
+        />
       ) : null}
     </main>
   );
