@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from contextlib import asynccontextmanager
 
 import asyncpg
@@ -12,7 +13,20 @@ from pydantic import BaseModel
 
 import ollama_client as llm
 
+try:
+    from services.shared import llm_client
+except ImportError:
+    class _FallbackLLMClient:
+        @staticmethod
+        async def generate(model: str, prompt: str, timeout: float = 120.0) -> str:
+            return await llm.generate(prompt, model=model, timeout=timeout)
+
+    llm_client = _FallbackLLMClient()
+
 _pool: asyncpg.Pool | None = None
+_workspace_settings_cache: dict = {}
+_workspace_settings_cache_ts: float = 0.0
+WORKSPACE_SETTINGS_CACHE_TTL = 60.0
 
 
 @asynccontextmanager
@@ -33,9 +47,19 @@ async def get_pool() -> asyncpg.Pool:
     return _pool
 
 
+async def _get_workspace_settings(pool) -> dict:
+    global _workspace_settings_cache, _workspace_settings_cache_ts
+    if time.monotonic() - _workspace_settings_cache_ts < WORKSPACE_SETTINGS_CACHE_TTL:
+        return _workspace_settings_cache
+    row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    _workspace_settings_cache = dict(row) if row else {}
+    _workspace_settings_cache_ts = time.monotonic()
+    return _workspace_settings_cache
+
+
 async def load_module_settings(pool: asyncpg.Pool) -> dict:
-    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
-    if row is None or not row["module_settings"]:
+    row = await _get_workspace_settings(pool)
+    if not row or not row.get("module_settings"):
         return {}
     value = row["module_settings"]
     return json.loads(value) if isinstance(value, str) else dict(value)
@@ -49,13 +73,13 @@ async def require_module_enabled(pool: asyncpg.Pool, module_key: str) -> dict:
 
 
 async def load_workspace_context(pool: asyncpg.Pool) -> tuple[str, str]:
-    settings = await pool.fetchrow("SELECT studio_name FROM workspace_settings WHERE singleton = TRUE")
+    settings = await _get_workspace_settings(pool)
     style_profile = await pool.fetchrow(
         "SELECT extracted_guidance FROM style_profiles WHERE scope='studio' ORDER BY created_at ASC LIMIT 1"
     )
     guidance = json.loads(style_profile["extracted_guidance"]) if style_profile and style_profile["extracted_guidance"] else {}
     return (
-        settings["studio_name"] if settings and settings["studio_name"] else "the studio",
+        settings["studio_name"] if settings and settings.get("studio_name") else "the studio",
         guidance.get("summary", ""),
     )
 
@@ -123,9 +147,13 @@ async def build_mix_plan_llm(
         engineer_notes=notes or "none",
         style_summary=style_summary or "professional, transparent, punchy",
     )
-    result = await llm.generate_json(prompt, model=llm.PLANNER_MODEL, timeout=90.0)
-    if isinstance(result, dict) and "phases" in result:
-        return result
+    result = await llm_client.generate(llm.PLANNER_MODEL, prompt, 90.0)
+    try:
+        parsed = json.loads(result)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, dict) and "phases" in parsed:
+        return parsed
     return None
 
 

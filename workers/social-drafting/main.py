@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from contextlib import asynccontextmanager
 
 import asyncpg
@@ -11,6 +12,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 _pool: asyncpg.Pool | None = None
+_workspace_settings_cache: dict = {}
+_workspace_settings_cache_ts: float = 0.0
+WORKSPACE_SETTINGS_CACHE_TTL = 60.0
 
 
 @asynccontextmanager
@@ -31,9 +35,19 @@ async def get_pool() -> asyncpg.Pool:
     return _pool
 
 
+async def _get_workspace_settings(pool) -> dict:
+    global _workspace_settings_cache, _workspace_settings_cache_ts
+    if time.monotonic() - _workspace_settings_cache_ts < WORKSPACE_SETTINGS_CACHE_TTL:
+        return _workspace_settings_cache
+    row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    _workspace_settings_cache = dict(row) if row else {}
+    _workspace_settings_cache_ts = time.monotonic()
+    return _workspace_settings_cache
+
+
 async def load_module_settings(pool: asyncpg.Pool) -> dict:
-    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
-    if row is None or not row["module_settings"]:
+    row = await _get_workspace_settings(pool)
+    if not row or not row.get("module_settings"):
         return {}
     value = row["module_settings"]
     return json.loads(value) if isinstance(value, str) else dict(value)

@@ -26,7 +26,7 @@ export function PrimaryTabStrip({ tabs, activeTab, onSelect, badgeCounts = {} }:
           >
             <span className="tab-label-row">
               <span className="tab-label">{tab.label}</span>
-              {badgeCount > 0 ? <span className="count-badge">{badgeCount > 99 ? "99+" : badgeCount}</span> : null}
+              {badgeCount > 0 ? <span className={`count-badge${badgeCount > 0 ? " urgent" : ""}`}>{badgeCount > 99 ? "99+" : badgeCount}</span> : null}
             </span>
             <span className="tab-summary">{tab.summary}</span>
           </button>

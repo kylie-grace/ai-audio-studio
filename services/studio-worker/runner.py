@@ -156,7 +156,7 @@ class StudioWorkerRunner:
                     cancel_marker.write_text("cancelled\n")
                     cancelled = True
                     await self.heartbeat("cancelling")
-                await asyncio.sleep(1)
+                await asyncio.sleep(5)
             return await future, cancelled
         finally:
             with suppress(FileNotFoundError):

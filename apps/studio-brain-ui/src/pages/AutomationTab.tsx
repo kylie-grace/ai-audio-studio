@@ -54,7 +54,14 @@ export function AutomationTab(props: AutomationTabProps) {
             </div>
           </div>
           <div className="header-actions top-gap">
-            <button className="action-button secondary" disabled={maintenancePending !== null} onClick={reseedAutomationDefaults}>
+            <button
+              className="action-button secondary"
+              disabled={maintenancePending !== null}
+              onClick={() => {
+                if (!window.confirm("Reseed automation defaults? This will overwrite all custom rule configurations with the default set.")) return;
+                reseedAutomationDefaults();
+              }}
+            >
               {maintenancePending === "reseed" ? "reseeding" : "reseed defaults"}
             </button>
             <button

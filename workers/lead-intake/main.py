@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from contextlib import asynccontextmanager
 
 import asyncpg
@@ -14,7 +15,20 @@ from pydantic import BaseModel, Field
 import ollama_client as llm
 from scorer import score_fit, score_urgency
 
+try:
+    from services.shared import llm_client
+except ImportError:
+    class _FallbackLLMClient:
+        @staticmethod
+        async def generate(model: str, prompt: str, timeout: float = 120.0) -> str:
+            return await llm.generate(prompt, model=model, timeout=timeout)
+
+    llm_client = _FallbackLLMClient()
+
 _pool: asyncpg.Pool | None = None
+_workspace_settings_cache: dict = {}
+_workspace_settings_cache_ts: float = 0.0
+WORKSPACE_SETTINGS_CACHE_TTL = 60.0
 
 
 @asynccontextmanager
@@ -33,6 +47,16 @@ async def get_pool() -> asyncpg.Pool:
     if _pool is None:
         raise RuntimeError("DB pool not initialized")
     return _pool
+
+
+async def _get_workspace_settings(pool) -> dict:
+    global _workspace_settings_cache, _workspace_settings_cache_ts
+    if time.monotonic() - _workspace_settings_cache_ts < WORKSPACE_SETTINGS_CACHE_TTL:
+        return _workspace_settings_cache
+    row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    _workspace_settings_cache = dict(row) if row else {}
+    _workspace_settings_cache_ts = time.monotonic()
+    return _workspace_settings_cache
 
 
 class LeadIntakeBody(BaseModel):
@@ -126,7 +150,7 @@ async def draft_reply_llm(normalized: dict, studio_name: str, style_summary: str
         urgency=normalized.get("urgency", "normal"),
         references=", ".join(normalized.get("references", [])) or "none mentioned",
     )
-    result = await llm.generate(prompt, model=llm.PLANNER_MODEL, timeout=45.0)
+    result = await llm_client.generate(llm.PLANNER_MODEL, prompt, 45.0)
     return result.strip() if result and result.strip() else None
 
 
@@ -155,20 +179,20 @@ def draft_reply_with_context(normalized: dict, studio_name: str, style_summary: 
 
 
 async def load_workspace_context(pool: asyncpg.Pool) -> tuple[str, str]:
-    settings = await pool.fetchrow("SELECT studio_name FROM workspace_settings WHERE singleton = TRUE")
+    settings = await _get_workspace_settings(pool)
     style_profile = await pool.fetchrow(
         "SELECT extracted_guidance FROM style_profiles WHERE scope='studio' ORDER BY created_at ASC LIMIT 1"
     )
     guidance = json.loads(style_profile["extracted_guidance"]) if style_profile and style_profile["extracted_guidance"] else {}
     return (
-        settings["studio_name"] if settings and settings["studio_name"] else "the studio",
+        settings["studio_name"] if settings and settings.get("studio_name") else "the studio",
         guidance.get("summary", ""),
     )
 
 
 async def load_module_settings(pool: asyncpg.Pool) -> dict:
-    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
-    if row is None or not row["module_settings"]:
+    row = await _get_workspace_settings(pool)
+    if not row or not row.get("module_settings"):
         return {}
     value = row["module_settings"]
     return json.loads(value) if isinstance(value, str) else dict(value)

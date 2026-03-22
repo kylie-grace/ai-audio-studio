@@ -9,7 +9,7 @@ import re
 
 import httpx
 
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434")
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
 PLANNER_MODEL = os.environ.get("PLANNER_MODEL", "qwen2.5:14b-instruct")
 CLASSIFIER_MODEL = os.environ.get("CLASSIFIER_MODEL", "qwen2.5:3b")
 

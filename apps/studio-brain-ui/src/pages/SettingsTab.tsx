@@ -524,44 +524,50 @@ export function SettingsTab(props: SettingsTabProps) {
                               <span className="summary-pill">{moduleValue.enabled ? "live" : "blocked"}</span>
                               <span className="summary-pill">{label}</span>
                             </div>
-                            {primaryField ? (
-                              <label className="field top-gap">
-                                <span className="metric-label">{primaryField.replace(/_/g, " ")}</span>
-                                <input
-                                  value={Array.isArray(moduleValue[primaryField]) ? moduleValue[primaryField].join(", ") : moduleValue[primaryField]}
-                                  onChange={(event) =>
-                                    setWorkspaceDraft((current: any) => ({
-                                      ...current,
-                                      module_settings: {
-                                        ...current.module_settings,
-                                        [moduleKey]: {
-                                          ...current.module_settings[moduleKey],
-                                          [primaryField]: Array.isArray(moduleValue[primaryField]) ? parseDelimitedList(event.target.value) : event.target.value,
-                                        },
-                                      },
-                                    }))}
-                                />
-                              </label>
-                            ) : null}
-                            {secondaryField ? (
-                              <label className="field">
-                                <span className="metric-label">{secondaryField.replace(/_/g, " ")}</span>
-                                <input
-                                  value={moduleValue[secondaryField]}
-                                  onChange={(event) =>
-                                    setWorkspaceDraft((current: any) => ({
-                                      ...current,
-                                      module_settings: {
-                                        ...current.module_settings,
-                                        [moduleKey]: {
-                                          ...current.module_settings[moduleKey],
-                                          [secondaryField]: Number.isFinite(Number(moduleValue[secondaryField])) ? Number(event.target.value) || 0 : event.target.value,
-                                        },
-                                      },
-                                    }))}
-                                />
-                              </label>
-                            ) : null}
+                            {moduleValue.enabled ? (
+                              <>
+                                {primaryField ? (
+                                  <label className="field top-gap">
+                                    <span className="metric-label">{primaryField.replace(/_/g, " ")}</span>
+                                    <input
+                                      value={Array.isArray(moduleValue[primaryField]) ? moduleValue[primaryField].join(", ") : moduleValue[primaryField]}
+                                      onChange={(event) =>
+                                        setWorkspaceDraft((current: any) => ({
+                                          ...current,
+                                          module_settings: {
+                                            ...current.module_settings,
+                                            [moduleKey]: {
+                                              ...current.module_settings[moduleKey],
+                                              [primaryField]: Array.isArray(moduleValue[primaryField]) ? parseDelimitedList(event.target.value) : event.target.value,
+                                            },
+                                          },
+                                        }))}
+                                    />
+                                  </label>
+                                ) : null}
+                                {secondaryField ? (
+                                  <label className="field">
+                                    <span className="metric-label">{secondaryField.replace(/_/g, " ")}</span>
+                                    <input
+                                      value={moduleValue[secondaryField]}
+                                      onChange={(event) =>
+                                        setWorkspaceDraft((current: any) => ({
+                                          ...current,
+                                          module_settings: {
+                                            ...current.module_settings,
+                                            [moduleKey]: {
+                                              ...current.module_settings[moduleKey],
+                                              [secondaryField]: Number.isFinite(Number(moduleValue[secondaryField])) ? Number(event.target.value) || 0 : event.target.value,
+                                            },
+                                          },
+                                        }))}
+                                    />
+                                  </label>
+                                ) : null}
+                              </>
+                            ) : (
+                              <p className="panel-note">Enable this module to configure its tuning fields.</p>
+                            )}
                           </div>
                         );
                       })}

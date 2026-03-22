@@ -5,7 +5,6 @@ networks:
     driver: bridge
 
 volumes:
-  ollama-data:
   postgres-data:
   n8n-data:
   caddy-data:
@@ -20,6 +19,16 @@ services:
   # ── Postgres (shared DB for all services) ─────────────────────────────
   postgres:
     image: postgres:16-alpine
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c work_mem=16MB
+      -c maintenance_work_mem=128MB
+      -c effective_cache_size=1GB
+      -c max_connections=100
+      -c wal_buffers=16MB
+      -c checkpoint_completion_target=0.9
+      -c random_page_cost=1.1
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-studiodb}
       POSTGRES_USER: ${POSTGRES_USER:-studio}
@@ -50,42 +59,6 @@ services:
       postgres:
         condition: service_healthy
     entrypoint: ["sh", "/run_migrations.sh"]
-    restart: "no"
-
-  # ── Ollama (local LLM serving — no cloud calls) ────────────────────────
-  ollama:
-    image: ollama/ollama:latest
-    volumes:
-      - ollama-data:/root/.ollama
-    networks: [studio-net]
-    environment:
-      OLLAMA_HOST: 0.0.0.0
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-    ports:
-      - "${BIND_HOST:-127.0.0.1}:11434:11434"
-
-  # ── Ollama model initialiser (pulls required models on first boot) ──────
-  ollama-init:
-    image: ollama/ollama:latest
-    volumes:
-      - ollama-data:/root/.ollama
-    networks: [studio-net]
-    depends_on:
-      ollama:
-        condition: service_healthy
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-    entrypoint: >
-      sh -c "
-        ollama pull ${PLANNER_MODEL:-qwen2.5:14b-instruct} &&
-        ollama pull ${CLASSIFIER_MODEL:-qwen2.5:3b} &&
-        ollama pull ${EMBED_MODEL:-nomic-embed-text} &&
-        echo 'All models ready'
-      "
     restart: "no"
 
   # ── n8n (workflow automation and webhooks) ─────────────────────────────
@@ -141,9 +114,10 @@ services:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 30s
     ports:
       - "${BIND_HOST:-127.0.0.1}:8080:8080"
 
@@ -161,9 +135,10 @@ services:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 30s
     ports:
       - "${BIND_HOST:-127.0.0.1}:8090:8090"
 
@@ -173,11 +148,15 @@ services:
       context: ../services/openclaw-orchestrator
       dockerfile: Dockerfile
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PROJECT_STATE_URL: http://project-state:8080
       CRM_API_URL: http://crm-api:8090
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
       CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-qwen2.5:3b}
+      CONCIERGE_LLM_TIMEOUT_SECONDS: ${CONCIERGE_LLM_TIMEOUT_SECONDS:-120}
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       POLICY_ENFORCEMENT: ${POLICY_ENFORCEMENT:-strict}
       N8N_BOOTSTRAP_STATUS_PATH: /data/n8n/bootstrap-status.json
@@ -192,15 +171,14 @@ services:
     depends_on:
       db-migrations:
         condition: service_completed_successfully
-      ollama:
-        condition: service_healthy
       project-state:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health')"]
-      interval: 15s
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 30s
     ports:
       - "${BIND_HOST:-127.0.0.1}:8100:8100"
 
@@ -210,7 +188,10 @@ services:
       context: ../services/content-pipeline
       dockerfile: Dockerfile
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       PROJECT_STATE_URL: http://project-state:8080
@@ -223,15 +204,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
       project-state:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8110/health')"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 30s
     ports:
       - "${BIND_HOST:-127.0.0.1}:8110:8110"
 
@@ -256,9 +236,10 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8120/health')"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 30s
     ports:
       - "${BIND_HOST:-127.0.0.1}:8120:8120"
 
@@ -269,7 +250,10 @@ services:
       context: ../workers/lead-intake
       dockerfile: Dockerfile
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
       CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-qwen2.5:3b}
       PROJECT_STATE_URL: http://project-state:8080
@@ -284,15 +268,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
       project-state:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8130/health')"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 30s
     ports:
       - "${BIND_HOST:-127.0.0.1}:8130:8130"
 
@@ -301,7 +284,10 @@ services:
       context: ../workers/inbox-triage
       dockerfile: Dockerfile
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-qwen2.5:3b}
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
       PROJECT_STATE_URL: http://project-state:8080
@@ -316,15 +302,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
       project-state:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8140/health')"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 30s
     ports:
       - "${BIND_HOST:-127.0.0.1}:8140:8140"
 
@@ -349,9 +334,10 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8150/health')"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 30s
     ports:
       - "${BIND_HOST:-127.0.0.1}:8150:8150"
 
@@ -361,7 +347,10 @@ services:
       context: ../workers/revision-parser
       dockerfile: Dockerfile
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
       PROJECT_STATE_URL: http://project-state:8080
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
@@ -374,15 +363,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
       project-state:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8160/health')"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 30s
     ports:
       - "${BIND_HOST:-127.0.0.1}:8160:8160"
 
@@ -410,9 +398,10 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8170/health')"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 30s
     ports:
       - "${BIND_HOST:-127.0.0.1}:8170:8170"
 
@@ -446,7 +435,10 @@ services:
       context: ../workers/mix-planner
       dockerfile: Dockerfile
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       PROJECT_STATE_URL: http://project-state:8080
@@ -458,15 +450,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
       project-state:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8180/health')"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 30s
     ports:
       - "${BIND_HOST:-127.0.0.1}:8180:8180"
 
@@ -485,7 +476,7 @@ services:
       SHARED_PROJECTS_PATH: /data/projects
       DELIVERY_PATH: /data/deliveries
       PATH_TRANSLATION_JSON: "{}"
-      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-5}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-10}
       STUDIO_WORKER_DRY_RUN_DAW: ${STUDIO_WORKER_DRY_RUN_DAW:-true}
       WORKER_API_TOKEN: ${WORKER_API_TOKEN:-change-me-worker-token}
       AUDIO_QC_URL: http://audio-qc:8120
@@ -499,9 +490,10 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8190/health')"]
-      interval: 15s
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 30s
     ports:
       - "${BIND_HOST:-127.0.0.1}:8190:8190"
 

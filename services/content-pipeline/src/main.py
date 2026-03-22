@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -12,9 +14,24 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 try:
-    from .ollama_client import PLANNER_MODEL, generate_json, is_available
+    from .ollama_client import PLANNER_MODEL, is_available
 except ImportError:  # pragma: no cover - supports direct module loading in tests
-    from ollama_client import PLANNER_MODEL, generate_json, is_available
+    from ollama_client import PLANNER_MODEL, is_available
+
+try:
+    from services.shared import llm_client
+except ImportError:  # pragma: no cover - supports service-local runtime
+    try:
+        from . import ollama_client as _fallback_ollama_client
+    except ImportError:  # pragma: no cover - supports direct module loading in tests
+        import ollama_client as _fallback_ollama_client
+
+    class _FallbackLLMClient:
+        @staticmethod
+        async def generate(model: str, prompt: str, timeout: float = 120.0) -> str:
+            return await _fallback_ollama_client.generate(prompt, model=model, timeout=timeout)
+
+    llm_client = _FallbackLLMClient()
 
 PLATFORM_LIMITS = {
     "instagram": {"max_chars": 2200, "max_tags": 18},
@@ -33,6 +50,9 @@ _PLATFORM_TAGS = {
 }
 
 _pool: asyncpg.Pool | None = None
+_workspace_settings_cache: dict = {}
+_workspace_settings_cache_ts: float = 0.0
+WORKSPACE_SETTINGS_CACHE_TTL = 60.0
 
 
 @asynccontextmanager
@@ -51,6 +71,16 @@ async def get_pool() -> asyncpg.Pool:
     if _pool is None:
         raise RuntimeError("DB pool not initialized")
     return _pool
+
+
+async def _get_workspace_settings(pool) -> dict:
+    global _workspace_settings_cache, _workspace_settings_cache_ts
+    if time.monotonic() - _workspace_settings_cache_ts < WORKSPACE_SETTINGS_CACHE_TTL:
+        return _workspace_settings_cache
+    row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    _workspace_settings_cache = dict(row) if row else {}
+    _workspace_settings_cache_ts = time.monotonic()
+    return _workspace_settings_cache
 
 
 class DraftSocialBody(BaseModel):
@@ -104,12 +134,24 @@ async def generate_caption_llm(
         platform=platform,
         max_chars=limits["max_chars"],
     )
-    result = await generate_json(prompt, model=PLANNER_MODEL, timeout=45.0)
-    if not isinstance(result, dict):
+    result = await llm_client.generate(PLANNER_MODEL, prompt, 45.0)
+    text = result.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        inner = lines[1:] if len(lines) > 1 else lines
+        if inner and inner[-1].strip() == "```":
+            inner = inner[:-1]
+        text = "\n".join(inner).strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        parsed = json.loads(match.group()) if match else None
+    if not isinstance(parsed, dict):
         return None
-    caption = result.get("caption", "")
-    hashtags = result.get("hashtags", [])
-    short = result.get("short", caption[:147] + "..." if len(caption) > 150 else caption)
+    caption = parsed.get("caption", "")
+    hashtags = parsed.get("hashtags", [])
+    short = parsed.get("short", caption[:147] + "..." if len(caption) > 150 else caption)
     if not caption:
         return None
     # Enforce character limit
@@ -174,20 +216,20 @@ async def generate_caption_with_context_async(
 # ---------------------------------------------------------------------------
 
 async def load_workspace_context(pool: asyncpg.Pool) -> tuple[str, str]:
-    settings = await pool.fetchrow("SELECT studio_name FROM workspace_settings WHERE singleton = TRUE")
+    settings = await _get_workspace_settings(pool)
     style_profile = await pool.fetchrow(
         "SELECT extracted_guidance FROM style_profiles WHERE scope='studio' ORDER BY created_at ASC LIMIT 1"
     )
     guidance = json.loads(style_profile["extracted_guidance"]) if style_profile and style_profile["extracted_guidance"] else {}
     return (
-        settings["studio_name"] if settings and settings["studio_name"] else "the studio",
+        settings["studio_name"] if settings and settings.get("studio_name") else "the studio",
         guidance.get("summary", ""),
     )
 
 
 async def load_module_settings(pool: asyncpg.Pool) -> dict:
-    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
-    if row is None or not row["module_settings"]:
+    row = await _get_workspace_settings(pool)
+    if not row or not row.get("module_settings"):
         return {}
     value = row["module_settings"]
     return json.loads(value) if isinstance(value, str) else dict(value)

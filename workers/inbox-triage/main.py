@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from contextlib import asynccontextmanager
 
 import asyncpg
@@ -12,7 +13,20 @@ from pydantic import BaseModel, Field
 
 import ollama_client as llm
 
+try:
+    from services.shared import llm_client
+except ImportError:
+    class _FallbackLLMClient:
+        @staticmethod
+        async def generate(model: str, prompt: str, timeout: float = 120.0) -> str:
+            return await llm.generate(prompt, model=model, timeout=timeout)
+
+    llm_client = _FallbackLLMClient()
+
 _pool: asyncpg.Pool | None = None
+_workspace_settings_cache: dict = {}
+_workspace_settings_cache_ts: float = 0.0
+WORKSPACE_SETTINGS_CACHE_TTL = 60.0
 
 
 @asynccontextmanager
@@ -33,9 +47,19 @@ async def get_pool() -> asyncpg.Pool:
     return _pool
 
 
+async def _get_workspace_settings(pool) -> dict:
+    global _workspace_settings_cache, _workspace_settings_cache_ts
+    if time.monotonic() - _workspace_settings_cache_ts < WORKSPACE_SETTINGS_CACHE_TTL:
+        return _workspace_settings_cache
+    row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    _workspace_settings_cache = dict(row) if row else {}
+    _workspace_settings_cache_ts = time.monotonic()
+    return _workspace_settings_cache
+
+
 async def load_module_settings(pool: asyncpg.Pool) -> dict:
-    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
-    if row is None or not row["module_settings"]:
+    row = await _get_workspace_settings(pool)
+    if not row or not row.get("module_settings"):
         return {}
     value = row["module_settings"]
     return json.loads(value) if isinstance(value, str) else dict(value)
@@ -89,9 +113,13 @@ async def classify_message_llm(
 ) -> dict | None:
     """Try LLM classification. Returns None on failure."""
     prompt = _CLASSIFY_PROMPT.format(subject=subject, body=body_text[:1500])
-    result = await llm.generate_json(prompt, model=llm.CLASSIFIER_MODEL, timeout=30.0)
-    if isinstance(result, dict) and "type" in result:
-        return result
+    result = await llm_client.generate(llm.CLASSIFIER_MODEL, prompt, 30.0)
+    try:
+        parsed = json.loads(result)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, dict) and "type" in parsed:
+        return parsed
     return None
 
 
@@ -166,7 +194,7 @@ async def draft_response_llm(
         message_type=message_type,
         summary=summary or f"a {message_type} email",
     )
-    result = await llm.generate(prompt, model=llm.CLASSIFIER_MODEL, timeout=30.0)
+    result = await llm_client.generate(llm.CLASSIFIER_MODEL, prompt, 30.0)
     return result.strip() if result.strip() else None
 
 
@@ -179,8 +207,8 @@ def draft_response_deterministic(message_type: str, subject: str) -> str:
 
 async def load_workspace_context(pool: asyncpg.Pool) -> str:
     """Load studio name."""
-    settings = await pool.fetchrow("SELECT studio_name FROM workspace_settings WHERE singleton = TRUE")
-    return settings["studio_name"] if settings and settings["studio_name"] else "the studio"
+    settings = await _get_workspace_settings(pool)
+    return settings["studio_name"] if settings and settings.get("studio_name") else "the studio"
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,7 +16,20 @@ from pydantic import BaseModel, Field
 import ollama_client as llm
 from reascript_lib import build_reascript
 
+try:
+    from services.shared import llm_client
+except ImportError:
+    class _FallbackLLMClient:
+        @staticmethod
+        async def generate(model: str, prompt: str, timeout: float = 120.0) -> str:
+            return await llm.generate(prompt, model=model, timeout=timeout)
+
+    llm_client = _FallbackLLMClient()
+
 _pool: asyncpg.Pool | None = None
+_workspace_settings_cache: dict = {}
+_workspace_settings_cache_ts: float = 0.0
+WORKSPACE_SETTINGS_CACHE_TTL = 60.0
 
 
 @asynccontextmanager
@@ -36,9 +50,19 @@ async def get_pool() -> asyncpg.Pool:
     return _pool
 
 
+async def _get_workspace_settings(pool) -> dict:
+    global _workspace_settings_cache, _workspace_settings_cache_ts
+    if time.monotonic() - _workspace_settings_cache_ts < WORKSPACE_SETTINGS_CACHE_TTL:
+        return _workspace_settings_cache
+    row = await pool.fetchrow("SELECT * FROM workspace_settings WHERE singleton = TRUE")
+    _workspace_settings_cache = dict(row) if row else {}
+    _workspace_settings_cache_ts = time.monotonic()
+    return _workspace_settings_cache
+
+
 async def load_module_settings(pool: asyncpg.Pool) -> dict:
-    row = await pool.fetchrow("SELECT module_settings FROM workspace_settings WHERE singleton = TRUE")
-    if row is None or not row["module_settings"]:
+    row = await _get_workspace_settings(pool)
+    if not row or not row.get("module_settings"):
         return {}
     value = row["module_settings"]
     return json.loads(value) if isinstance(value, str) else dict(value)
@@ -93,9 +117,13 @@ async def parse_changes_llm(
     """Attempt LLM-based parsing. Returns None if Ollama unavailable or parse fails."""
     track_list = "\n".join(f"  - {t}" for t in (session_tracks or [])) or "  (no track names available)"
     prompt = _PARSE_PROMPT.format(track_list=track_list, raw_notes=raw_notes)
-    result = await llm.generate_json(prompt, model=llm.PLANNER_MODEL, timeout=60.0)
-    if isinstance(result, list) and result:
-        return result
+    result = await llm_client.generate(llm.PLANNER_MODEL, prompt, 60.0)
+    try:
+        parsed = json.loads(result)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, list) and parsed:
+        return parsed
     return None
 
 

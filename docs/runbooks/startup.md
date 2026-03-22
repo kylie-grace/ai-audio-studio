@@ -4,6 +4,7 @@
 
 - Mac mini or primary studio Mac powered on
 - Docker Desktop running
+- Ollama installed natively on the Mac that will host LLM inference
 - `/Volumes/StudioShare/` mounted if you are using shared project paths
 - `infra/.env` created from `infra/env.example`
 - `python3 -m pip install -r requirements-test.txt` if you want the full API test suite to exercise the optional FastAPI/asyncpg surfaces instead of import-skipping them
@@ -13,8 +14,14 @@
 ```bash
 cd ~/studio-ai-platform
 
-# First time only: pull Ollama models (~10-30 min)
-bash services/ollama/pull_models.sh
+# Start native Ollama and pull the required models
+export OLLAMA_MAX_LOADED_MODELS=1
+export OLLAMA_KEEP_ALIVE=30m
+bash scripts/start-ollama.sh
+
+# Optional: install native Ollama as a login item
+cp scripts/com.ai-audio-studio.ollama.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.ai-audio-studio.ollama.plist
 
 # For full-LAN access, set BIND_HOST=0.0.0.0 in infra/.env before starting
 

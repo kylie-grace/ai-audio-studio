@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from contextlib import asynccontextmanager
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -27,6 +28,11 @@ from .rules import (
     starter_pack_by_slug,
     starter_packs,
 )
+
+try:
+    from services.shared import llm_client
+except ImportError:
+    llm_client = None
 
 WORKER_URLS = {
     "lead-intake": "http://lead-intake:8130/webhook/lead-intake",
@@ -51,12 +57,15 @@ MODULE_KEY_ALIASES = {
 
 CRM_API_URL = os.environ.get("CRM_API_URL", "http://crm-api:8090")
 PROJECT_STATE_URL = os.environ.get("PROJECT_STATE_URL", "http://project-state:8080")
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434")
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
 PLANNER_MODEL = os.environ.get("PLANNER_MODEL", "qwen2.5:14b-instruct")
 CLASSIFIER_MODEL = os.environ.get("CLASSIFIER_MODEL", "qwen2.5:3b")
-CONCIERGE_LLM_TIMEOUT_SECONDS = float(os.environ.get("CONCIERGE_LLM_TIMEOUT_SECONDS", "8"))
+CONCIERGE_LLM_TIMEOUT_SECONDS = float(os.environ.get("CONCIERGE_LLM_TIMEOUT_SECONDS", "120"))
 
 _pool: asyncpg.Pool | None = None
+_workspace_settings_cache: dict = {}
+_workspace_settings_cache_ts: float = 0.0
+WORKSPACE_SETTINGS_CACHE_TTL = 60.0
 
 
 @asynccontextmanager
@@ -191,8 +200,13 @@ def fetch_optional_json(url: str) -> dict | list | None:
 
 
 def load_workspace_settings() -> dict:
+    global _workspace_settings_cache, _workspace_settings_cache_ts
+    if time.monotonic() - _workspace_settings_cache_ts < WORKSPACE_SETTINGS_CACHE_TTL:
+        return _workspace_settings_cache
     payload = fetch_json(f"{CRM_API_URL}/workspace-settings")
-    return payload if isinstance(payload, dict) else {}
+    _workspace_settings_cache = payload if isinstance(payload, dict) else {}
+    _workspace_settings_cache_ts = time.monotonic()
+    return _workspace_settings_cache
 
 
 def module_settings_for(module_name: str) -> dict:
@@ -623,7 +637,10 @@ Operator message:
 
     actions = suggest_concierge_actions(message, context)
     try:
-        raw = _ollama_generate(prompt)
+        if llm_client is not None:
+            raw = await llm_client.generate(PLANNER_MODEL, prompt, CONCIERGE_LLM_TIMEOUT_SECONDS)
+        else:
+            raw = _ollama_generate(prompt)
         parsed = _extract_json_object(raw) or {}
         reply = str(parsed.get("reply") or "").strip()
         if not reply:
