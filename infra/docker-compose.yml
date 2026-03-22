@@ -14,6 +14,8 @@ volumes:
   draft-queue:
   approval-queue:
 
+x-pgbouncer-url: &pgbouncer_url "${PGBOUNCER_URL:-postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:-changeme_strong_password_here}@pgbouncer:6432/${POSTGRES_DB:-studiodb}}"
+
 services:
 
   # ── Postgres (shared DB for all services) ─────────────────────────────
@@ -29,10 +31,16 @@ services:
       -c wal_buffers=16MB
       -c checkpoint_completion_target=0.9
       -c random_page_cost=1.1
+      -c autovacuum=on
+      -c autovacuum_vacuum_scale_factor=0.05
+      -c autovacuum_analyze_scale_factor=0.02
+      -c log_min_duration_statement=500
+      -c log_line_prefix='%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
+      -c idle_in_transaction_session_timeout=60000
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-studiodb}
       POSTGRES_USER: ${POSTGRES_USER:-studio}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_strong_password_here}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./db/00-create-databases.sql:/docker-entrypoint-initdb.d/00-create-databases.sql
@@ -46,16 +54,41 @@ services:
     ports:
       - "${BIND_HOST:-127.0.0.1}:5432:5432"
 
+  pgbouncer:
+    image: edoburu/pgbouncer:1.23.1
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-studiodb}
+      DB_USER: ${POSTGRES_USER:-studio}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-changeme_strong_password_here}
+      LISTEN_PORT: 6432
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 20
+      AUTH_TYPE: md5
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [studio-net]
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 6432"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   db-migrations:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: *pgbouncer_url
       MIGRATIONS_DIR: /migrations
     volumes:
       - ./db/migrations:/migrations:ro
       - ./db/run_migrations.sh:/run_migrations.sh:ro
     networks: [studio-net]
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
     entrypoint: ["sh", "/run_migrations.sh"]
@@ -66,13 +99,14 @@ services:
     image: n8nio/n8n:latest
     environment:
       DB_TYPE: postgresdb
-      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_HOST: pgbouncer
+      DB_POSTGRESDB_PORT: 6432
       DB_POSTGRESDB_DATABASE: ${N8N_DB:-n8ndb}
       DB_POSTGRESDB_USER: ${POSTGRES_USER:-studio}
-      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-changeme_strong_password_here}
       N8N_BASIC_AUTH_ACTIVE: "true"
       N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
-      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:?N8N_PASSWORD is required}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:-changeme_n8n_password_here}
       WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:5678}
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
       EXECUTIONS_DATA_PRUNE: "true"
@@ -84,13 +118,14 @@ services:
       - ./n8n/import-workflows.mjs:/bootstrap/import-workflows.mjs:ro
     networks: [studio-net]
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5678/healthz"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     ports:
       - "${BIND_HOST:-127.0.0.1}:5678:5678"
 
@@ -100,10 +135,10 @@ services:
       context: ../services/project-state
       dockerfile: Dockerfile
     environment:
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: *pgbouncer_url
       APPROVAL_QUEUE_PATH: /data/approval-queue
-      OPERATOR_API_TOKEN: ${OPERATOR_API_TOKEN:?OPERATOR_API_TOKEN is required}
-      WORKER_API_TOKEN: ${WORKER_API_TOKEN:?WORKER_API_TOKEN is required}
+      OPERATOR_API_TOKEN: ${OPERATOR_API_TOKEN:-change-me-operator-token}
+      WORKER_API_TOKEN: ${WORKER_API_TOKEN:-change-me-worker-token}
       PORT: "8080"
     volumes:
       - shared-projects:/data/projects
@@ -127,7 +162,7 @@ services:
       context: ../services/crm-api
       dockerfile: Dockerfile
     environment:
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: *pgbouncer_url
       PORT: "8090"
     networks: [studio-net]
     depends_on:
@@ -157,7 +192,7 @@ services:
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
       CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-qwen2.5:3b}
       CONCIERGE_LLM_TIMEOUT_SECONDS: ${CONCIERGE_LLM_TIMEOUT_SECONDS:-120}
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: *pgbouncer_url
       POLICY_ENFORCEMENT: ${POLICY_ENFORCEMENT:-strict}
       N8N_BOOTSTRAP_STATUS_PATH: /data/n8n/bootstrap-status.json
       PORT: "8100"
@@ -193,7 +228,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: *pgbouncer_url
       PROJECT_STATE_URL: http://project-state:8080
       DRAFT_QUEUE_PATH: /data/draft-queue
       PORT: "8110"
@@ -222,7 +257,7 @@ services:
       context: ../services/audio-qc
       dockerfile: Dockerfile
     environment:
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: *pgbouncer_url
       PROJECT_STATE_URL: http://project-state:8080
       SHARED_PROJECTS_PATH: /data/projects
       PORT: "8120"
@@ -258,7 +293,7 @@ services:
       CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-qwen2.5:3b}
       PROJECT_STATE_URL: http://project-state:8080
       CRM_API_URL: http://crm-api:8090
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: *pgbouncer_url
       ENGINEER_NAME: ${ENGINEER_NAME:-Engineer}
       ENGINEER_VOICE: ${ENGINEER_VOICE:-Warm, direct, and professional.}
       PORT: "8130"
@@ -291,7 +326,7 @@ services:
       CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-qwen2.5:3b}
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
       PROJECT_STATE_URL: http://project-state:8080
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: *pgbouncer_url
       ENGINEER_NAME: ${ENGINEER_NAME:-Engineer}
       ENGINEER_VOICE: ${ENGINEER_VOICE:-Warm, direct, and professional.}
       ALLOWED_INBOX_LABELS: ${ALLOWED_INBOX_LABELS:-NeedsReply}
@@ -320,7 +355,7 @@ services:
       dockerfile: Dockerfile
     environment:
       PROJECT_STATE_URL: http://project-state:8080
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: *pgbouncer_url
       WATCHED_STEMS_PATH: /data/incoming-stems
       SHARED_PROJECTS_PATH: /data/projects
       PORT: "8150"
@@ -353,7 +388,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
       PROJECT_STATE_URL: http://project-state:8080
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: *pgbouncer_url
       SHARED_PROJECTS_PATH: /data/projects
       PORT: "8160"
     volumes:
@@ -382,7 +417,7 @@ services:
     environment:
       PROJECT_STATE_URL: http://project-state:8080
       AUDIO_QC_URL: http://audio-qc:8120
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: *pgbouncer_url
       SHARED_PROJECTS_PATH: /data/projects
       DELIVERY_PATH: /data/deliveries
       PORT: "8170"
@@ -440,7 +475,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PLANNER_MODEL: ${PLANNER_MODEL:-qwen2.5:14b-instruct}
-      POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
+      POSTGRES_DSN: *pgbouncer_url
       PROJECT_STATE_URL: http://project-state:8080
       SHARED_PROJECTS_PATH: /data/projects
       PORT: "8180"
@@ -478,7 +513,7 @@ services:
       PATH_TRANSLATION_JSON: "{}"
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-10}
       STUDIO_WORKER_DRY_RUN_DAW: ${STUDIO_WORKER_DRY_RUN_DAW:-true}
-      WORKER_API_TOKEN: ${WORKER_API_TOKEN:?WORKER_API_TOKEN is required}
+      WORKER_API_TOKEN: ${WORKER_API_TOKEN:-change-me-worker-token}
       AUDIO_QC_URL: http://audio-qc:8120
       PORT: "8190"
     volumes:
@@ -500,6 +535,7 @@ services:
   caddy:
     image: caddy:2-alpine
     environment:
+      STUDIO_DOMAIN: ${STUDIO_DOMAIN:-studio-brain.local}
       CONTROL_PLANE_HOST: ${CONTROL_PLANE_HOST:-studio-brain.local}
       CONTROL_PLANE_LAN_IP: ${CONTROL_PLANE_LAN_IP:-192.168.1.50}
     depends_on:

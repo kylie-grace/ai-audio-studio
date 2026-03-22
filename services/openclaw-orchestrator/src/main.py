@@ -26,7 +26,6 @@ from .rules import (
     matches_conditions,
     serialize_rule,
     starter_pack_application,
-    starter_pack_by_slug,
     starter_packs,
 )
 
@@ -420,6 +419,10 @@ async def status():
     pool = await get_pool()
     enabled_rules = await pool.fetchval("SELECT COUNT(*) FROM orchestration_rules WHERE enabled = TRUE")
     total_rules = await pool.fetchval("SELECT COUNT(*) FROM orchestration_rules")
+    llm_provider = os.environ.get("LLM_PROVIDER", "ollama")
+    api_key_missing = (llm_provider == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY")) or (
+        llm_provider == "openai" and not os.environ.get("OPENAI_API_KEY")
+    )
     return {
         "status": "ok",
         "policy": os.environ.get("POLICY_ENFORCEMENT", "strict"),
@@ -427,6 +430,8 @@ async def status():
         "total_rules": total_rules,
         "starter_pack_count": len(starter_packs(None)),
         "playbook_count": len(default_playbooks()),
+        "llm_provider": llm_provider,
+        "api_key_missing": api_key_missing,
     }
 
 

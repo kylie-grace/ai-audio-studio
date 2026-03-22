@@ -6,6 +6,7 @@ import { EmptyState } from "./EmptyState";
 type ApprovalQueueProps = {
   approvals: any[];
   visibleApprovals: any[];
+  loading?: boolean;
   approvedJobIds: string[];
   operatorName: string;
   setOperatorName: (value: string) => void;
@@ -33,6 +34,7 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
   const {
     approvals,
     visibleApprovals,
+    loading,
     approvedJobIds,
     operatorName,
     setOperatorName,
@@ -65,7 +67,13 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
         {actionMessage ? <AlertBanner tone="ok" title="Approval updated" detail={actionMessage} /> : null}
         {actionError ? <AlertBanner tone="bad" title="Approval action failed" detail={actionError} /> : null}
         <div className="table-stack top-gap">
-          {approvals.length ? (
+          {loading ? (
+            <>
+              <div className="skeleton skeleton--row" />
+              <div className="skeleton skeleton--row" />
+              <div className="skeleton skeleton--row" />
+            </>
+          ) : approvals.length ? (
             visibleApprovals.map((job) => {
               const expanded = expandedApprovalId === job.id;
               const approved = approvedJobIds.includes(job.id);

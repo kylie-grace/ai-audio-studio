@@ -2,12 +2,49 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
+from dataclasses import dataclass
 
-from adapter_contracts import ArtifactRef, ExecutionAdapter, ExecutionResult, RenderedArtifact
+from adapter_contracts import ArtifactRef, ExecutionAdapter, ExecutionResult, HealthCheckResult, RenderedArtifact
+
+
+@dataclass(slots=True)
+class SubprocessResult:
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+async def run_subprocess(
+    command: list[str],
+    *,
+    timeout_seconds: float = 30.0,
+    input_text: str | None = None,
+) -> SubprocessResult:
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdin=asyncio.subprocess.PIPE if input_text is not None else None,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(input_text.encode("utf-8") if input_text is not None else None),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError as exc:
+        process.kill()
+        await process.wait()
+        raise RuntimeError(f"Command timed out after {timeout_seconds:.1f}s: {' '.join(command)}") from exc
+    return SubprocessResult(
+        returncode=process.returncode or 0,
+        stdout=stdout.decode("utf-8", errors="ignore"),
+        stderr=stderr.decode("utf-8", errors="ignore"),
+    )
 
 
 def prepare_execution_workspace(session_path: Path, script_path: Path, adapter_slug: str, payload: dict) -> dict:
@@ -47,6 +84,9 @@ __all__ = [
     "ArtifactRef",
     "ExecutionAdapter",
     "ExecutionResult",
+    "HealthCheckResult",
     "RenderedArtifact",
+    "SubprocessResult",
     "prepare_execution_workspace",
+    "run_subprocess",
 ]

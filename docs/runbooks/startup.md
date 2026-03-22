@@ -86,9 +86,10 @@ LAN by IP:
 - openclaw: `http://<control-plane-ip>:8100`
 
 Hostname/TLS:
-- Dashboard: `https://$CONTROL_PLANE_HOST`
-- n8n: `https://n8n.$CONTROL_PLANE_HOST`
-- OpenClaw: `https://openclaw.$CONTROL_PLANE_HOST`
+- Dashboard: `https://$STUDIO_DOMAIN`
+- API-backed services: `https://$STUDIO_DOMAIN/api/<service>`
+- n8n: `https://$STUDIO_DOMAIN/n8n` or `https://n8n.$STUDIO_DOMAIN`
+- OpenClaw: `https://$STUDIO_DOMAIN/openclaw` or `https://openclaw.$STUDIO_DOMAIN`
 
 Notes:
 - Starter workflow webhooks appear after `bash scripts/bootstrap_n8n.sh infra/.env`
@@ -115,6 +116,8 @@ See:
 - [legacy-cutover.md](legacy-cutover.md)
 - [n8n-bootstrap.md](n8n-bootstrap.md)
 - [studio-worker.md](studio-worker.md)
+- [../gmail-oauth-setup.md](../gmail-oauth-setup.md)
+- [../reascript-integration.md](../reascript-integration.md)
 
 If you are running `single_machine`, stop here. `docker-compose.worker.yml` is optional and only needed for `control_plane_plus_worker`.
 

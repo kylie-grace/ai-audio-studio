@@ -28,6 +28,12 @@ class ExecutionResult:
     artifacts: list[ArtifactRef] = field(default_factory=list)
 
 
+@dataclass(slots=True)
+class HealthCheckResult:
+    connected: bool
+    detail: str | None = None
+
+
 class ExecutionAdapter(Protocol):
     def capability(self) -> str: ...
 
@@ -35,6 +41,8 @@ class ExecutionAdapter(Protocol):
 
     def render(self, payload: dict) -> RenderedArtifact | None: ...
 
-    def execute(self, payload: dict) -> ExecutionResult: ...
+    async def health_check(self, payload: dict) -> HealthCheckResult: ...
+
+    async def execute(self, payload: dict) -> ExecutionResult: ...
 
     def collect_artifacts(self, payload: dict, result: ExecutionResult) -> list[ArtifactRef]: ...

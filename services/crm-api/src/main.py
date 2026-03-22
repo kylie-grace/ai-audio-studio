@@ -17,7 +17,6 @@ from pydantic import BaseModel, Field
 from .style_profiles import (
     DEFAULT_STYLE_PROFILE_NAME,
     DEFAULT_STYLE_PROFILE_TEXT,
-    decode_jsonb,
     extract_guidance,
     serialize_style_profile,
 )

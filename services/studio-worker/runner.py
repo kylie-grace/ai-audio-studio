@@ -13,12 +13,12 @@ import httpx
 from config import Settings
 from paths import decode_jsonb
 from tasks.delivery_packager import execute_package_delivery
-from tasks.daw_exec import execute_reascript, execute_soundflow
+from tasks.daw_exec import execute_reascript, execute_soundflow, execute_wavelab
 from tasks.revision_plan import generate_revision_artifacts
 from tasks.session_prep import execute_prepare_session
 from workstation import detect_workstation_profile
 
-TASK_TYPES = ["prepare-session", "parse-revisions", "package-delivery", "execute-soundflow", "execute-reascript"]
+TASK_TYPES = ["prepare-session", "parse-revisions", "package-delivery", "execute-soundflow", "execute-reascript", "execute-wavelab"]
 
 
 def headers(settings: Settings) -> dict[str, str]:
@@ -132,6 +132,8 @@ class StudioWorkerRunner:
             return execute_soundflow(payload, self.settings)
         if task_type == "execute-reascript":
             return execute_reascript(payload, self.settings)
+        if task_type == "execute-wavelab":
+            return execute_wavelab(payload, self.settings)
         raise ValueError(f"Unsupported task type: {task_type}")
 
     async def fetch_task(self, task_id: str) -> dict | None:

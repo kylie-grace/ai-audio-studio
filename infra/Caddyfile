@@ -2,9 +2,97 @@
     default_sni {$CONTROL_PLANE_LAN_IP:192.168.1.50}
 }
 
-https://{$CONTROL_PLANE_HOST:studio-brain.local} {
+https://{$STUDIO_DOMAIN:studio-brain.local}, https://{$CONTROL_PLANE_LAN_IP:192.168.1.50}, https://localhost, https://127.0.0.1 {
     encode zstd gzip
-    reverse_proxy studio-brain-ui:3000
+
+    handle_path /app* {
+        reverse_proxy studio-brain-ui:3000
+    }
+
+    handle_path /api/concierge* {
+        reverse_proxy openclaw:8100
+    }
+
+    handle_path /api/approval* {
+        reverse_proxy openclaw:8100
+    }
+
+    handle_path /api/dispatch* {
+        reverse_proxy openclaw:8100
+    }
+
+    handle_path /api/worker* {
+        reverse_proxy studio-worker:8190
+    }
+
+    handle_path /api/project-state* {
+        reverse_proxy project-state:8080
+    }
+
+    handle_path /api/crm* {
+        reverse_proxy crm-api:8090
+    }
+
+    handle_path /api/openclaw* {
+        reverse_proxy openclaw:8100
+    }
+
+    handle_path /api/n8n* {
+        reverse_proxy n8n:5678
+    }
+
+    handle_path /api/ollama* {
+        reverse_proxy host.docker.internal:11434
+    }
+
+    handle_path /api/content-pipeline* {
+        reverse_proxy content-pipeline:8110
+    }
+
+    handle_path /api/audio-qc* {
+        reverse_proxy audio-qc:8120
+    }
+
+    handle_path /api/lead-intake* {
+        reverse_proxy lead-intake:8130
+    }
+
+    handle_path /api/inbox-triage* {
+        reverse_proxy inbox-triage:8140
+    }
+
+    handle_path /api/session-prep* {
+        reverse_proxy session-prep:8150
+    }
+
+    handle_path /api/revision-parser* {
+        reverse_proxy revision-parser:8160
+    }
+
+    handle_path /api/delivery-packager* {
+        reverse_proxy delivery-packager:8170
+    }
+
+    handle_path /api/mix-planner* {
+        reverse_proxy mix-planner:8180
+    }
+
+    handle_path /api/studio-worker* {
+        reverse_proxy studio-worker:8190
+    }
+
+    handle_path /n8n* {
+        reverse_proxy n8n:5678
+    }
+
+    handle_path /openclaw* {
+        reverse_proxy openclaw:8100
+    }
+
+    handle {
+        reverse_proxy studio-brain-ui:3000
+    }
+
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options "nosniff"
@@ -13,29 +101,7 @@ https://{$CONTROL_PLANE_HOST:studio-brain.local} {
     tls internal
 }
 
-https://{$CONTROL_PLANE_LAN_IP:192.168.1.50} {
-    encode zstd gzip
-    reverse_proxy studio-brain-ui:3000
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        X-Content-Type-Options "nosniff"
-        Referrer-Policy "strict-origin-when-cross-origin"
-    }
-    tls internal
-}
-
-https://localhost, https://127.0.0.1 {
-    encode zstd gzip
-    reverse_proxy studio-brain-ui:3000
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        X-Content-Type-Options "nosniff"
-        Referrer-Policy "strict-origin-when-cross-origin"
-    }
-    tls internal
-}
-
-https://n8n.{$CONTROL_PLANE_HOST:studio-brain.local} {
+n8n.{$STUDIO_DOMAIN:studio-brain.local} {
     encode zstd gzip
     reverse_proxy n8n:5678
     header {
@@ -46,7 +112,7 @@ https://n8n.{$CONTROL_PLANE_HOST:studio-brain.local} {
     tls internal
 }
 
-https://openclaw.{$CONTROL_PLANE_HOST:studio-brain.local} {
+openclaw.{$STUDIO_DOMAIN:studio-brain.local} {
     encode zstd gzip
     reverse_proxy openclaw:8100
     header {
@@ -54,17 +120,5 @@ https://openclaw.{$CONTROL_PLANE_HOST:studio-brain.local} {
         X-Content-Type-Options "nosniff"
         Referrer-Policy "strict-origin-when-cross-origin"
     }
-    tls internal
-}
-
-n8n.{$CONTROL_PLANE_HOST:studio-brain.local} {
-    encode zstd gzip
-    reverse_proxy n8n:5678
-    tls internal
-}
-
-openclaw.{$CONTROL_PLANE_HOST:studio-brain.local} {
-    encode zstd gzip
-    reverse_proxy openclaw:8100
     tls internal
 }

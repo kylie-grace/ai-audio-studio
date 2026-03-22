@@ -1,13 +1,12 @@
-"""ReaScript adapter scaffold."""
+"""ReaScript adapter."""
 
 from __future__ import annotations
 
-import subprocess
-import time
+import asyncio
 from pathlib import Path
 
-from adapter_contracts import ArtifactRef, ExecutionResult, RenderedArtifact
-from adapters.base import prepare_execution_workspace
+from adapter_contracts import ArtifactRef, ExecutionResult, HealthCheckResult, RenderedArtifact
+from adapters.base import prepare_execution_workspace, run_subprocess
 
 
 class ReaScriptAdapter:
@@ -27,11 +26,29 @@ class ReaScriptAdapter:
         if reaper_binary_path and not Path(reaper_binary_path).exists():
             raise FileNotFoundError(f"REAPER binary path not found: {reaper_binary_path}")
 
-    def render(self, payload: dict) -> RenderedArtifact | None:
+    def render(self, payload: dict) -> RenderedArtifact:
         script_path = Path(payload["script_path"])
         return RenderedArtifact(path=str(script_path), kind="reascript", payload=payload)
 
-    def execute(self, payload: dict) -> ExecutionResult:
+    async def health_check(self, payload: dict) -> HealthCheckResult:
+        reaper_binary_path = str(payload.get("reaper_binary_path") or "").strip()
+        if not reaper_binary_path or not Path(reaper_binary_path).exists():
+            return HealthCheckResult(connected=False, detail="REAPER binary path is not configured.")
+        if str(payload.get("worker_platform") or "").lower() == "macos":
+            result = await run_subprocess(
+                [
+                    "osascript",
+                    "-e",
+                    'tell application "System Events" to return exists process "REAPER"',
+                ],
+                timeout_seconds=float(payload.get("timeout_seconds", 10.0)),
+            )
+            connected = result.returncode == 0 and result.stdout.strip().lower() == "true"
+            detail = "REAPER process detected." if connected else "REAPER process not detected."
+            return HealthCheckResult(connected=connected, detail=detail)
+        return HealthCheckResult(connected=True, detail="REAPER binary is configured.")
+
+    async def execute(self, payload: dict) -> ExecutionResult:
         self.validate_environment(payload)
         rendered = self.render(payload)
         workspace = prepare_execution_workspace(Path(payload["session_path"]), Path(rendered.path), "reascript", payload)
@@ -43,7 +60,7 @@ class ReaScriptAdapter:
         ]
         if payload.get("dry_run"):
             log_path = workspace["run_dir"] / "reascript-execution.log"
-            log_path.write_text("Dry-run ReaScript execution completed.\n")
+            log_path.write_text("Dry-run ReaScript execution completed.\n", encoding="utf-8")
             artifacts.append(ArtifactRef(path=str(log_path), kind="execution-log", label="reascript-dry-run-log"))
             return ExecutionResult(
                 status="complete",
@@ -61,36 +78,49 @@ class ReaScriptAdapter:
         ]
         if cancel_marker and cancel_marker.exists():
             raise RuntimeError("Execution cancelled by operator before REAPER dispatch")
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        while process.poll() is None:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        timeout_seconds = float(payload.get("timeout_seconds", 30.0))
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_seconds
+        while process.returncode is None:
             if cancel_marker and cancel_marker.exists():
                 process.terminate()
                 try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
+                    await asyncio.wait_for(process.wait(), timeout=5)
+                except TimeoutError:
                     process.kill()
+                    await process.wait()
                 raise RuntimeError("Execution cancelled by operator during REAPER dispatch")
-            time.sleep(0.25)
-        stdout, stderr = process.communicate()
+            if loop.time() >= deadline:
+                process.kill()
+                await process.wait()
+                raise RuntimeError(f"REAPER execution timed out after {timeout_seconds:.1f}s")
+            await asyncio.sleep(0.25)
+        stdout, stderr = await process.communicate()
         completion_marker = payload.get("completion_marker_path")
         marker_timeout_seconds = float(payload.get("marker_timeout_seconds", 10))
         if completion_marker:
             marker_path = Path(completion_marker)
-            deadline = time.time() + marker_timeout_seconds
-            while time.time() < deadline:
+            marker_deadline = loop.time() + marker_timeout_seconds
+            while loop.time() < marker_deadline:
                 if cancel_marker and cancel_marker.exists():
                     raise RuntimeError("Execution cancelled by operator while waiting for REAPER completion marker")
                 if marker_path.exists():
                     break
-                time.sleep(0.25)
+                await asyncio.sleep(0.25)
             else:
                 raise RuntimeError(f"REAPER script did not produce completion marker: {marker_path}")
         log_path = workspace["run_dir"] / "reascript-execution.log"
         log_path.write_text(
             f"command: {' '.join(command)}\n"
             f"returncode: {process.returncode}\n"
-            f"stdout:\n{stdout}\n"
-            f"stderr:\n{stderr}\n"
+            f"stdout:\n{stdout.decode('utf-8', errors='ignore')}\n"
+            f"stderr:\n{stderr.decode('utf-8', errors='ignore')}\n",
+            encoding="utf-8",
         )
         artifacts.append(ArtifactRef(path=str(log_path), kind="execution-log", label="reascript-execution-log"))
         if process.returncode != 0:

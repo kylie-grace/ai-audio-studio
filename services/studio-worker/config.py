@@ -96,6 +96,8 @@ def _infer_supported_daws(capabilities: list[str], worker_config: dict) -> list[
         inferred.append("protools")
     if "execute-reascript" in capabilities:
         inferred.append("reaper")
+    if "execute-wavelab" in capabilities:
+        inferred.append("wavelab")
     return inferred or ["reaper"]
 
 
@@ -106,7 +108,7 @@ def _adapter_capabilities(capabilities: list[str], worker_config: dict) -> list[
     explicit = os.environ.get("WORKSTATION_ADAPTER_CAPABILITIES", "").strip()
     if explicit:
         return [item.strip() for item in explicit.split(",") if item.strip()]
-    return [capability for capability in capabilities if capability in {"execute-soundflow", "execute-reascript"}]
+    return [capability for capability in capabilities if capability in {"execute-soundflow", "execute-reascript", "execute-wavelab"}]
 
 
 def _bool_or_default(value, default: bool) -> bool:
@@ -219,6 +221,12 @@ def validate_startup(settings: Settings) -> dict:
                 errors.append("execute-soundflow requires a valid PROTOOLS_APP_PATH when dry-run is disabled.")
             if not soundflow_cli_path or not Path(soundflow_cli_path).exists():
                 errors.append("execute-soundflow requires a valid SOUNDFLOW_CLI_PATH when dry-run is disabled.")
+
+    if "execute-wavelab" in capabilities:
+        if dry_run_daw:
+            warnings.append("WaveLab execution is configured in dry-run mode.")
+        elif not wavelab_app_path or not Path(wavelab_app_path).exists():
+            errors.append("execute-wavelab requires a valid WAVELAB_APP_PATH when dry-run is disabled.")
 
     if wavelab_app_path and not Path(wavelab_app_path).exists():
         warnings.append(f"WAVELAB_APP_PATH is set but not found: {wavelab_app_path}")

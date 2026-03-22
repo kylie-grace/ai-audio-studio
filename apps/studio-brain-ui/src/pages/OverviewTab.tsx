@@ -1,4 +1,10 @@
+import { useEffect, useState } from "react";
+
 import { AlertBanner } from "../components/AlertBanner";
+import { CollapsibleSection } from "../components/CollapsibleSection";
+import { DawStatusCard } from "../components/DawStatusCard";
+import { EmptyState } from "../components/EmptyState";
+import { LoadingSkeleton } from "../components/LoadingSkeleton";
 
 type OverviewTabProps = {
   [key: string]: any;
@@ -69,6 +75,32 @@ export function OverviewTab(props: OverviewTabProps) {
     alertActionError,
     supportSurface,
   } = props;
+  const [dawStatus, setDawStatus] = useState<Record<string, { connected: boolean; last_seen: string | null }> | null>(null);
+  const [dawStatusLoaded, setDawStatusLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let timer: number | undefined;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/studio-worker/daw-status", { headers: { Accept: "application/json" } });
+        if (!response.ok || !active) return;
+        const payload = await response.json();
+        if (!active) return;
+        setDawStatus(payload);
+        setDawStatusLoaded(true);
+      } catch {
+        if (!active) return;
+        setDawStatusLoaded(true);
+      }
+    };
+    void load();
+    timer = window.setInterval(load, 15000);
+    return () => {
+      active = false;
+      if (timer) window.clearInterval(timer);
+    };
+  }, []);
 
   return (
     <div className="tab-panel">
@@ -178,6 +210,7 @@ export function OverviewTab(props: OverviewTabProps) {
       </section>
 
       <section className="overview-support-grid">
+        <CollapsibleSection title="Automation Status" defaultOpen={false} badge={workflowPlaybooks.length}>
         <article className="panel panel-span-12">
           <div className="panel-header">
             <div>
@@ -216,9 +249,11 @@ export function OverviewTab(props: OverviewTabProps) {
             ))}
           </div>
         </article>
+        </CollapsibleSection>
       </section>
 
       <section className="command-grid">
+        <CollapsibleSection title="Concierge Status" defaultOpen={false}>
         <article className="panel command-card accent-gold">
           <div className="panel-header">
             <div>
@@ -245,7 +280,9 @@ export function OverviewTab(props: OverviewTabProps) {
             </div>
           </div>
         </article>
+        </CollapsibleSection>
 
+        <CollapsibleSection title="Service Inspector" defaultOpen={false} badge={zoneSummaries.length}>
         <article className="panel command-card accent-blue">
           <div className="panel-header">
             <div>
@@ -264,7 +301,9 @@ export function OverviewTab(props: OverviewTabProps) {
             ))}
           </div>
         </article>
+        </CollapsibleSection>
 
+        <CollapsibleSection title="Recent Activity" defaultOpen={false} badge={readinessSummary.partial_count}>
         <article className="panel command-card accent-green">
           <div className="panel-header">
             <div>
@@ -283,9 +322,11 @@ export function OverviewTab(props: OverviewTabProps) {
             ))}
           </div>
         </article>
+        </CollapsibleSection>
       </section>
 
       <section className="workspace-grid">
+        <CollapsibleSection title="Worker Queue" defaultOpen={false} badge={workerCapabilities.length}>
         <article className="panel panel-span-12">
           <div className="panel-header">
             <div>
@@ -293,6 +334,24 @@ export function OverviewTab(props: OverviewTabProps) {
               <h2 className="t-h2">Workstation Capability</h2>
             </div>
             <span className="count-pill">{workerCapabilities.length} capabilities</span>
+          </div>
+          <div className="module-grid top-gap">
+            {!dawStatusLoaded ? (
+              <>
+                <div className="skeleton skeleton--row" />
+                <div className="skeleton skeleton--row" />
+                <div className="skeleton skeleton--row" />
+              </>
+            ) : (
+              ["reaper", "protools", "wavelab"].map((daw) => (
+                <DawStatusCard
+                  key={daw}
+                  daw={daw as "reaper" | "protools" | "wavelab"}
+                  connected={Boolean(dawStatus?.[daw]?.connected)}
+                  lastSeen={dawStatus?.[daw]?.last_seen ?? null}
+                />
+              ))
+            )}
           </div>
           <div className="foundation-grid">
             <div className="foundation-column">
@@ -323,6 +382,21 @@ export function OverviewTab(props: OverviewTabProps) {
                   <span className="metric-label">Capabilities</span>
                   <strong>DAW execution surfaces</strong>
                 </div>
+              </div>
+              <div className="daw-status-strip">
+                {(workstationProfile?.daws ?? [
+                  { slug: "reaper", automation_ready: false, notes: "No workstation profile yet.", last_seen: null },
+                  { slug: "protools", automation_ready: false, notes: "No workstation profile yet.", last_seen: null },
+                  { slug: "wavelab", automation_ready: false, notes: "Mastering surface not reported yet.", last_seen: null },
+                ]).slice(0, 3).map((daw: any) => (
+                  <DawStatusCard
+                    key={daw.slug}
+                    daw={daw.slug}
+                    connected={Boolean(daw.automation_ready)}
+                    lastSeen={daw.last_seen ?? null}
+                    detail={daw.notes}
+                  />
+                ))}
               </div>
               <div className="module-grid">
                 {dawCapabilityCards.map((item: any) => (
@@ -361,51 +435,55 @@ export function OverviewTab(props: OverviewTabProps) {
             </div>
           </div>
         </article>
+        </CollapsibleSection>
       </section>
 
       <section className="workspace-grid">
         <article className="panel panel-span-12">
-          <div className="panel-header">
-            <div>
-              <p className="section-kicker t-kicker">Readiness</p>
-              <h2 className="t-h2">Workspace Readiness</h2>
-            </div>
-            <div className="header-actions">
-              <span className="count-pill">{readinessSummary.ready_count} ready</span>
-              <span className="status-pill warn">{readinessSummary.partial_count} partial</span>
-              <span className="status-pill bad">{readinessSummary.needs_attention_count} attention</span>
-            </div>
-          </div>
-          <div className="readiness-grid">
-            {data.workspace.readiness_checks.map((check: any) => (
-              <div key={check.slug} className="mini-card readiness-card">
-                <div className="panel-header compact-header">
-                  <div>
-                    <span className="metric-label">{check.name}</span>
-                    <strong>{check.status.replace("-", " ")}</strong>
-                  </div>
-                  <span className={`status-pill ${check.status === "ready" ? "ok" : check.status === "partial" || check.status === "optional" ? "warn" : "bad"}`}>
-                    {check.status}
-                  </span>
-                </div>
-                <p className="panel-note">{check.detail}</p>
+          <CollapsibleSection title="Workspace Readiness" defaultOpen={false} badge={readinessSummary.needs_attention_count}>
+            <div className="panel-header">
+              <div>
+                <p className="section-kicker t-kicker">Readiness</p>
+                <h2 className="t-h2">Workspace Readiness</h2>
               </div>
-            ))}
-          </div>
+              <div className="header-actions">
+                <span className="count-pill">{readinessSummary.ready_count} ready</span>
+                <span className="status-pill warn">{readinessSummary.partial_count} partial</span>
+                <span className="status-pill bad">{readinessSummary.needs_attention_count} attention</span>
+              </div>
+            </div>
+            <div className="readiness-grid">
+              {data.workspace.readiness_checks.map((check: any) => (
+                <div key={check.slug} className="mini-card readiness-card">
+                  <div className="panel-header compact-header">
+                    <div>
+                      <span className="metric-label">{check.name}</span>
+                      <strong>{check.status.replace("-", " ")}</strong>
+                    </div>
+                    <span className={`status-pill ${check.status === "ready" ? "ok" : check.status === "partial" || check.status === "optional" ? "warn" : "bad"}`}>
+                      {check.status}
+                    </span>
+                  </div>
+                  <p className="panel-note">{check.detail}</p>
+                </div>
+              ))}
+            </div>
+          </CollapsibleSection>
         </article>
       </section>
 
       <section className="workspace-grid">
         <article className="panel panel-span-12">
-          <div className="panel-header">
-            <div>
-              <p className="section-kicker t-kicker">Execution Preview</p>
-              <h2 className="t-h2">DAW Live Preview</h2>
+          <CollapsibleSection title="DAW Live Preview" defaultOpen={false} badge={data.executionPlanPreview?.blockers.length ?? 0}>
+            <div className="panel-header">
+              <div>
+                <p className="section-kicker t-kicker">Execution Preview</p>
+                <h2 className="t-h2">DAW Live Preview</h2>
+              </div>
+              <span className={`status-pill ${workstationProfile?.ready ? "ok" : "warn"}`}>
+                {workstationProfile ? (workstationProfile.ready ? "ready to stage" : "needs setup") : "worker offline"}
+              </span>
             </div>
-            <span className={`status-pill ${workstationProfile?.ready ? "ok" : "warn"}`}>
-              {workstationProfile ? (workstationProfile.ready ? "ready to stage" : "needs setup") : "worker offline"}
-            </span>
-          </div>
           <div className="workspace-grid nested-grid">
             <div className="panel-span-4">
               <div className="mini-card">
@@ -472,7 +550,7 @@ export function OverviewTab(props: OverviewTabProps) {
                   </div>
                 ))
               ) : (
-                <p className="empty-state">No workstation profile yet. The control plane can still build plans before a real DAW node is attached.</p>
+                <EmptyState title="No workstation profile yet" detail="The control plane can still build plans before a real DAW node is attached." />
               )}
             </div>
             <div className="panel-span-4 table-stack">
@@ -497,7 +575,7 @@ export function OverviewTab(props: OverviewTabProps) {
                   ))}
                 </>
               ) : (
-                <p className="empty-state">Session introspection will appear here once a DAW session file is reachable.</p>
+                <EmptyState title="Session preview unavailable" detail="Session introspection will appear here once a DAW session file is reachable." />
               )}
             </div>
             <div className="panel-span-4 table-stack">
@@ -524,7 +602,7 @@ export function OverviewTab(props: OverviewTabProps) {
                   ))}
                 </>
               ) : (
-                <p className="empty-state">Mix-plan previews will appear here once the worker preview endpoint is reachable.</p>
+                <EmptyState title="Mix-plan preview unavailable" detail="Mix-plan previews will appear here once the worker preview endpoint is reachable." />
               )}
             </div>
             <div className="panel-span-4 table-stack">
@@ -554,7 +632,7 @@ export function OverviewTab(props: OverviewTabProps) {
                   ) : null}
                 </>
               ) : (
-                <p className="empty-state">Render profiles will appear here once preview generation is available.</p>
+                <EmptyState title="Render preview unavailable" detail="Render profiles will appear here once preview generation is available." />
               )}
             </div>
             <div className="panel-span-4 table-stack">
@@ -594,7 +672,7 @@ export function OverviewTab(props: OverviewTabProps) {
                   ) : null}
                 </>
               ) : (
-                <p className="empty-state">Listening heuristics will appear here once preview generation is available.</p>
+                <EmptyState title="Listening preview unavailable" detail="Listening heuristics will appear here once preview generation is available." />
               )}
             </div>
             <div className="panel-span-4 table-stack">
@@ -638,10 +716,11 @@ export function OverviewTab(props: OverviewTabProps) {
                   ))}
                 </>
               ) : (
-                <p className="empty-state">Execution-loop posture will appear here once all DAW preview surfaces are reachable.</p>
+                <EmptyState title="Execution preview unavailable" detail="Execution-loop posture will appear here once all DAW preview surfaces are reachable." />
               )}
             </div>
           </div>
+          </CollapsibleSection>
         </article>
       </section>
 
@@ -749,6 +828,8 @@ export function OverviewTab(props: OverviewTabProps) {
                       </div>
                     ))}
                   </div>
+                ) : selectedServiceStatusState === "loading" ? (
+                  <LoadingSkeleton rows={3} />
                 ) : (
                   <p className="panel-note">No detailed service payload is available for this module yet.</p>
                 )}

@@ -15,6 +15,8 @@ Use these layers intentionally:
   Example: `http://192.168.1.50:3000`
 - `Hostname + HTTPS` is the preferred day-to-day operator path once local DNS or hosts entries are in place.
   Example: `https://studio-brain.local`
+- `Path-based front-door routes` are the default semantic access pattern once Caddy is live.
+  Example: `https://studio-brain.local/api/project-state`
 - `Direct ports` remain valid for engineering, debugging, and worker callbacks.
   Examples: `:5678`, `:8080`, `:8090`, `:8100`, `:8190`
 - `single_machine` is the default bring-up path; `control_plane_plus_worker` is the split deployment when a second Mac is available.
@@ -30,9 +32,9 @@ Recommended operator progression:
 
 1. Copy `infra/env.example` to `infra/.env`.
 2. Set `BIND_HOST=0.0.0.0`.
-3. Set `CONTROL_PLANE_HOST` to the hostname operators should use, such as `studio-brain.local`.
-4. Set `N8N_WEBHOOK_URL` to the LAN URL webhook sources should hit.
-   Example: `http://192.168.1.50:5678`
+3. Set `STUDIO_DOMAIN` to the hostname operators should use, such as `studio-brain.local`. Keep `CONTROL_PLANE_HOST` aligned if you still rely on older docs or scripts.
+4. Set `N8N_WEBHOOK_URL` to the LAN or HTTPS front-door URL webhook sources should hit.
+   Example: `http://192.168.1.50:5678` or `https://studio-brain.local/n8n`
 5. Keep `OPERATOR_API_TOKEN` and `WORKER_API_TOKEN` set before exposing the stack beyond localhost.
 
 ## Start With Full-LAN IP Access
@@ -83,7 +85,7 @@ docker compose --profile daw --env-file infra/.env \
 
 ## Point The Hostname
 
-`CONTROL_PLANE_HOST` must resolve to the control-plane machine.
+`STUDIO_DOMAIN` must resolve to the control-plane machine.
 
 Choose one:
 - local DNS on the router, Pi-hole, or internal DNS
@@ -108,15 +110,16 @@ This writes `infra/caddy-root.crt`.
 Import that certificate into the login keychain on each operator Mac and mark it trusted.
 
 Until that certificate is trusted:
-- `https://$CONTROL_PLANE_HOST` will load with browser warnings
+- `https://$STUDIO_DOMAIN` will load with browser warnings
 - `http://<control-plane-ip>:3000` remains the clean fallback
 
 ## Access Pattern
 
 Preferred operator URLs:
-- Dashboard: `https://$CONTROL_PLANE_HOST`
-- n8n: `https://n8n.$CONTROL_PLANE_HOST`
-- OpenClaw: `https://openclaw.$CONTROL_PLANE_HOST`
+- Dashboard: `https://$STUDIO_DOMAIN`
+- API-backed services: `https://$STUDIO_DOMAIN/api/<service>`
+- n8n: `https://$STUDIO_DOMAIN/n8n` or `https://n8n.$STUDIO_DOMAIN`
+- OpenClaw: `https://$STUDIO_DOMAIN/openclaw` or `https://openclaw.$STUDIO_DOMAIN`
 
 Fallback URLs:
 - Dashboard: `http://<control-plane-ip>:3000`

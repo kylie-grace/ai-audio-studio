@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { EmptyState } from "../components/EmptyState";
+import { LoadingSkeleton } from "../components/LoadingSkeleton";
 
 type ContextTabProps = {
   data: any;
@@ -284,7 +285,7 @@ export function ContextTab(props: ContextTabProps) {
               <span className="count-pill">{workstationPlugins?.plugin_count ?? workstationProfile?.plugins?.summary?.count ?? 0} plugins</span>
             </div>
             <div className="table-stack">
-              {workstationPluginsState === "loading" ? <p className="empty-state">Loading plugin inventory…</p> : null}
+              {workstationPluginsState === "loading" ? <LoadingSkeleton rows={3} /> : null}
               {workstationPlugins ? (
                 <>
                   <div className="summary-pill-row">
@@ -390,7 +391,7 @@ export function ContextTab(props: ContextTabProps) {
                 </div>
               </div>
               <div className="table-stack top-gap">
-                {projectDetailState === "loading" ? <p className="empty-state">Loading project timeline…</p> : null}
+                {projectDetailState === "loading" ? <LoadingSkeleton rows={4} /> : null}
                 {projectDetail?.artifact_inventory.slice(0, 10).map((entry: any, index: number) => {
                   const artifact = entry.artifact ?? {};
                   const artifactPath = entry.artifact_path ?? artifact.path ?? artifact.manifest_path;
@@ -442,7 +443,7 @@ export function ContextTab(props: ContextTabProps) {
                     <pre className="code-preview">{artifactPreview.content}</pre>
                   </div>
                 ) : null}
-                {artifactPreviewState === "loading" ? <p className="empty-state">Loading artifact preview…</p> : null}
+                {artifactPreviewState === "loading" ? <LoadingSkeleton rows={2} /> : null}
                 {artifactActionMessage ? <p className="feedback ok">{artifactActionMessage}</p> : null}
                 {artifactActionError ? <p className="feedback bad">{artifactActionError}</p> : null}
               </div>

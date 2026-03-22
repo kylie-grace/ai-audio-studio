@@ -10,6 +10,7 @@
 ```
 CONTROL PLANE (core, always running)
   postgres       :5432   Shared database
+  pgbouncer      :6432   PostgreSQL connection pooler
   n8n            :5678   Workflow automation
   project-state  :8080   Job FSM, approval queue, audit log
   crm-api        :8090   Leads, projects, style profiles, workspace settings
@@ -50,6 +51,16 @@ AI RUNTIME (native, not Docker)
 
 ---
 
+### pgbouncer — PostgreSQL Pooling Layer
+
+**Port:** 6432
+**Docker profile:** default
+**Purpose:** Lightweight connection pooler in front of Postgres. All application `POSTGRES_DSN` values now point here so the stack uses pooled connections instead of each service opening its own direct DB sessions.
+**Image:** edoburu/pgbouncer:1.23.1
+**Health check:** TCP reachability on `127.0.0.1:6432`
+
+---
+
 ### n8n — Workflow Automation
 
 **Port:** 5678
@@ -57,7 +68,8 @@ AI RUNTIME (native, not Docker)
 **Purpose:** Webhook ingestion, workflow routing, integration layer. Receives events from external sources and routes them to the appropriate services.
 **Health check:** `GET http://localhost:5678/healthz`
 **Web UI:** `http://localhost:5678`
-**After HTTPS setup:** `https://n8n.studio-brain.local`
+**After HTTPS setup:** `https://{STUDIO_DOMAIN}/n8n`
+**Alias:** `https://n8n.{STUDIO_DOMAIN}`
 
 **Key endpoints:**
 - `GET /healthz` — health check
@@ -114,7 +126,8 @@ AI RUNTIME (native, not Docker)
 **Docker profile:** default
 **Purpose:** Policy enforcement and routing. Receives normalized job envelopes, validates against permission tiers, routes to the correct module. Stateless — does not persist jobs, delegates to project-state.
 **Health check:** `GET http://localhost:8100/health`
-**After HTTPS setup:** `https://openclaw.studio-brain.local`
+**After HTTPS setup:** `https://{STUDIO_DOMAIN}/openclaw`
+**Alias:** `https://openclaw.{STUDIO_DOMAIN}`
 
 **Key endpoints:**
 - `GET /health` — service health
@@ -132,14 +145,21 @@ AI RUNTIME (native, not Docker)
 
 **Ports:** 80, 443
 **Docker profile:** default
-**Purpose:** TLS termination, reverse proxy to dashboard, n8n, and OpenClaw API. Generates self-signed LAN certificate automatically.
+**Purpose:** TLS termination and path-based reverse proxy for the dashboard, service APIs, n8n, and OpenClaw. Generates a self-signed LAN certificate automatically.
 **Configuration:** `infra/Caddyfile`
 **Certificate export:** `bash scripts/export_caddy_root_cert.sh infra/.env`
 
 **Routes:**
-- `https://{CONTROL_PLANE_HOST}` → studio-brain-ui:3000
-- `https://n8n.{CONTROL_PLANE_HOST}` → n8n:5678
-- `https://openclaw.{CONTROL_PLANE_HOST}` → openclaw:8100
+- `https://{STUDIO_DOMAIN}` → studio-brain-ui:3000
+- `https://{STUDIO_DOMAIN}/api/project-state` → project-state:8080
+- `https://{STUDIO_DOMAIN}/api/crm` → crm-api:8090
+- `https://{STUDIO_DOMAIN}/api/openclaw` → openclaw:8100
+- `https://{STUDIO_DOMAIN}/api/n8n` → n8n:5678
+- `https://{STUDIO_DOMAIN}/api/<other-service>` → remaining API-backed services
+- `https://{STUDIO_DOMAIN}/n8n` → n8n:5678
+- `https://{STUDIO_DOMAIN}/openclaw` → openclaw:8100
+- `https://n8n.{STUDIO_DOMAIN}` → n8n:5678
+- `https://openclaw.{STUDIO_DOMAIN}` → openclaw:8100
 
 ---
 

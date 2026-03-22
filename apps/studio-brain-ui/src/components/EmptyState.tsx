@@ -7,14 +7,14 @@ type EmptyStateProps = {
 
 export function EmptyState({ title, detail, actionLabel, onAction }: EmptyStateProps) {
   return (
-    <div className="empty-state-card">
-      <span className="empty-state-icon" aria-hidden="true">
+    <div className="empty-state">
+      <span className="empty-state__icon" aria-hidden="true">
         ○
       </span>
       <strong>{title}</strong>
-      <p>{detail}</p>
+      <p className="t-body empty-state__message">{detail}</p>
       {actionLabel && onAction ? (
-        <button className="action-button" type="button" onClick={onAction}>
+        <button className="action-button btn" type="button" onClick={onAction}>
           {actionLabel}
         </button>
       ) : null}

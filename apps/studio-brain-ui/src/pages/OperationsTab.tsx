@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { ApprovalQueue } from "../components/ApprovalQueue";
+import { EmptyState } from "../components/EmptyState";
 
 type OperationsTabProps = {
   [key: string]: any;
@@ -60,6 +61,7 @@ export function OperationsTab(props: OperationsTabProps) {
       <ApprovalQueue
         approvals={data.approvals}
         visibleApprovals={visibleApprovals}
+        loading={data.loadState === "loading"}
         approvedJobIds={approvedJobIds}
         operatorName={operatorName}
         setOperatorName={setOperatorName}
@@ -133,7 +135,7 @@ export function OperationsTab(props: OperationsTabProps) {
                   </div>
                 ))
               ) : (
-                <p className="empty-state">No live alert thresholds are currently tripped.</p>
+                <EmptyState title="Alert feed is clear" detail="No live alert thresholds are currently tripped." />
               )}
             </div>
             <div className="panel-span-5 table-stack top-gap">
@@ -254,8 +256,8 @@ export function OperationsTab(props: OperationsTabProps) {
                     <p className="panel-note">{check.detail}</p>
                   </div>
                 ))}
-                {workstationValidationState === "loading" ? <p className="empty-state">Validating workstation setup…</p> : null}
-                {workstationValidationState === "error" ? <p className="empty-state">Workstation validation is not available yet.</p> : null}
+                {workstationValidationState === "loading" ? <div className="skeleton skeleton--row" /> : null}
+                {workstationValidationState === "error" ? <EmptyState title="Validation unavailable" detail="Workstation validation is not available yet." /> : null}
               </div>
             </div>
           </div>
@@ -432,7 +434,7 @@ export function OperationsTab(props: OperationsTabProps) {
                 </div>
               ))
             ) : (
-              <p className="empty-state">No worker registrations yet. Single-machine mode remains fully usable.</p>
+              <EmptyState title="No worker nodes yet" detail="No worker registrations yet. Single-machine mode remains fully usable." />
             )}
           </div>
         </article>
@@ -491,7 +493,7 @@ export function OperationsTab(props: OperationsTabProps) {
                 </div>
               ))
             ) : (
-              <p className="empty-state">No worker tasks have been processed yet.</p>
+              <EmptyState title="Worker queue is empty" detail="No worker tasks have been processed yet." />
             )}
           </div>
           {taskActionMessage ? <p className="feedback ok">{taskActionMessage}</p> : null}
@@ -553,7 +555,7 @@ export function OperationsTab(props: OperationsTabProps) {
                 </div>
               ))
             ) : (
-              <p className="empty-state">{data.auditLog.length ? "No audit entries match the current filter." : "No recent audit activity is available yet."}</p>
+              <EmptyState title="No audit results" detail={data.auditLog.length ? "No audit entries match the current filter." : "No recent audit activity is available yet."} />
             )}
           </div>
         </article>

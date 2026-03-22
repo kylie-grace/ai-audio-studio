@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager, suppress
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from adapters.registry import list_daw_adapters
 from config import assert_startup_ready, load_settings, validate_startup
 from runner import StudioWorkerRunner
 from tasks.listening_report import build_listening_report
@@ -23,6 +25,8 @@ _runner: asyncio.Task | None = None
 _worker: StudioWorkerRunner | None = None
 _settings = load_settings()
 _startup_validation = validate_startup(_settings)
+_DAW_STATUS_CACHE_TTL = timedelta(seconds=10)
+_daw_status_cache: dict[str, object] = {"expires_at": None, "data": None, "last_seen": {}}
 
 
 @asynccontextmanager
@@ -44,6 +48,50 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Studio Worker", lifespan=lifespan)
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+async def _query_daw_status() -> dict[str, dict[str, str | bool | None]]:
+    payload = {
+        "worker_platform": _settings.worker_platform,
+        "reaper_binary_path": _settings.reaper_binary_path,
+        "protools_app_path": _settings.protools_app_path,
+        "soundflow_cli_path": _settings.soundflow_cli_path,
+        "wavelab_app_path": _settings.wavelab_app_path,
+        "timeout_seconds": 10.0,
+    }
+    adapters = list_daw_adapters()
+    now = _now()
+    statuses: dict[str, dict[str, str | bool | None]] = {}
+    last_seen = dict(_daw_status_cache.get("last_seen") or {})
+    for daw, adapter in adapters.items():
+        try:
+            result = await asyncio.wait_for(adapter.health_check(payload), timeout=10.0)
+        except Exception:
+            result = type("HealthResult", (), {"connected": False, "detail": None})()
+        if result.connected:
+            last_seen[daw] = now.isoformat()
+        statuses[daw] = {
+            "connected": bool(result.connected),
+            "last_seen": last_seen.get(daw),
+        }
+    _daw_status_cache["last_seen"] = last_seen
+    return statuses
+
+
+async def get_daw_status_snapshot(force_refresh: bool = False) -> dict[str, dict[str, str | bool | None]]:
+    now = _now()
+    expires_at = _daw_status_cache.get("expires_at")
+    cached = _daw_status_cache.get("data")
+    if not force_refresh and isinstance(expires_at, datetime) and expires_at > now and isinstance(cached, dict):
+        return cached
+    data = await _query_daw_status()
+    _daw_status_cache["data"] = data
+    _daw_status_cache["expires_at"] = now + _DAW_STATUS_CACHE_TTL
+    return data
 
 
 class SessionManifestBody(BaseModel):
@@ -126,6 +174,11 @@ async def status():
 @app.get("/workstation/profile")
 async def workstation_profile():
     return detect_workstation_profile(_settings)
+
+
+@app.get("/daw-status")
+async def daw_status():
+    return await get_daw_status_snapshot()
 
 
 @app.get("/workstation/plugins")

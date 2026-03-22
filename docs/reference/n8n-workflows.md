@@ -213,7 +213,9 @@ Local: `http://localhost:5678/webhook/{workflow-name}`
 
 LAN: `http://<control-plane-ip>:5678/webhook/{workflow-name}`
 
-HTTPS: `https://n8n.studio-brain.local/webhook/{workflow-name}`
+HTTPS: `https://studio-brain.local/n8n/webhook/{workflow-name}`
+
+Alias: `https://n8n.studio-brain.local/webhook/{workflow-name}`
 
 > ⚠️ **Use the LAN or HTTPS URL for external webhooks.** `localhost` only works from the same machine. If your contact form server is external, it can't reach `localhost:5678`.
 

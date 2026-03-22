@@ -39,9 +39,10 @@ The actor value must appear in `AUTHORIZED_ACTORS` for approval/rejection operat
 | studio-worker | `http://localhost:8190` |
 
 After HTTPS setup, the main URLs route through Caddy:
-- Dashboard: `https://{CONTROL_PLANE_HOST}`
-- n8n: `https://n8n.{CONTROL_PLANE_HOST}`
-- OpenClaw: `https://openclaw.{CONTROL_PLANE_HOST}`
+- Dashboard: `https://{STUDIO_DOMAIN}`
+- API-backed services: `https://{STUDIO_DOMAIN}/api/<service>`
+- n8n: `https://{STUDIO_DOMAIN}/n8n` or `https://n8n.{STUDIO_DOMAIN}`
+- OpenClaw: `https://{STUDIO_DOMAIN}/openclaw` or `https://openclaw.{STUDIO_DOMAIN}`
 
 ### HTTP Status Codes
 
