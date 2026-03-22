@@ -49,6 +49,8 @@ async def get_audit_log(
     job_id: Optional[str] = Query(None),
     project_id: Optional[str] = Query(None),
     actor: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     limit: int = Query(50, le=500),
     offset: int = Query(0, ge=0),
 ):
@@ -65,6 +67,12 @@ async def get_audit_log(
     if actor:
         params.append(actor)
         conditions.append(f"actor=${len(params)}")
+    if date_from:
+        params.append(date_from)
+        conditions.append(f"created_at >= ${len(params)}::timestamptz")
+    if date_to:
+        params.append(date_to)
+        conditions.append(f"created_at < (${len(params)}::timestamptz + interval '1 day')")
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     params += [limit, offset]

@@ -100,8 +100,8 @@ export function ContextTab(props: ContextTabProps) {
       <section className="panel panel-span-12 context-shell">
         <div className="panel-header">
           <div>
-            <p className="section-kicker">Context</p>
-            <h2>Studio Knowledge</h2>
+            <p className="section-kicker t-kicker">Context</p>
+            <h2 className="t-h2">Studio Knowledge</h2>
             <p className="panel-note">Switch between project review, studio voice, and workstation context instead of scrolling one mixed page.</p>
           </div>
         </div>
@@ -130,8 +130,8 @@ export function ContextTab(props: ContextTabProps) {
             <article className="panel panel-span-5">
               <div className="panel-header">
                 <div>
-                  <p className="section-kicker">Context</p>
-                  <h2>Studio Context Board</h2>
+                  <p className="section-kicker t-kicker">Context</p>
+                  <h2 className="t-h2">Studio Context Board</h2>
                 </div>
                 <span className="count-pill">{data.styleProfiles.length} profiles</span>
               </div>
@@ -149,12 +149,12 @@ export function ContextTab(props: ContextTabProps) {
             <article className="panel panel-span-7">
               <div className="panel-header">
                 <div>
-                  <p className="section-kicker">Voice</p>
-                  <h2>Style Profiles</h2>
+                  <p className="section-kicker t-kicker">Voice</p>
+                  <h2 className="t-h2">Style Profiles</h2>
                 </div>
                 <div className="header-actions">
                   <span className="count-pill">{data.styleProfiles.length}</span>
-                  <button className="action-button" type="button" disabled={styleRescanPending} onClick={rescanStyleSources}>
+                  <button className="action-button btn" type="button" disabled={styleRescanPending} onClick={rescanStyleSources}>
                     {styleRescanPending ? "rescanning" : "rescan style sources"}
                   </button>
                 </div>
@@ -192,8 +192,8 @@ export function ContextTab(props: ContextTabProps) {
             <article className="panel panel-span-7">
               <div className="panel-header">
                 <div>
-                  <p className="section-kicker">Knowledge</p>
-                  <h2>Active Voice Preview</h2>
+                  <p className="section-kicker t-kicker">Knowledge</p>
+                  <h2 className="t-h2">Active Voice Preview</h2>
                 </div>
                 <span className="count-pill">{latestStyleProfile?.name ?? "seed only"}</span>
               </div>
@@ -213,8 +213,8 @@ export function ContextTab(props: ContextTabProps) {
             <article className="panel panel-span-5">
               <div className="panel-header">
                 <div>
-                  <p className="section-kicker">Source Feed</p>
-                  <h2>Reference Inputs</h2>
+                  <p className="section-kicker t-kicker">Source Feed</p>
+                  <h2 className="t-h2">Reference Inputs</h2>
                 </div>
                 <span className="count-pill">{styleSourceCount}</span>
               </div>
@@ -242,8 +242,8 @@ export function ContextTab(props: ContextTabProps) {
           <article className="panel panel-span-4">
             <div className="panel-header">
               <div>
-                <p className="section-kicker">Execution</p>
-                <h2>Worker Nodes</h2>
+                <p className="section-kicker t-kicker">Execution</p>
+                <h2 className="t-h2">Worker Nodes</h2>
               </div>
               <span className="count-pill">{data.workers.length}</span>
             </div>
@@ -278,8 +278,8 @@ export function ContextTab(props: ContextTabProps) {
           <article className="panel panel-span-8">
             <div className="panel-header">
               <div>
-                <p className="section-kicker">Inventory</p>
-                <h2>Plugin Inventory</h2>
+                <p className="section-kicker t-kicker">Inventory</p>
+                <h2 className="t-h2">Plugin Inventory</h2>
               </div>
               <span className="count-pill">{workstationPlugins?.plugin_count ?? workstationProfile?.plugins?.summary?.count ?? 0} plugins</span>
             </div>
@@ -321,8 +321,8 @@ export function ContextTab(props: ContextTabProps) {
             <article className="panel panel-span-4">
               <div className="panel-header">
                 <div>
-                  <p className="section-kicker">Projects</p>
-                  <h2>Project List</h2>
+                  <p className="section-kicker t-kicker">Projects</p>
+                  <h2 className="t-h2">Project List</h2>
                 </div>
                 <span className="count-pill">{data.projects.length}</span>
               </div>
@@ -359,8 +359,8 @@ export function ContextTab(props: ContextTabProps) {
             <article className="panel panel-span-8">
               <div className="panel-header">
                 <div>
-                  <p className="section-kicker">Review</p>
-                  <h2>Project Detail</h2>
+                  <p className="section-kicker t-kicker">Review</p>
+                  <h2 className="t-h2">Project Detail</h2>
                 </div>
                 <span className="count-pill">{projectDetail?.review_summary.artifact_count ?? projectDetail?.artifact_inventory.length ?? 0} artifacts</span>
               </div>
@@ -405,12 +405,12 @@ export function ContextTab(props: ContextTabProps) {
                         <span className="muted">{entry.created_at ? summarizeTime(entry.created_at) : "n/a"}</span>
                         {selectedProject?.id ? (
                           <>
-                            <button className="action-button" type="button" onClick={() => previewArtifact(selectedProject.id, entry.artifact_id)}>
+                            <button className="action-button btn" type="button" onClick={() => previewArtifact(selectedProject.id, entry.artifact_id)}>
                               preview
                             </button>
                             {artifactPath ? (
                               <a
-                                className="action-button subtle"
+                                className="action-button btn subtle"
                                 href={`${apiProjectStateBase}/projects/${selectedProject.id}/artifacts/${entry.artifact_id}/download`}
                                 target="_blank"
                                 rel="noreferrer"
@@ -421,11 +421,11 @@ export function ContextTab(props: ContextTabProps) {
                           </>
                         ) : null}
                         {artifactPath ? (
-                          <button className="action-button subtle" type="button" onClick={() => copyArtifactValue(artifactPath, "Artifact path")}>
+                          <button className="action-button btn subtle" type="button" onClick={() => copyArtifactValue(artifactPath, "Artifact path")}>
                             copy path
                           </button>
                         ) : (
-                          <button className="action-button subtle" type="button" onClick={() => copyArtifactValue(JSON.stringify(artifact, null, 2), "Artifact payload")}>
+                          <button className="action-button btn subtle" type="button" onClick={() => copyArtifactValue(JSON.stringify(artifact, null, 2), "Artifact payload")}>
                             copy payload
                           </button>
                         )}
@@ -453,8 +453,8 @@ export function ContextTab(props: ContextTabProps) {
             <article className="panel panel-span-8">
               <div className="panel-header">
                 <div>
-                  <p className="section-kicker">Review Surface</p>
-                  <h2>Project Review Stack</h2>
+                  <p className="section-kicker t-kicker">Review Surface</p>
+                  <h2 className="t-h2">Project Review Stack</h2>
                 </div>
                 <span className="count-pill">
                   {projectDetail ? `${projectDetail.review_summary.passing_qc_count}/${projectDetail.review_summary.qc_report_count} qc pass · ${projectDetail.review_summary.artifact_count} artifacts` : "loading"}
@@ -503,7 +503,7 @@ export function ContextTab(props: ContextTabProps) {
                       <div className="row-meta">
                         <span className="muted">{entry.createdAt ? summarizeTime(entry.createdAt) : "n/a"}</span>
                         {selectedProject?.id ? (
-                          <button className="action-button subtle" type="button" onClick={() => previewArtifact(selectedProject.id, entry.artifactId)}>
+                          <button className="action-button btn subtle" type="button" onClick={() => previewArtifact(selectedProject.id, entry.artifactId)}>
                             preview
                           </button>
                         ) : null}
@@ -520,8 +520,8 @@ export function ContextTab(props: ContextTabProps) {
             <article className="panel panel-span-4">
               <div className="panel-header">
                 <div>
-                  <p className="section-kicker">Recent Intake</p>
-                  <h2>Lead Signals</h2>
+                  <p className="section-kicker t-kicker">Recent Intake</p>
+                  <h2 className="t-h2">Lead Signals</h2>
                 </div>
                 <span className="count-pill">{data.leads.length}</span>
               </div>

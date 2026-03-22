@@ -1545,7 +1545,8 @@ code {
   justify-content: flex-end;
 }
 
-.action-button {
+.action-button,
+.btn {
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-secondary);
@@ -1563,58 +1564,75 @@ code {
 }
 
 .action-button.primary,
-.action-button.ok {
+.action-button.ok,
+.btn.primary,
+.btn.ok {
   background: var(--status-ok-bg);
   border-color: var(--status-ok-border);
   color: var(--status-ok-text);
 }
 
-.action-button.secondary {
-  background: rgba(85, 192, 214, 0.1);
-  border-color: rgba(85, 192, 214, 0.22);
-  color: var(--status-info-text);
+.action-button.secondary,
+.btn.secondary {
+  background: var(--status-info-bg);
+  border-color: var(--status-info-border);
+  color: var(--accent-sea);
 }
 
 .action-button.destructive,
-.action-button.bad {
+.action-button.bad,
+.btn.destructive,
+.btn.bad {
   background: var(--status-bad-bg);
   border-color: var(--status-bad-border);
   color: var(--status-bad-text);
 }
 
-.action-button:disabled {
+.action-button:disabled,
+.btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
-.action-button:not(:disabled):hover {
+.action-button:not(:disabled):hover,
+.btn:not(:disabled):hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.08);
 }
 
 .action-button.primary:not(:disabled):hover,
-.action-button.ok:not(:disabled):hover {
+.action-button.ok:not(:disabled):hover,
+.btn.primary:not(:disabled):hover,
+.btn.ok:not(:disabled):hover {
   background: var(--status-ok-bg);
 }
 
-.action-button.secondary:not(:disabled):hover {
-  background: rgba(85, 192, 214, 0.16);
+.action-button.secondary:not(:disabled):hover,
+.btn.secondary:not(:disabled):hover {
+  background: var(--status-info-bg);
+  border-color: var(--status-info-border);
 }
 
 .action-button.destructive:not(:disabled):hover,
-.action-button.bad:not(:disabled):hover {
+.action-button.bad:not(:disabled):hover,
+.btn.destructive:not(:disabled):hover,
+.btn.bad:not(:disabled):hover {
   background: var(--status-bad-bg);
 }
 
 .action-button.subtle,
-.action-button.ghost {
+.action-button.ghost,
+.btn.subtle,
+.btn.ghost {
   background: transparent;
   border-color: rgba(255, 255, 255, 0.06);
   color: var(--text-secondary);
 }
 
 .action-button.subtle:not(:disabled):hover,
-.action-button.ghost:not(:disabled):hover {
+.action-button.ghost:not(:disabled):hover,
+.btn.subtle:not(:disabled):hover,
+.btn.ghost:not(:disabled):hover {
   background: rgba(255, 255, 255, 0.04);
 }
 

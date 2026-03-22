@@ -834,7 +834,10 @@ function workflowTone(state: "ready" | "watch" | "action"): "ok" | "warn" | "bad
   return "bad";
 }
 
-async function loadDashboardData(): Promise<DashboardData> {
+async function loadDashboardData(auditDateFrom = "", auditDateTo = ""): Promise<DashboardData> {
+  const auditQuery = new URLSearchParams({ limit: "12" });
+  if (auditDateFrom) auditQuery.set("date_from", auditDateFrom);
+  if (auditDateTo) auditQuery.set("date_to", auditDateTo);
   const [services, workers, rules, rulePacks, starterPacks, playbooks, tasks, approvals, jobHistory, projects, leads, auditLog, styleProfiles, alerts, runtimeAlerts, runtimeRecovery, bootstrapStatus, workspace] =
     await Promise.all([
       Promise.all(
@@ -853,7 +856,7 @@ async function loadDashboardData(): Promise<DashboardData> {
       fetchJson<DashboardData["jobHistory"]>(`${API.projectState}/jobs/?status=complete&limit=30`),
       fetchJson<ProjectRecord[]>(`${API.crm}/projects`),
       fetchJson<DashboardData["leads"]>(`${API.crm}/leads`),
-      fetchJson<AuditEntry[]>(`${API.projectState}/audit-log/?limit=12`),
+      fetchJson<AuditEntry[]>(`${API.projectState}/audit-log/?${auditQuery.toString()}`),
       fetchJson<StyleProfile[]>(`${API.crm}/style-profiles?scope=studio`),
       fetchJson<AlertConfig>(`${API.openclaw}/alerts/config`),
       fetchJson<RuntimeAlertSummary>(`${API.projectState}/alerts/summary`),
@@ -1082,6 +1085,8 @@ export function App() {
   const [conciergeError, setConciergeError] = useState<string | null>(null);
   const [approvalArrivalMessage, setApprovalArrivalMessage] = useState<string | null>(null);
   const [auditFilter, setAuditFilter] = useState("");
+  const [auditDateFrom, setAuditDateFrom] = useState("");
+  const [auditDateTo, setAuditDateTo] = useState("");
   const [artifactActionMessage, setArtifactActionMessage] = useState<string | null>(null);
   const [artifactActionError, setArtifactActionError] = useState<string | null>(null);
   const [artifactPreview, setArtifactPreview] = useState<ArtifactPreview | null>(null);
@@ -1510,7 +1515,7 @@ export function App() {
 
     const load = async () => {
       try {
-        const nextData = await loadDashboardData();
+        const nextData = await loadDashboardData(auditDateFrom, auditDateTo);
         if (!active) return;
       setData(nextData);
       setSelectedServiceKey((current) => {
@@ -1534,15 +1539,20 @@ export function App() {
       active = false;
       if (timer) window.clearInterval(timer);
     };
-  }, []);
+  }, [auditDateFrom, auditDateTo]);
 
   async function refreshData() {
-    const nextData = await loadDashboardData();
+    const nextData = await loadDashboardData(auditDateFrom, auditDateTo);
     setData(nextData);
     setSelectedServiceKey((current) => {
       if (nextData.services.some((service) => service.key === current)) return current;
       return nextData.services[0]?.key ?? current;
     });
+  }
+
+  function setAuditDateRange(dateFrom: string, dateTo: string) {
+    setAuditDateFrom(dateFrom);
+    setAuditDateTo(dateTo);
   }
 
   async function runWorkstationSmoke() {
@@ -2578,6 +2588,7 @@ export function App() {
           auditFilter={auditFilter}
           setAuditFilter={setAuditFilter}
           filteredAuditLog={filteredAuditLog}
+          setAuditDateRange={setAuditDateRange}
         />
       ) : null}
 

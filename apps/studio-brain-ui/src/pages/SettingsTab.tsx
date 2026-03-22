@@ -1,5 +1,14 @@
 import { AlertBanner } from "../components/AlertBanner";
 
+const MODULE_FIELD_LABELS: Record<string, string> = {
+  response_sla_hours: "Response SLA (hours)",
+  confidence_threshold: "Confidence threshold",
+  minimum_fit_score: "Minimum fit score",
+  high_priority_types: "High-priority types",
+  default_target: "Default target",
+  max_rounds: "Maximum rounds",
+};
+
 type SettingsTabProps = {
   data: any;
   onboardingRequired: boolean;
@@ -40,7 +49,7 @@ function SettingsSectionIntro({ section }: { section?: { label: string; summary:
   return (
     <div className="settings-editor-summary">
       <div>
-        <p className="section-kicker">Editor</p>
+        <p className="section-kicker t-kicker">Editor</p>
         <h3>{section?.label}</h3>
         <p className="panel-note">{section?.summary}</p>
       </div>
@@ -92,14 +101,14 @@ export function SettingsTab(props: SettingsTabProps) {
       <section className={`panel onboarding-panel ${onboardingRequired ? "needs-setup" : "is-complete"}`}>
         <div className="panel-header onboarding-header">
           <div>
-            <p className="section-kicker">Bootstrap</p>
-            <h2>Workspace settings</h2>
+            <p className="section-kicker t-kicker">Bootstrap</p>
+            <h2 className="t-h2">Workspace settings</h2>
             <p className="panel-note">Keep onboarding, integrations, storage, and worker posture visible. Edit them in a dedicated setup sheet instead of inline.</p>
           </div>
           <div className="onboarding-header-actions">
             <span className={`status-pill ${onboardingRequired ? "warn" : "ok"}`}>{onboardingRequired ? `${onboardingMissingCount} items missing` : "configured"}</span>
             <button
-              className="action-button ok"
+              className="action-button btn ok"
               type="button"
               onClick={() => {
                 setEditingWorkspaceSetup(true);
@@ -174,7 +183,7 @@ export function SettingsTab(props: SettingsTabProps) {
             <span className="summary-pill">{onboardingStepCount} steps</span>
           </div>
           <div className="onboarding-actions">
-            <button className="action-button subtle" type="button" onClick={refreshData}>refresh workspace</button>
+            <button className="action-button btn subtle" type="button" onClick={refreshData}>refresh workspace</button>
           </div>
         </div>
 
@@ -200,7 +209,7 @@ export function SettingsTab(props: SettingsTabProps) {
             <strong>{workspaceSettings.style_seed.name || "Default Studio Tone"}</strong>
             <p className="panel-note">{alertEmailCount} email destination(s) · {integrationFlags} integrations enabled</p>
             <div className="action-row">
-              <button className="action-button subtle" type="button" disabled={styleRescanPending} onClick={rescanStyleSources}>
+              <button className="action-button btn subtle" type="button" disabled={styleRescanPending} onClick={rescanStyleSources}>
                 {styleRescanPending ? "rescanning" : "rescan style sources"}
               </button>
             </div>
@@ -216,17 +225,17 @@ export function SettingsTab(props: SettingsTabProps) {
           <section className="settings-modal" onClick={(event) => event.stopPropagation()}>
             <div className="settings-modal-header">
               <div>
-                <p className="section-kicker">Setup editor</p>
-                <h2>{onboardingRequired ? "Finish onboarding" : "Edit saved setup"}</h2>
+                <p className="section-kicker t-kicker">Setup editor</p>
+                <h2 className="t-h2">{onboardingRequired ? "Finish onboarding" : "Edit saved setup"}</h2>
                 <p className="panel-note">Work through identity, storage, voice, integrations, worker posture, and module tuning in a dedicated sheet.</p>
               </div>
               <div className="settings-modal-actions">
                 {!onboardingRequired ? (
-                  <button className="action-button subtle" type="button" onClick={() => setEditingWorkspaceSetup(false)}>
+                  <button className="action-button btn subtle" type="button" onClick={() => setEditingWorkspaceSetup(false)}>
                     close
                   </button>
                 ) : null}
-                <button className="action-button ok" type="button" disabled={onboardingSaving} onClick={saveWorkspaceSettings}>
+                <button className="action-button btn ok" type="button" disabled={onboardingSaving} onClick={saveWorkspaceSettings}>
                   {onboardingSaving ? "saving" : "save settings"}
                 </button>
               </div>
@@ -368,7 +377,7 @@ export function SettingsTab(props: SettingsTabProps) {
                         onChange={(event) => setWorkspaceDraft((current: any) => ({ ...current, style_seed: { ...current.style_seed, source_paths: parseDelimitedList(event.target.value) } }))}
                       />
                     </label>
-                    <button className="action-button subtle" type="button" disabled={styleRescanPending} onClick={rescanStyleSources}>
+                    <button className="action-button btn subtle" type="button" disabled={styleRescanPending} onClick={rescanStyleSources}>
                       {styleRescanPending ? "rescanning" : "rescan saved sources"}
                     </button>
                   </article>
@@ -528,7 +537,7 @@ export function SettingsTab(props: SettingsTabProps) {
                               <>
                                 {primaryField ? (
                                   <label className="field top-gap">
-                                    <span className="metric-label">{primaryField.replace(/_/g, " ")}</span>
+                                    <span className="metric-label">{MODULE_FIELD_LABELS[primaryField] ?? primaryField.replace(/_/g, " ")}</span>
                                     <input
                                       value={Array.isArray(moduleValue[primaryField]) ? moduleValue[primaryField].join(", ") : moduleValue[primaryField]}
                                       onChange={(event) =>
@@ -547,7 +556,7 @@ export function SettingsTab(props: SettingsTabProps) {
                                 ) : null}
                                 {secondaryField ? (
                                   <label className="field">
-                                    <span className="metric-label">{secondaryField.replace(/_/g, " ")}</span>
+                                    <span className="metric-label">{MODULE_FIELD_LABELS[secondaryField] ?? secondaryField.replace(/_/g, " ")}</span>
                                     <input
                                       value={moduleValue[secondaryField]}
                                       onChange={(event) =>
@@ -585,8 +594,8 @@ export function SettingsTab(props: SettingsTabProps) {
                 </strong>
               </div>
               <div className="wizard-footer-actions">
-                <button className="action-button subtle" disabled={onboardingSaving} onClick={refreshData}>refresh now</button>
-                <button className="action-button ok" disabled={onboardingSaving} onClick={saveWorkspaceSettings}>
+                <button className="action-button btn subtle" disabled={onboardingSaving} onClick={refreshData}>refresh now</button>
+                <button className="action-button btn ok" disabled={onboardingSaving} onClick={saveWorkspaceSettings}>
                   {onboardingSaving ? "saving" : "save settings"}
                 </button>
               </div>

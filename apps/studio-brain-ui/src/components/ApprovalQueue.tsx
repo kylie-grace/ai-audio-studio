@@ -56,8 +56,8 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
       <article className="panel panel-span-8">
         <div className="panel-header">
           <div>
-            <p className="section-kicker">Action Queue</p>
-            <h2>Approvals</h2>
+            <p className="section-kicker t-kicker">Action Queue</p>
+            <h2 className="t-h2">Approvals</h2>
             <p className="panel-note">Review requests first. Expand only the cards you need to inspect or act on.</p>
           </div>
           <span className="count-pill">showing {visibleApprovals.length} of {approvals.length}</span>
@@ -183,7 +183,7 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
                         )}
                         <div className="action-row">
                           <button
-                            className="action-button primary"
+                            className="action-button btn primary"
                             disabled={!operatorName || pendingJobId === job.id || approved}
                             onClick={() => handleApproval(job.id, "approve")}
                           >
@@ -192,7 +192,7 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
                           {rejectingId === job.id ? (
                             <>
                               <button
-                                className="action-button destructive"
+                                className="action-button btn destructive"
                                 disabled={!operatorName || pendingJobId === job.id || !(rejectReasons[job.id] ?? "").trim()}
                                 onClick={async () => {
                                   await handleApproval(job.id, "reject");
@@ -201,13 +201,13 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
                               >
                                 {pendingJobId === job.id ? "working" : "confirm rejection"}
                               </button>
-                              <button className="action-button ghost" disabled={pendingJobId === job.id} onClick={() => setRejectingId(null)}>
+                              <button className="action-button btn ghost" disabled={pendingJobId === job.id} onClick={() => setRejectingId(null)}>
                                 cancel
                               </button>
                             </>
                           ) : (
                             <button
-                              className="action-button destructive"
+                              className="action-button btn destructive"
                               disabled={!operatorName || pendingJobId === job.id || approved}
                               onClick={() => setRejectingId(job.id)}
                             >
@@ -230,10 +230,10 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
       <aside className="panel panel-span-4">
         <div className="panel-header">
           <div>
-            <p className="section-kicker">Operator</p>
-            <h2>Acting as {operatorName || "owner"}</h2>
+            <p className="section-kicker t-kicker">Operator</p>
+            <h2 className="t-h2">Acting as {operatorName || "owner"}</h2>
           </div>
-          <button className="action-button" type="button" onClick={() => setShowOperatorInputs((current) => !current)}>
+          <button className="action-button btn" type="button" onClick={() => setShowOperatorInputs((current) => !current)}>
             {showOperatorInputs ? "hide" : "edit"}
           </button>
         </div>

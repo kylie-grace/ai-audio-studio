@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { ApprovalQueue } from "../components/ApprovalQueue";
 
 type OperationsTabProps = {
@@ -48,7 +50,10 @@ export function OperationsTab(props: OperationsTabProps) {
     auditFilter,
     setAuditFilter,
     filteredAuditLog,
+    setAuditDateRange,
   } = props;
+  const [auditDateFrom, setAuditDateFrom] = useState("");
+  const [auditDateTo, setAuditDateTo] = useState("");
 
   return (
     <div className="tab-panel">
@@ -74,16 +79,16 @@ export function OperationsTab(props: OperationsTabProps) {
         <article className="panel panel-span-12">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Escalation</p>
-              <h2>Live Alerts</h2>
+              <p className="section-kicker t-kicker">Escalation</p>
+              <h2 className="t-h2">Live Alerts</h2>
             </div>
             <div className="header-actions">
               <span className="count-pill">{activeAlertCount}</span>
-              <button className="action-button" disabled={alertActionPending !== null} onClick={() => runAlertAction("test")}>
+              <button className="action-button btn" disabled={alertActionPending !== null} onClick={() => runAlertAction("test")}>
                 {alertActionPending === "test" ? "testing" : "test alert"}
               </button>
               <button
-                className="action-button ok"
+                className="action-button btn ok"
                 disabled={alertActionPending !== null || !data.runtimeAlerts.active_alerts.length}
                 onClick={() => runAlertAction("dispatch")}
               >
@@ -156,13 +161,13 @@ export function OperationsTab(props: OperationsTabProps) {
         <article className="panel panel-span-12">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Workstation</p>
-              <h2>Setup Validation</h2>
+              <p className="section-kicker t-kicker">Workstation</p>
+              <h2 className="t-h2">Setup Validation</h2>
             </div>
             <div className="header-actions">
               <button
                 type="button"
-                className="action-button"
+                className="action-button btn"
                 onClick={() => void refreshWorkstationValidation()}
                 disabled={workstationValidationState === "loading"}
               >
@@ -170,7 +175,7 @@ export function OperationsTab(props: OperationsTabProps) {
               </button>
               <button
                 type="button"
-                className={`action-button ${workstationSmoke?.result === "pass" ? "ok" : ""}`}
+                className={`action-button btn ${workstationSmoke?.result === "pass" ? "ok" : ""}`}
                 onClick={() => void runWorkstationSmoke()}
                 disabled={workstationSmokePending}
               >
@@ -178,7 +183,7 @@ export function OperationsTab(props: OperationsTabProps) {
               </button>
               <button
                 type="button"
-                className="action-button"
+                className="action-button btn"
                 onClick={() => void updateWorkstationRuntime(workstationRuntime?.runtime.drain_requested ? "resume" : "drain")}
                 disabled={workstationRuntimePending !== null}
               >
@@ -322,8 +327,8 @@ export function OperationsTab(props: OperationsTabProps) {
         <article className="panel panel-span-12">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Recovery</p>
-              <h2>Runtime Recovery</h2>
+              <p className="section-kicker t-kicker">Recovery</p>
+              <h2 className="t-h2">Runtime Recovery</h2>
             </div>
             <div className="header-actions">
               <span className="count-pill">{data.runtimeRecovery.summary.failed_task_count} failed</span>
@@ -382,7 +387,7 @@ export function OperationsTab(props: OperationsTabProps) {
                     <div className="row-meta">
                       <span className="status-pill warn">stale</span>
                       <button
-                        className="action-button destructive"
+                        className="action-button btn destructive"
                         disabled={!operatorName || pendingTaskActionId === worker.slug}
                         onClick={() => {
                           if (!window.confirm(`Retire ${worker.display_name}? This will remove the worker from active routing and clean up pinned queued work.`)) {
@@ -403,8 +408,8 @@ export function OperationsTab(props: OperationsTabProps) {
         <article className="panel panel-span-5">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Execution</p>
-              <h2>Worker Nodes</h2>
+              <p className="section-kicker t-kicker">Execution</p>
+              <h2 className="t-h2">Worker Nodes</h2>
             </div>
             <span className="count-pill">{data.workers.length}</span>
           </div>
@@ -434,8 +439,8 @@ export function OperationsTab(props: OperationsTabProps) {
         <article className="panel panel-span-7">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Runtime</p>
-              <h2>Task Feed</h2>
+              <p className="section-kicker t-kicker">Runtime</p>
+              <h2 className="t-h2">Task Feed</h2>
             </div>
             <span className="count-pill">{data.tasks.length}</span>
           </div>
@@ -455,7 +460,7 @@ export function OperationsTab(props: OperationsTabProps) {
                       <div className="action-row">
                         {task.status === "claimed" ? (
                           <button
-                            className="action-button"
+                            className="action-button btn"
                             disabled={!operatorName || pendingTaskActionId === task.id}
                             onClick={() => handleTaskRecovery(task.id, "release")}
                           >
@@ -464,7 +469,7 @@ export function OperationsTab(props: OperationsTabProps) {
                         ) : null}
                         {task.status === "queued" || task.status === "claimed" ? (
                           <button
-                            className="action-button bad"
+                            className="action-button btn bad"
                             disabled={!operatorName || pendingTaskActionId === task.id}
                             onClick={() => handleTaskRecovery(task.id, task.status === "claimed" ? "stop" : "cancel")}
                           >
@@ -473,7 +478,7 @@ export function OperationsTab(props: OperationsTabProps) {
                         ) : null}
                         {task.status === "failed" ? (
                           <button
-                            className="action-button ok"
+                            className="action-button btn ok"
                             disabled={!operatorName || pendingTaskActionId === task.id}
                             onClick={() => handleTaskRecovery(task.id, "requeue")}
                           >
@@ -496,12 +501,36 @@ export function OperationsTab(props: OperationsTabProps) {
         <article className="panel panel-span-12">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Audit</p>
-              <h2>Recent Activity</h2>
+              <p className="section-kicker t-kicker">Audit</p>
+              <h2 className="t-h2">Recent Activity</h2>
             </div>
             <span className="count-pill">{filteredAuditLog.length}</span>
           </div>
           <div className="inline-filter-row">
+            <label className="field compact-field">
+              <span className="metric-label">From</span>
+              <input
+                type="date"
+                value={auditDateFrom}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setAuditDateFrom(value);
+                  setAuditDateRange(value, auditDateTo);
+                }}
+              />
+            </label>
+            <label className="field compact-field">
+              <span className="metric-label">To</span>
+              <input
+                type="date"
+                value={auditDateTo}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setAuditDateTo(value);
+                  setAuditDateRange(auditDateFrom, value);
+                }}
+              />
+            </label>
             <input
               value={auditFilter}
               onChange={(event) => setAuditFilter(event.target.value)}

@@ -76,8 +76,8 @@ export function OverviewTab(props: OverviewTabProps) {
         <article className="panel focus-panel">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Today</p>
-              <h2>Operator focus</h2>
+              <p className="section-kicker t-kicker">Today</p>
+              <h2 className="t-h2">Operator focus</h2>
             </div>
             <span className={`status-pill ${activeAlertCount || data.approvals.length ? "warn" : "ok"}`}>
               {activeAlertCount || data.approvals.length ? "action needed" : "steady"}
@@ -106,8 +106,8 @@ export function OverviewTab(props: OverviewTabProps) {
         <article className="panel assistant-panel">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Assistant</p>
-              <h2>Control Room Assistant</h2>
+              <p className="section-kicker t-kicker">Assistant</p>
+              <h2 className="t-h2">Control Room Assistant</h2>
             </div>
             <div className="header-actions">
               <span className={`status-pill ${conciergeMode === "llm" ? "ok" : "warn"}`}>{conciergeMode === "llm" ? "llm live" : "fallback mode"}</span>
@@ -129,7 +129,7 @@ export function OverviewTab(props: OverviewTabProps) {
                         <button
                           key={action.id}
                           type="button"
-                          className="action-button ghost"
+                          className="action-button btn ghost"
                           onClick={() => void runConciergeAction(action.id)}
                         >
                           {action.label}
@@ -163,15 +163,15 @@ export function OverviewTab(props: OverviewTabProps) {
                 }
               }}
             />
-            <button className="action-button primary" type="button" disabled={conciergePending} onClick={() => void submitConciergePrompt(conciergeInput)}>
+            <button className="action-button btn primary" type="button" disabled={conciergePending} onClick={() => void submitConciergePrompt(conciergeInput)}>
               {conciergePending ? "thinking" : "send"}
             </button>
           </div>
           <div className="assistant-quick-actions">
-            <button className="action-button ghost" type="button" onClick={() => void runConciergeAction("run-worker-smoke")}>worker smoke</button>
-            <button className="action-button ghost" type="button" onClick={() => void runConciergeAction("goto-settings")}>setup</button>
-            <button className="action-button ghost" type="button" onClick={() => void runConciergeAction("goto-operations")}>operations</button>
-            <button className="action-button ghost" type="button" onClick={() => void runConciergeAction("test-alerts")}>test alerts</button>
+            <button className="action-button btn ghost" type="button" onClick={() => void runConciergeAction("run-worker-smoke")}>worker smoke</button>
+            <button className="action-button btn ghost" type="button" onClick={() => void runConciergeAction("goto-settings")}>setup</button>
+            <button className="action-button btn ghost" type="button" onClick={() => void runConciergeAction("goto-operations")}>operations</button>
+            <button className="action-button btn ghost" type="button" onClick={() => void runConciergeAction("test-alerts")}>test alerts</button>
           </div>
           {conciergeError ? <p className="feedback bad">{conciergeError}</p> : null}
         </article>
@@ -181,8 +181,8 @@ export function OverviewTab(props: OverviewTabProps) {
         <article className="panel panel-span-12">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Guided actions</p>
-              <h2>Primary operator workflows</h2>
+              <p className="section-kicker t-kicker">Guided actions</p>
+              <h2 className="t-h2">Primary operator workflows</h2>
             </div>
             <span className="count-pill">{workflowPlaybooks.length} lanes</span>
           </div>
@@ -222,8 +222,8 @@ export function OverviewTab(props: OverviewTabProps) {
         <article className="panel command-card accent-gold">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Front Door</p>
-              <h2>Operator Access</h2>
+              <p className="section-kicker t-kicker">Front Door</p>
+              <h2 className="t-h2">Operator Access</h2>
             </div>
             <span className="count-pill">{workspaceSettings.https_mode === "https_enabled" ? "https preferred" : "lan by ip"}</span>
           </div>
@@ -249,8 +249,8 @@ export function OverviewTab(props: OverviewTabProps) {
         <article className="panel command-card accent-blue">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Zones</p>
-              <h2>Service Coverage</h2>
+              <p className="section-kicker t-kicker">Zones</p>
+              <h2 className="t-h2">Service Coverage</h2>
             </div>
             <span className="status-pill ok">{zoneSummaries.length} zones mapped</span>
           </div>
@@ -268,8 +268,8 @@ export function OverviewTab(props: OverviewTabProps) {
         <article className="panel command-card accent-green">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Fabric</p>
-              <h2>Platform Readiness</h2>
+              <p className="section-kicker t-kicker">Fabric</p>
+              <h2 className="t-h2">Platform Readiness</h2>
             </div>
             <span className={`status-pill ${readinessSummary.needs_attention_count ? "bad" : "ok"}`}>{frontDoorMode}</span>
           </div>
@@ -289,8 +289,8 @@ export function OverviewTab(props: OverviewTabProps) {
         <article className="panel panel-span-12">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">DAW Foundation</p>
-              <h2>Workstation Capability</h2>
+              <p className="section-kicker t-kicker">DAW Foundation</p>
+              <h2 className="t-h2">Workstation Capability</h2>
             </div>
             <span className="count-pill">{workerCapabilities.length} capabilities</span>
           </div>
@@ -367,8 +367,8 @@ export function OverviewTab(props: OverviewTabProps) {
         <article className="panel panel-span-12">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Readiness</p>
-              <h2>Workspace Readiness</h2>
+              <p className="section-kicker t-kicker">Readiness</p>
+              <h2 className="t-h2">Workspace Readiness</h2>
             </div>
             <div className="header-actions">
               <span className="count-pill">{readinessSummary.ready_count} ready</span>
@@ -399,8 +399,8 @@ export function OverviewTab(props: OverviewTabProps) {
         <article className="panel panel-span-12">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Execution Preview</p>
-              <h2>DAW Live Preview</h2>
+              <p className="section-kicker t-kicker">Execution Preview</p>
+              <h2 className="t-h2">DAW Live Preview</h2>
             </div>
             <span className={`status-pill ${workstationProfile?.ready ? "ok" : "warn"}`}>
               {workstationProfile ? (workstationProfile.ready ? "ready to stage" : "needs setup") : "worker offline"}
@@ -547,7 +547,7 @@ export function OverviewTab(props: OverviewTabProps) {
                   ))}
                   {selectedProject?.id ? (
                     <div className="action-row">
-                      <button className="action-button" type="button" disabled={reviewSavePending === "render"} onClick={saveRenderReview}>
+                      <button className="action-button btn" type="button" disabled={reviewSavePending === "render"} onClick={saveRenderReview}>
                         {reviewSavePending === "render" ? "saving" : "save render review"}
                       </button>
                     </div>
@@ -587,7 +587,7 @@ export function OverviewTab(props: OverviewTabProps) {
                   ))}
                   {selectedProject?.id ? (
                     <div className="action-row">
-                      <button className="action-button" type="button" disabled={reviewSavePending === "listening"} onClick={saveListeningReview}>
+                      <button className="action-button btn" type="button" disabled={reviewSavePending === "listening"} onClick={saveListeningReview}>
                         {reviewSavePending === "listening" ? "saving" : "save listening review"}
                       </button>
                     </div>
@@ -649,8 +649,8 @@ export function OverviewTab(props: OverviewTabProps) {
         <article className="panel panel-span-8">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Topology</p>
-              <h2>Service Ownership Map</h2>
+              <p className="section-kicker t-kicker">Topology</p>
+              <h2 className="t-h2">Service Ownership Map</h2>
             </div>
             <span className="count-pill">{data.services.length} services</span>
           </div>
@@ -697,8 +697,8 @@ export function OverviewTab(props: OverviewTabProps) {
         <aside className="panel panel-span-4">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Inspector</p>
-              <h2>Service Drilldown</h2>
+              <p className="section-kicker t-kicker">Inspector</p>
+              <h2 className="t-h2">Service Drilldown</h2>
             </div>
             <span className={`status-pill ${selectedService ? statusTone(selectedService.state) : "warn"}`}>
               {selectedService ? serviceLabel(selectedService) : "none"}
@@ -767,20 +767,20 @@ export function OverviewTab(props: OverviewTabProps) {
               ) : null}
               <div className="action-deck">
                 <button
-                  className="action-button ok"
+                  className="action-button btn ok"
                   type="button"
                   onClick={() => setActiveTab(servicePrimaryTab(selectedService))}
                 >
                   open {primaryTabs.find((tab: any) => tab.id === servicePrimaryTab(selectedService))?.label.toLowerCase()}
                 </button>
-                <button className="action-button" type="button" onClick={() => refreshData()}>
+                <button className="action-button btn" type="button" onClick={() => refreshData()}>
                   refresh state
                 </button>
-                <button className="action-button" type="button" onClick={() => copyServiceField(selectedServiceProxyUrl, `${selectedService.name} URL`)}>
+                <button className="action-button btn" type="button" onClick={() => copyServiceField(selectedServiceProxyUrl, `${selectedService.name} URL`)}>
                   copy url
                 </button>
                 <button
-                  className="action-button"
+                  className="action-button btn"
                   type="button"
                   onClick={() => copyServiceField(selectedService.healthUrl, `${selectedService.name} health path`)}
                 >
@@ -794,8 +794,8 @@ export function OverviewTab(props: OverviewTabProps) {
           <div className="divider" />
           <div className="panel-header compact-header">
             <div>
-              <p className="section-kicker">Platform Actions</p>
-              <h2>Safe Operator Controls</h2>
+              <p className="section-kicker t-kicker">Platform Actions</p>
+              <h2 className="t-h2">Safe Operator Controls</h2>
             </div>
           </div>
           <div className="table-stack">
@@ -805,7 +805,7 @@ export function OverviewTab(props: OverviewTabProps) {
                 <div className="muted">Re-poll the full stack and re-evaluate service health and readiness.</div>
               </div>
               <div className="row-meta">
-                <button className="action-button" type="button" onClick={() => refreshData()}>
+                <button className="action-button btn" type="button" onClick={() => refreshData()}>
                   refresh
                 </button>
               </div>
@@ -816,7 +816,7 @@ export function OverviewTab(props: OverviewTabProps) {
                 <div className="muted">Verify email and webhook alert delivery without waiting for a real incident.</div>
               </div>
               <div className="row-meta">
-                <button className="action-button" type="button" disabled={alertActionPending !== null} onClick={() => runAlertAction("test")}>
+                <button className="action-button btn" type="button" disabled={alertActionPending !== null} onClick={() => runAlertAction("test")}>
                   {alertActionPending === "test" ? "testing" : "test alert"}
                 </button>
               </div>
@@ -827,7 +827,7 @@ export function OverviewTab(props: OverviewTabProps) {
                 <div className="muted">Reapply starter rules, starter packs, and shipped playbooks.</div>
               </div>
               <div className="row-meta">
-                <button className="action-button" type="button" disabled={maintenancePending !== null} onClick={reseedAutomationDefaults}>
+                <button className="action-button btn" type="button" disabled={maintenancePending !== null} onClick={reseedAutomationDefaults}>
                   {maintenancePending === "reseed" ? "reseeding" : "reseed"}
                 </button>
               </div>
@@ -838,7 +838,7 @@ export function OverviewTab(props: OverviewTabProps) {
                 <div className="muted">Jump to Settings to update onboarding, deployment posture, context, and worker config.</div>
               </div>
               <div className="row-meta">
-                <button className="action-button ok" type="button" onClick={() => setActiveTab("settings")}>
+                <button className="action-button btn ok" type="button" onClick={() => setActiveTab("settings")}>
                   settings
                 </button>
               </div>
@@ -851,8 +851,8 @@ export function OverviewTab(props: OverviewTabProps) {
           <div className="divider" />
           <div className="panel-header compact-header">
             <div>
-              <p className="section-kicker">Support Surface</p>
-              <h2>Stack Fabric</h2>
+              <p className="section-kicker t-kicker">Support Surface</p>
+              <h2 className="t-h2">Stack Fabric</h2>
             </div>
           </div>
           <div className="support-stack">

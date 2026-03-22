@@ -32,8 +32,8 @@ export function AutomationTab(props: AutomationTabProps) {
         <article className="panel panel-span-12 automation-panel automation-cyan">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Automation</p>
-              <h2>Bootstrap + Maintenance</h2>
+              <p className="section-kicker t-kicker">Automation</p>
+              <h2 className="t-h2">Bootstrap + Maintenance</h2>
             </div>
             <span className={`status-pill ${data.bootstrapStatus.status === "imported" || data.bootstrapStatus.status === "skipped" ? "ok" : "warn"}`}>
               {bootstrapStatusLabel(data.bootstrapStatus.status)}
@@ -55,7 +55,7 @@ export function AutomationTab(props: AutomationTabProps) {
           </div>
           <div className="header-actions top-gap">
             <button
-              className="action-button secondary"
+              className="action-button btn secondary"
               disabled={maintenancePending !== null}
               onClick={() => {
                 if (!window.confirm("Reseed automation defaults? This will overwrite all custom rule configurations with the default set.")) return;
@@ -65,7 +65,7 @@ export function AutomationTab(props: AutomationTabProps) {
               {maintenancePending === "reseed" ? "reseeding" : "reseed defaults"}
             </button>
             <button
-              className="action-button primary"
+              className="action-button btn primary"
               disabled={starterPackPending !== null || !activeStarterPack}
               onClick={() => activeStarterPack && applyStarterPack(activeStarterPack.slug)}
             >
@@ -83,8 +83,8 @@ export function AutomationTab(props: AutomationTabProps) {
         <article className="panel panel-span-4">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Automations</p>
-              <h2>Starter Packs</h2>
+              <p className="section-kicker t-kicker">Automations</p>
+              <h2 className="t-h2">Starter Packs</h2>
             </div>
             <span className="count-pill">{data.starterPacks.length}</span>
           </div>
@@ -110,10 +110,10 @@ export function AutomationTab(props: AutomationTabProps) {
                     <span className={`status-pill ${activeStarterPack?.slug === pack.slug ? "ok" : "warn"}`}>
                       {activeStarterPack?.slug === pack.slug ? "active posture" : "available"}
                     </span>
-                    <button className="action-button ghost" type="button" onClick={() => setExpandedStarterPackSlug((current: string | null) => (current === pack.slug ? null : pack.slug))}>
+                    <button className="action-button btn ghost" type="button" onClick={() => setExpandedStarterPackSlug((current: string | null) => (current === pack.slug ? null : pack.slug))}>
                       {expandedStarterPackSlug === pack.slug ? "hide rules" : "show rules"}
                     </button>
-                    <button className="action-button secondary" disabled={starterPackPending !== null} onClick={() => applyStarterPack(pack.slug)}>
+                    <button className="action-button btn secondary" disabled={starterPackPending !== null} onClick={() => applyStarterPack(pack.slug)}>
                       {starterPackPending === pack.slug ? "applying" : "apply"}
                     </button>
                   </div>
@@ -130,13 +130,13 @@ export function AutomationTab(props: AutomationTabProps) {
         <article className="panel panel-span-4">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Rules</p>
-              <h2>Rule Inventory</h2>
+              <p className="section-kicker t-kicker">Rules</p>
+              <h2 className="t-h2">Rule Inventory</h2>
             </div>
             <div className="header-actions">
               <span className="count-pill">showing {visibleRules.length} of {data.rules.length}</span>
               {data.rules.length > 10 ? (
-                <button className="action-button subtle" type="button" onClick={() => setShowAllRules((current: boolean) => !current)}>
+                <button className="action-button btn subtle" type="button" onClick={() => setShowAllRules((current: boolean) => !current)}>
                   {showAllRules ? "show less" : "show all"}
                 </button>
               ) : null}
@@ -164,8 +164,8 @@ export function AutomationTab(props: AutomationTabProps) {
         <article className="panel panel-span-4">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Playbooks</p>
-              <h2>Starter Automations</h2>
+              <p className="section-kicker t-kicker">Playbooks</p>
+              <h2 className="t-h2">Starter Automations</h2>
             </div>
             <span className="count-pill">{data.playbooks.length}</span>
           </div>
@@ -182,7 +182,7 @@ export function AutomationTab(props: AutomationTabProps) {
                     <span className="status-pill ok">prebuilt</span>
                     <span className="muted">{playbook.n8n_workflow_slug}</span>
                     <div className="action-row">
-                      <a className="action-button ghost" href={n8nWorkflowUrl(n8nUrl, playbook.n8n_workflow_slug)} target="_blank" rel="noreferrer">
+                      <a className="action-button btn ghost" href={n8nWorkflowUrl(n8nUrl, playbook.n8n_workflow_slug)} target="_blank" rel="noreferrer">
                         view workflow
                       </a>
                     </div>
@@ -200,8 +200,8 @@ export function AutomationTab(props: AutomationTabProps) {
         <article className="panel panel-span-12">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">Rule Packs</p>
-              <h2>Seeded Automation Surfaces</h2>
+              <p className="section-kicker t-kicker">Rule Packs</p>
+              <h2 className="t-h2">Seeded Automation Surfaces</h2>
             </div>
             <span className="count-pill">{data.rulePacks.length}</span>
           </div>

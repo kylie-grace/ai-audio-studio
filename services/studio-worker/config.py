@@ -189,6 +189,11 @@ def validate_startup(settings: Settings) -> dict:
     elif not _valid_http_url(worker_api_base_url):
         errors.append(f"WORKER_API_BASE_URL is invalid: {worker_api_base_url}")
 
+    shared_paths = dict(load_workspace_settings().get("shared_paths") or {})
+    for key, path in shared_paths.items():
+        if path and not os.path.exists(path):
+            warnings.append(f"Shared path '{key}' not found at {path} — verify NFS/SMB mount is active")
+
     for slug, path_text in {
         "shared-projects": settings.shared_projects_path,
         "deliveries": settings.delivery_path,
