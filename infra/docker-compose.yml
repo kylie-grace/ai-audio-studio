@@ -102,8 +102,8 @@ services:
     environment:
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres/${POSTGRES_DB:-studiodb}
       APPROVAL_QUEUE_PATH: /data/approval-queue
-      OPERATOR_API_TOKEN: ${OPERATOR_API_TOKEN:-change-me-operator-token}
-      WORKER_API_TOKEN: ${WORKER_API_TOKEN:-change-me-worker-token}
+      OPERATOR_API_TOKEN: ${OPERATOR_API_TOKEN:?OPERATOR_API_TOKEN is required}
+      WORKER_API_TOKEN: ${WORKER_API_TOKEN:?WORKER_API_TOKEN is required}
       PORT: "8080"
     volumes:
       - shared-projects:/data/projects
@@ -478,7 +478,7 @@ services:
       PATH_TRANSLATION_JSON: "{}"
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-10}
       STUDIO_WORKER_DRY_RUN_DAW: ${STUDIO_WORKER_DRY_RUN_DAW:-true}
-      WORKER_API_TOKEN: ${WORKER_API_TOKEN:-change-me-worker-token}
+      WORKER_API_TOKEN: ${WORKER_API_TOKEN:?WORKER_API_TOKEN is required}
       AUDIO_QC_URL: http://audio-qc:8120
       PORT: "8190"
     volumes:

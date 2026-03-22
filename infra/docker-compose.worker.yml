@@ -18,7 +18,7 @@ services:
       WORKER_CAPABILITIES: "${WORKER_CAPABILITIES:-session-prep,revision-parser,delivery-packager}"
       POLL_INTERVAL_SECONDS: "${POLL_INTERVAL_SECONDS:-10}"
       STUDIO_WORKER_DRY_RUN_DAW: "${STUDIO_WORKER_DRY_RUN_DAW:-true}"
-      WORKER_API_TOKEN: "${WORKER_API_TOKEN:-change-me-worker-token}"
+      WORKER_API_TOKEN: "${WORKER_API_TOKEN:?WORKER_API_TOKEN is required}"
       SHARED_PROJECTS_PATH: "${SHARED_PROJECTS_PATH:-/Volumes/StudioShare/projects}"
       DELIVERY_PATH: "${DELIVERY_PATH:-/Volumes/StudioShare/deliveries}"
       PATH_TRANSLATION_JSON: '${PATH_TRANSLATION_JSON:-{}}'
