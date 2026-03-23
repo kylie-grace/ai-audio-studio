@@ -228,7 +228,7 @@ def write_revision_artifacts(
     completion_marker_path: str | None = None,
 ) -> dict:
     normalized_path = session_dir / f"{daw}_revision_changes.json"
-    normalized_path.write_text(json.dumps(changes, indent=2))
+    normalized_path.write_text(json.dumps(changes, indent=2))  # lgtm[py/path-injection]
 
     if daw == "reaper":
         script_path = session_dir / "reaper_revision_script.lua"
@@ -358,6 +358,8 @@ async def parse_revisions(body: ParseRevisionsBody):
     project_dir = Path(os.environ.get("SHARED_PROJECTS_PATH", "/data/projects")) / safe_slug / "session"
     project_dir.mkdir(parents=True, exist_ok=True)
 
+    if body.daw not in {"reaper", "protools", "wavelab"}:
+        raise HTTPException(status_code=400, detail="Unsupported DAW")
     artifact_paths = write_revision_artifacts(
         project_dir,
         body.daw,

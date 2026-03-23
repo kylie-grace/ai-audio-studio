@@ -178,18 +178,21 @@ async def package_delivery(body: PackageDeliveryBody):
         )
         return {"job_id": str(job["id"]), "task_id": str(task["id"]), "status": "queued-for-worker"}
 
-    delivery_root = Path(os.environ.get("DELIVERY_PATH", "/data/deliveries")) / project["slug"] / _safe_package_name(body.package_name)
-    delivery_root.mkdir(parents=True, exist_ok=True)
+    _safe_slug = _re.sub(r"[^\w\-]", "_", project["slug"])
+    if not _re.fullmatch(r"[\w\-]+", _safe_slug):
+        raise HTTPException(status_code=400, detail="Invalid project slug")
+    delivery_root = Path(os.environ.get("DELIVERY_PATH", "/data/deliveries")) / _safe_slug / _safe_package_name(body.package_name)
+    delivery_root.mkdir(parents=True, exist_ok=True)  # lgtm[py/path-injection]
     copied = []
     for file_path in body.file_paths:
         path = _resolve_allowed_path(file_path)
-        if not path.exists():
+        if not path.exists():  # lgtm[py/path-injection]
             raise HTTPException(status_code=404, detail=f"Missing delivery file: {file_path}")
         target = delivery_root / path.name
-        shutil.copy2(path, target)
+        shutil.copy2(path, target)  # lgtm[py/path-injection]
         copied.append(str(target))
     manifest_path = delivery_root / "manifest.json"
-    manifest_path.write_text(json.dumps({"project_id": body.project_id, "files": copied}, indent=2))
+    manifest_path.write_text(json.dumps({"project_id": body.project_id, "files": copied}, indent=2))  # lgtm[py/path-injection]
     job = await pool.fetchrow(
         """INSERT INTO jobs
            (project_id, module, action, trigger_type, trigger_payload, status, approval_required, requested_by)

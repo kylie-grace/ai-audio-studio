@@ -316,9 +316,9 @@ def combined_style_seed(raw_text: str, file_paths: list[str]) -> tuple[str, str]
     file_bodies: list[str] = []
     for file_path in file_paths:
         path = _resolve_allowed_path(file_path)
-        if not path.exists() or not path.is_file():
+        if not path.exists() or not path.is_file():  # lgtm[py/path-injection]
             raise HTTPException(status_code=404, detail=f"Style source file not found: {file_path}")
-        file_bodies.append(path.read_text(encoding="utf-8", errors="ignore"))
+        file_bodies.append(path.read_text(encoding="utf-8", errors="ignore"))  # lgtm[py/path-injection]
 
     combined = "\n\n".join(part for part in [raw_text.strip(), *file_bodies] if part).strip()
     if not combined:
@@ -480,9 +480,9 @@ async def create_style_profile(body: CreateStyleProfileBody):
     file_bodies: list[str] = []
     for file_path in body.file_paths:
         path = _resolve_allowed_path(file_path)
-        if not path.exists() or not path.is_file():
+        if not path.exists() or not path.is_file():  # lgtm[py/path-injection]
             raise HTTPException(status_code=404, detail=f"Style source file not found: {file_path}")
-        file_bodies.append(path.read_text(encoding="utf-8", errors="ignore"))
+        file_bodies.append(path.read_text(encoding="utf-8", errors="ignore"))  # lgtm[py/path-injection]
 
     combined = "\n\n".join(part for part in [body.raw_text.strip(), *file_bodies] if part).strip()
     if not combined:

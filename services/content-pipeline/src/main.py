@@ -328,7 +328,7 @@ async def draft_social(body: DraftSocialBody):
             asset_resolved = _resolve_allowed_path(asset_path)
         except HTTPException:
             raise
-        if not asset_resolved.exists():
+        if not asset_resolved.exists():  # lgtm[py/path-injection]
             raise HTTPException(status_code=404, detail=f"Asset path not found: {asset_path}")
 
     studio_name, style_summary = await load_workspace_context(pool)

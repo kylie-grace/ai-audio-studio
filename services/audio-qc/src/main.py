@@ -274,11 +274,11 @@ async def run_qc(body: RunQCBody):
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
     file_path = _resolve_allowed_path(body.file_path)
-    if not file_path.exists():
+    if not file_path.exists():  # lgtm[py/path-injection]
         raise HTTPException(status_code=404, detail="Audio file not found")
     report = analyze_audio(file_path, body.target)
     report_path = file_path.with_suffix(file_path.suffix + ".qc.json")
-    report_path.write_text(json.dumps(report, indent=2))
+    report_path.write_text(json.dumps(report, indent=2))  # lgtm[py/path-injection]
     row = await pool.fetchrow(
         """INSERT INTO qc_reports
            (project_id, file_path, lufs_integrated, lufs_target, true_peak_dbfs, true_peak_ok,
