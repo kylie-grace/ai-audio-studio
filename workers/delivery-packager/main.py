@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re as _re
 import shutil
 import time
 from contextlib import asynccontextmanager
@@ -17,6 +18,24 @@ _pool: asyncpg.Pool | None = None
 _workspace_settings_cache: dict = {}
 _workspace_settings_cache_ts: float = 0.0
 WORKSPACE_SETTINGS_CACHE_TTL = 60.0
+
+
+def _safe_package_name(name: str) -> str:
+    """Strip characters that could cause path traversal in a directory name."""
+    sanitized = _re.sub(r"[^\w\-.]", "_", name)
+    if sanitized != name.replace(" ", "_"):
+        pass  # silent normalization
+    return sanitized.strip(".")
+
+
+def _resolve_allowed_path(file_path: str) -> Path:
+    try:
+        resolved = Path(file_path).resolve()
+    except (ValueError, OSError):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    if ".." in Path(file_path).parts:
+        raise HTTPException(status_code=400, detail="File path must not contain '..'")
+    return resolved
 
 
 @asynccontextmanager
@@ -135,11 +154,11 @@ async def package_delivery(body: PackageDeliveryBody):
         )
         return {"job_id": str(job["id"]), "task_id": str(task["id"]), "status": "queued-for-worker"}
 
-    delivery_root = Path(os.environ.get("DELIVERY_PATH", "/data/deliveries")) / project["slug"] / body.package_name
+    delivery_root = Path(os.environ.get("DELIVERY_PATH", "/data/deliveries")) / project["slug"] / _safe_package_name(body.package_name)
     delivery_root.mkdir(parents=True, exist_ok=True)
     copied = []
     for file_path in body.file_paths:
-        path = Path(file_path)
+        path = _resolve_allowed_path(file_path)
         if not path.exists():
             raise HTTPException(status_code=404, detail=f"Missing delivery file: {file_path}")
         target = delivery_root / path.name

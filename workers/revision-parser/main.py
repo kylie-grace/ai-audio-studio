@@ -350,7 +350,9 @@ async def parse_revisions(body: ParseRevisionsBody):
     changes = await parse_changes(body.raw_notes, session_tracks)
     executable_changes = [c for c in changes if c["confidence"] >= 0.65]
 
-    project_dir = Path(os.environ.get("SHARED_PROJECTS_PATH", "/data/projects")) / project["slug"] / "session"
+    import re as _re
+    safe_slug = _re.sub(r"[^\w\-]", "_", project["slug"])
+    project_dir = Path(os.environ.get("SHARED_PROJECTS_PATH", "/data/projects")) / safe_slug / "session"
     project_dir.mkdir(parents=True, exist_ok=True)
 
     artifact_paths = write_revision_artifacts(

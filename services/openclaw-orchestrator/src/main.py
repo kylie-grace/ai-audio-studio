@@ -280,7 +280,7 @@ def _ollama_generate(prompt: str) -> str:
             last_error = exc
             continue
     if last_error is not None:
-        raise last_error
+        raise HTTPException(status_code=502, detail="LLM endpoint unavailable after all retries") from last_error
     return ""
 
 
@@ -453,7 +453,7 @@ async def policy_check(body: PolicyCheckBody):
     try:
         check_permission(body.action, body.tier)
     except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
+        raise HTTPException(status_code=403, detail=f"Permission denied for action '{body.action}'") from exc
     return {"allowed": True, "action": body.action, "tier": body.tier}
 
 
@@ -731,7 +731,7 @@ async def dispatch(body: DispatchBody):
     try:
         check_permission(body.action, body.tier)
     except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
+        raise HTTPException(status_code=403, detail=f"Permission denied for action '{body.action}'") from exc
     pool = await get_pool()
     job = await pool.fetchrow(
         """INSERT INTO jobs
@@ -784,7 +784,7 @@ async def dispatch_by_trigger(body: TriggerDispatchBody):
     try:
         check_permission("create_job", rule["required_tier"])
     except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
+        raise HTTPException(status_code=403, detail=f"Permission denied for action '{rule['slug']}'") from exc
 
     trigger_payload = {
         **body.context,

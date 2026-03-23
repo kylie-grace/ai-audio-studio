@@ -33,6 +33,18 @@ _workspace_settings_cache_ts: float = 0.0
 WORKSPACE_SETTINGS_CACHE_TTL = 60.0
 
 
+def _resolve_allowed_path(file_path: str) -> Path:
+    try:
+        resolved = Path(file_path).resolve()
+    except (ValueError, OSError):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    if not resolved.is_absolute():
+        raise HTTPException(status_code=400, detail="File path must be absolute")
+    if ".." in Path(file_path).parts:
+        raise HTTPException(status_code=400, detail="File path must not contain '..'")
+    return resolved
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _pool
@@ -238,7 +250,7 @@ async def run_qc(body: RunQCBody):
     project = await pool.fetchrow("SELECT id FROM projects WHERE id=$1", body.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    file_path = Path(body.file_path)
+    file_path = _resolve_allowed_path(body.file_path)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Audio file not found")
     report = analyze_audio(file_path, body.target)

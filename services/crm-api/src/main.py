@@ -38,6 +38,20 @@ from .workspace_settings import (
 _pool: asyncpg.Pool | None = None
 
 
+def _resolve_allowed_path(file_path: str) -> Path:
+    """Resolve a user-supplied path and reject path-traversal attempts."""
+    try:
+        resolved = Path(file_path).resolve()
+    except (ValueError, OSError):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    if not resolved.is_absolute():
+        raise HTTPException(status_code=400, detail="File path must be absolute")
+    # Reject obvious traversal patterns in the original string
+    if ".." in Path(file_path).parts:
+        raise HTTPException(status_code=400, detail="File path must not contain '..'")
+    return resolved
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _pool
@@ -281,7 +295,7 @@ async def seed_default_workspace_settings(pool: asyncpg.Pool) -> None:
 def combined_style_seed(raw_text: str, file_paths: list[str]) -> tuple[str, str]:
     file_bodies: list[str] = []
     for file_path in file_paths:
-        path = Path(file_path)
+        path = _resolve_allowed_path(file_path)
         if not path.exists() or not path.is_file():
             raise HTTPException(status_code=404, detail=f"Style source file not found: {file_path}")
         file_bodies.append(path.read_text(encoding="utf-8", errors="ignore"))
@@ -445,7 +459,7 @@ async def create_style_profile(body: CreateStyleProfileBody):
 
     file_bodies: list[str] = []
     for file_path in body.file_paths:
-        path = Path(file_path)
+        path = _resolve_allowed_path(file_path)
         if not path.exists() or not path.is_file():
             raise HTTPException(status_code=404, detail=f"Style source file not found: {file_path}")
         file_bodies.append(path.read_text(encoding="utf-8", errors="ignore"))

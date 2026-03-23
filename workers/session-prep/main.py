@@ -103,7 +103,12 @@ async def status():
 async def prepare_session(body: PrepareSessionBody):
     pool = await get_pool()
     await require_module_enabled(pool, "session_prep")
-    source_dir = Path(body.source_dir)
+    try:
+        source_dir = Path(body.source_dir).resolve()
+    except (ValueError, OSError):
+        raise HTTPException(status_code=400, detail="Invalid source_dir path")
+    if ".." in Path(body.source_dir).parts:
+        raise HTTPException(status_code=400, detail="source_dir must not contain '..'")
     if not source_dir.exists() or not source_dir.is_dir():
         raise HTTPException(status_code=404, detail="Source directory not found")
 

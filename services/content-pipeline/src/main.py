@@ -63,6 +63,16 @@ _workspace_settings_cache_ts: float = 0.0
 WORKSPACE_SETTINGS_CACHE_TTL = 60.0
 
 
+def _resolve_allowed_path(file_path: str) -> Path:
+    try:
+        resolved = Path(file_path).resolve()
+    except (ValueError, OSError):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    if ".." in Path(file_path).parts:
+        raise HTTPException(status_code=400, detail="File path must not contain '..'")
+    return resolved
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _pool
@@ -290,7 +300,11 @@ async def draft_social(body: DraftSocialBody):
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
     for asset_path in body.asset_paths:
-        if not Path(asset_path).exists():
+        try:
+            asset_resolved = _resolve_allowed_path(asset_path)
+        except HTTPException:
+            raise
+        if not asset_resolved.exists():
             raise HTTPException(status_code=404, detail=f"Asset path not found: {asset_path}")
 
     studio_name, style_summary = await load_workspace_context(pool)

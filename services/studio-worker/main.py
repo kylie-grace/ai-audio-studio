@@ -16,7 +16,7 @@ logging.root.setLevel(logging.INFO)
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from adapters.registry import list_daw_adapters
@@ -166,7 +166,10 @@ async def health():
 
 @app.get("/status")
 async def status():
-    workstation = detect_workstation_profile(_settings)
+    try:
+        workstation = detect_workstation_profile(_settings)
+    except Exception:
+        workstation = {"daws": [], "error": "profile unavailable"}
     runtime = _worker.runtime_state() if _worker is not None else {"drain_requested": False, "current_task_id": None, "last_status": "booting"}
     return {
         "status": "ok",
@@ -206,12 +209,18 @@ async def workstation_plugins():
 
 @app.get("/workstation/validate")
 async def workstation_validate():
-    return validate_workstation_setup(_settings)
+    try:
+        return validate_workstation_setup(_settings)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Workstation validation failed")
 
 
 @app.post("/workstation/dry-run-smoke")
 async def workstation_dry_run_smoke():
-    return build_workstation_smoke_report(_settings)
+    try:
+        return build_workstation_smoke_report(_settings)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Workstation smoke check failed")
 
 
 @app.get("/runtime")
