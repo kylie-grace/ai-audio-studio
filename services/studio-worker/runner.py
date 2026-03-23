@@ -65,6 +65,9 @@ class StudioWorkerRunner:
         self._drain_requested = False
         return self.runtime_state()
 
+    def task_requires_confirmation(self, task: dict) -> bool:
+        return task.get("task_type") in {"execute-soundflow", "execute-reascript", "execute-wavelab"}
+
     async def sync_plugin_inventory(self) -> None:
         snapshot = self.workstation_snapshot()
         detected = snapshot.get("detected") or {}
@@ -143,6 +146,19 @@ class StudioWorkerRunner:
         response.raise_for_status()
         return response.json()
 
+    async def wait_for_confirmation(self, task_id: str) -> dict | None:
+        while True:
+            current = await self.fetch_task(task_id)
+            if current is None:
+                return None
+            status = current.get("status")
+            if status in {"approved", "claimed"}:
+                return current
+            if status in {"cancelled", "failed", "rejected"}:
+                return None
+            await self.heartbeat("awaiting-approval")
+            await asyncio.sleep(self.settings.poll_interval_seconds)
+
     async def execute_task_with_control(self, task: dict) -> tuple[dict | None, bool]:
         payload = decode_jsonb(task["payload"]) or {}
         cancel_marker = self.cancel_marker_path(task["id"])
@@ -203,6 +219,12 @@ class StudioWorkerRunner:
                 task = await self.claim_next_task()
                 if task:
                     self._current_task_id = task["id"]
+                    if self.task_requires_confirmation(task):
+                        approved_task = await self.wait_for_confirmation(task["id"])
+                        if approved_task is None:
+                            self._current_task_id = None
+                            continue
+                        task = approved_task
                     await self.heartbeat("busy")
                     try:
                         result, cancelled = await self.execute_task_with_control(task)

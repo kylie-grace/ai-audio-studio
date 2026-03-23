@@ -19,6 +19,7 @@
 - All pull requests must maintain a 100% pass rate.
 - Do not reduce the total passing test count.
 - Run `python -m pytest tests/ -v` before opening a PR.
+- Run `pytest tests/integration/ -q` when touching flow orchestration, FastAPI wiring, or worker handoffs.
 - If you change the UI, also run `npm run build` in `apps/studio-brain-ui/`.
 
 ## Code Style

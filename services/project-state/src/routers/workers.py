@@ -148,6 +148,10 @@ class FailWorkerTaskBody(BaseModel):
     result: dict = Field(default_factory=dict)
 
 
+def requires_operator_confirmation(task_type: str) -> bool:
+    return task_type in {"execute-soundflow", "execute-reascript", "execute-wavelab"}
+
+
 async def _append_audit(pool, task, actor: str, action: str, payload: dict | None = None) -> None:
     await pool.execute(
         """INSERT INTO audit_log (job_id, project_id, actor, action, tier, payload)
@@ -176,7 +180,7 @@ async def recover_expired_claims(pool) -> list[dict]:
     now = datetime.now(timezone.utc)
     rows = await pool.fetch(
         """SELECT * FROM worker_tasks
-           WHERE status='claimed' AND lease_expires_at IS NOT NULL AND lease_expires_at < $1
+           WHERE status IN ('claimed','awaiting-approval','approved') AND lease_expires_at IS NOT NULL AND lease_expires_at < $1
            ORDER BY lease_expires_at ASC""",
         now,
     )
@@ -446,7 +450,7 @@ async def runtime_recovery_snapshot():
         "SELECT * FROM worker_tasks WHERE status='failed' ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 20"
     )
     claimed_tasks = await pool.fetch(
-        "SELECT * FROM worker_tasks WHERE status='claimed' ORDER BY lease_expires_at ASC NULLS LAST, created_at DESC LIMIT 20"
+        "SELECT * FROM worker_tasks WHERE status IN ('claimed','awaiting-approval','approved') ORDER BY lease_expires_at ASC NULLS LAST, created_at DESC LIMIT 20"
     )
 
     stale_workers = [
@@ -612,10 +616,12 @@ async def claim_worker_task(body: ClaimWorkerTaskBody, x_worker_token: str | Non
 
     claimed_at = datetime.now(timezone.utc)
     lease_expires_at = claimed_at + timedelta(seconds=body.lease_seconds)
+    initial_status = "awaiting-approval" if requires_operator_confirmation(row["task_type"]) else "claimed"
     await pool.execute(
         """UPDATE worker_tasks
-           SET status='claimed', claimed_by=$1, claimed_at=$2, lease_expires_at=$3, updated_at=now()
-           WHERE id=$4""",
+           SET status=$1, claimed_by=$2, claimed_at=$3, lease_expires_at=$4, updated_at=now()
+           WHERE id=$5""",
+        initial_status,
         body.worker_slug,
         claimed_at,
         lease_expires_at,
@@ -626,7 +632,7 @@ async def claim_worker_task(body: ClaimWorkerTaskBody, x_worker_token: str | Non
         claimed_at,
         body.worker_slug,
     )
-    if row["job_id"] is not None:
+    if row["job_id"] is not None and initial_status == "claimed":
         job = await pool.fetchrow("SELECT * FROM jobs WHERE id=$1", row["job_id"])
         if job is not None and job["status"] in {"pending", "approved"}:
             validate_transition(job["status"], "in-progress", job["approval_required"], job.get("approved_at"))
@@ -708,7 +714,15 @@ async def fail_worker_task(task_id: str, body: FailWorkerTaskBody, x_worker_toke
     if task["job_id"] is not None:
         job = await pool.fetchrow("SELECT * FROM jobs WHERE id=$1", task["job_id"])
         if job is not None:
-            validate_transition(job["status"], "failed", job["approval_required"], job.get("approved_at"))
+            job_status = job["status"]
+            if job_status == "approved":
+                validate_transition(job_status, "in-progress", job["approval_required"], job.get("approved_at"))
+                await pool.execute(
+                    "UPDATE jobs SET status='in-progress', updated_at=now() WHERE id=$1 AND status='approved'",
+                    task["job_id"],
+                )
+                job_status = "in-progress"
+            validate_transition(job_status, "failed", job["approval_required"], job.get("approved_at"))
         await pool.execute(
             "UPDATE jobs SET status='failed', error_message=$1, updated_at=now() WHERE id=$2",
             body.error_message,
@@ -739,8 +753,8 @@ async def release_worker_task(
     task = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Worker task not found")
-    if task["status"] != "claimed":
-        raise HTTPException(status_code=409, detail="Only claimed tasks can be released")
+    if task["status"] not in {"claimed", "awaiting-approval", "approved"}:
+        raise HTTPException(status_code=409, detail="Only claimed or approval-paused tasks can be released")
 
     claimed_by = task.get("claimed_by")
     await pool.execute(
@@ -840,6 +854,42 @@ async def requeue_worker_task(
     return serialize_worker_task(requeued)
 
 
+@router.post("/tasks/{task_id}/confirm")
+async def confirm_worker_task(
+    task_id: str,
+    x_actor: str = Header(...),
+    x_operator_token: str | None = Header(default=None),
+):
+    require_authorized_actor(x_actor)
+    require_operator_token(x_operator_token)
+    pool = await get_pool()
+    task = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Worker task not found")
+    if task["status"] != "awaiting-approval":
+        raise HTTPException(status_code=409, detail="Only awaiting-approval tasks can be confirmed")
+
+    confirmed_at = datetime.now(timezone.utc)
+    await pool.execute(
+        """UPDATE worker_tasks
+           SET status='approved',
+               result=COALESCE(result, '{}'::jsonb) || $1::jsonb,
+               updated_at=now()
+           WHERE id=$2""",
+        json.dumps({"confirmed_by": x_actor, "confirmed_at": confirmed_at.isoformat()}),
+        task_id,
+    )
+    await _append_audit(
+        pool,
+        task,
+        f"human:{x_actor}",
+        "confirm-worker-task",
+        {"task_id": task_id, "claimed_by": task.get("claimed_by"), "confirmed_at": confirmed_at.isoformat()},
+    )
+    confirmed = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
+    return serialize_worker_task(confirmed)
+
+
 @router.post("/tasks/{task_id}/cancel")
 async def cancel_worker_task(
     task_id: str,
@@ -852,8 +902,8 @@ async def cancel_worker_task(
     task = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Worker task not found")
-    if task["status"] not in {"queued", "claimed", "failed"}:
-        raise HTTPException(status_code=409, detail="Only queued, claimed, or failed tasks can be cancelled")
+    if task["status"] not in {"queued", "claimed", "failed", "awaiting-approval", "approved"}:
+        raise HTTPException(status_code=409, detail="Only queued, claimed, approval-paused, approved, or failed tasks can be cancelled")
 
     cancelled_at = datetime.now(timezone.utc)
     await pool.execute(
@@ -913,8 +963,8 @@ async def stop_worker_task(
     task = await pool.fetchrow("SELECT * FROM worker_tasks WHERE id=$1", task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Worker task not found")
-    if task["status"] != "claimed":
-        raise HTTPException(status_code=409, detail="Only claimed tasks can be stopped")
+    if task["status"] not in {"claimed", "awaiting-approval", "approved"}:
+        raise HTTPException(status_code=409, detail="Only claimed or approval-paused tasks can be stopped")
 
     stopped_at = datetime.now(timezone.utc)
     await pool.execute(

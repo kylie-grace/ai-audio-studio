@@ -165,6 +165,7 @@ launchctl kickstart -k gui/$(id -u)/com.aiaudiostudio.worker
 - Workstation profile: `http://<studio-mac-ip>:8190/workstation/profile`
 - Workstation validation: `http://<studio-mac-ip>:8190/workstation/validate`
 - Workstation dry-run smoke: `POST http://<studio-mac-ip>:8190/workstation/dry-run-smoke`
+- Confirm a paused DAW task: `POST http://<studio-mac-ip>:8190/runtime/confirm-task`
 - Worker runtime status: `http://<studio-mac-ip>:8190/runtime`
 - Worker drain / resume: `POST http://<studio-mac-ip>:8190/runtime/drain` and `POST http://<studio-mac-ip>:8190/runtime/resume`
 - Session manifest preview: `POST http://<studio-mac-ip>:8190/session-manifest/preview`
@@ -191,4 +192,6 @@ launchctl kickstart -k gui/$(id -u)/com.aiaudiostudio.worker
 - Set `STUDIO_WORKER_DRY_RUN_DAW=true` to validate DAW execution queueing before a real studio Mac is available
 - The control room `Setup Validation` panel can now run a one-click dry-run smoke that stages a disposable session manifest, mix plan, listening review, render plan, and execution-plan rehearsal without touching a live project
 - The same panel can now drain or resume the worker so maintenance can pause new task claims without killing in-flight process state
+- DAW execution tasks now pause in `awaiting-approval` until an operator explicitly confirms them from the control room or via `POST /runtime/confirm-task`
+- Pro Tools-oriented operators can start from `workers/soundflow-bootstrap/` as the minimal SoundFlow package skeleton for revision execution payloads
 - `windows` workers are scaffolded in path translation, plugin scanning, and workstation validation, but still need live DAW runtime validation before being treated as production-ready

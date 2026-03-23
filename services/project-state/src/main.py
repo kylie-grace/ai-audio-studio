@@ -35,7 +35,7 @@ async def status():
     pool: asyncpg.Pool = app.state.pool
     approval_count = await pool.fetchval("SELECT COUNT(*) FROM jobs WHERE status='awaiting-approval'")
     worker_count = await pool.fetchval("SELECT COUNT(*) FROM worker_nodes WHERE status <> 'retired'")
-    queued_tasks = await pool.fetchval("SELECT COUNT(*) FROM worker_tasks WHERE status IN ('queued','claimed')")
+    queued_tasks = await pool.fetchval("SELECT COUNT(*) FROM worker_tasks WHERE status IN ('queued','claimed','awaiting-approval','approved')")
     project_count = await pool.fetchval("SELECT COUNT(*) FROM projects")
     return {
         "status": "ok",

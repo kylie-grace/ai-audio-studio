@@ -1981,6 +1981,28 @@ code {
   gap: 10px;
 }
 
+.confirm-task-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--color-overlay-scrim);
+  backdrop-filter: blur(10px);
+}
+
+.confirm-task-modal {
+  width: min(760px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  border-radius: 20px;
+  border: 1px solid var(--color-border-medium);
+  background: var(--bg-overlay);
+  box-shadow: 0 24px 72px var(--color-shadow-modal);
+  padding: 24px;
+}
+
 .wizard-footer-actions {
   display: flex;
   gap: 10px;

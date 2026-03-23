@@ -125,6 +125,7 @@ export function useDashboardModel() {
       missing_fields: ["studio_name", "shared_paths.projects", "style_seed.raw_text"],
       style_profile_count: 0,
     },
+    workerHealth: null,
     workstationProfile: null,
     sessionManifestPreview: null,
     mixPlanPreview: null,
@@ -208,7 +209,7 @@ export function useDashboardModel() {
   const healthyCount = data.services.filter((service) => service.state === "healthy").length;
   const isInitialLoad = data.loadState === "loading" && !data.refreshedAt;
   const optionalOfflineCount = data.services.filter((service) => service.optional && service.state === "offline").length;
-  const activeTaskCount = data.tasks.filter((task) => task.status === "queued" || task.status === "claimed").length;
+  const activeTaskCount = data.tasks.filter((task) => ["queued", "claimed", "awaiting-approval", "approved"].includes(task.status)).length;
   const failedTaskCount = data.tasks.filter((task) => task.status === "failed").length;
   const enabledRuleCount = data.rules.filter((rule) => rule.enabled).length;
   const n8nUrl = frontDoorServiceUrl("n8n");

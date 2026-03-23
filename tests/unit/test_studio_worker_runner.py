@@ -11,11 +11,21 @@ from runner import StudioWorkerRunner  # type: ignore  # noqa: E402
 
 
 class DummyClient:
+    def __init__(self, task_statuses=None):
+        self.task_statuses = list(task_statuses or [])
+
     async def post(self, *args, **kwargs):
         return None
 
     async def get(self, *args, **kwargs):
-        raise AssertionError("unexpected get call")
+        if not self.task_statuses:
+            raise AssertionError("unexpected get call")
+        status = self.task_statuses.pop(0)
+        return SimpleNamespace(
+            status_code=200,
+            raise_for_status=lambda: None,
+            json=lambda: {"id": "task-1", "status": status},
+        )
 
 
 def build_settings():
@@ -28,6 +38,11 @@ def build_settings():
         capabilities=["session-prep"],
         shared_projects_path="/tmp/projects",
         delivery_path="/tmp/deliveries",
+        dry_run_daw=True,
+        reaper_binary_path=None,
+        protools_app_path=None,
+        soundflow_cli_path=None,
+        wavelab_app_path=None,
         workstation_profile={"display_name": "Demo Worker"},
         worker_api_token=None,
         poll_interval_seconds=0.01,
@@ -75,3 +90,20 @@ def test_run_forever_does_not_claim_tasks_while_draining(monkeypatch):
     assert "register" in events
     assert "heartbeat:draining" in events
     assert "claim" not in events
+
+
+def test_wait_for_confirmation_returns_when_task_is_approved():
+    runner = StudioWorkerRunner(DummyClient(["awaiting-approval", "approved"]), build_settings())
+
+    approved_task = asyncio.run(runner.wait_for_confirmation("task-1"))
+
+    assert approved_task is not None
+    assert approved_task["status"] == "approved"
+
+
+def test_wait_for_confirmation_stops_when_task_is_cancelled():
+    runner = StudioWorkerRunner(DummyClient(["awaiting-approval", "cancelled"]), build_settings())
+
+    approved_task = asyncio.run(runner.wait_for_confirmation("task-1"))
+
+    assert approved_task is None

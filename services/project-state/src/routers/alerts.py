@@ -22,10 +22,10 @@ async def alert_summary():
         "SELECT COUNT(*) FROM worker_tasks WHERE status = 'failed'"
     )
     claimed_worker_tasks = await pool.fetchval(
-        "SELECT COUNT(*) FROM worker_tasks WHERE status = 'claimed'"
+        "SELECT COUNT(*) FROM worker_tasks WHERE status IN ('claimed','awaiting-approval','approved')"
     )
     expired_leases = await pool.fetchval(
-        "SELECT COUNT(*) FROM worker_tasks WHERE status = 'claimed' AND lease_expires_at IS NOT NULL AND lease_expires_at < $1",
+        "SELECT COUNT(*) FROM worker_tasks WHERE status IN ('claimed','awaiting-approval','approved') AND lease_expires_at IS NOT NULL AND lease_expires_at < $1",
         now,
     )
     workers = await pool.fetch(

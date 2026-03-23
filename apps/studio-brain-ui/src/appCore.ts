@@ -922,6 +922,7 @@ async function loadDashboardData(auditDateFrom = "", auditDateTo = ""): Promise<
     runtimeRecovery,
     bootstrapStatus,
     workspace,
+    workerHealth: null,
     workstationProfile,
     sessionManifestPreview,
     mixPlanPreview,

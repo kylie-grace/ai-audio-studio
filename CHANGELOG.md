@@ -6,6 +6,10 @@ The format is based on Keep a Changelog.
 
 ## [Unreleased]
 
+- Added an explicit operator confirmation gate before DAW execution begins on the studio worker.
+- Added integration smoke tests for session prep, revision parsing, and delivery packaging flows.
+- Added a SoundFlow bootstrap package skeleton for Pro Tools operators.
+- Upgraded the Studio Brain UI toolchain to Vite 6.
 - Added PgBouncer-backed database routing and extra PostgreSQL tuning.
 - Added path-based Caddy front-door routing for the main HTTPS domain.
 - Added async SoundFlow and WaveLab adapter coverage plus DAW status API coverage.

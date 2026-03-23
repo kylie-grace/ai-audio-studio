@@ -16,7 +16,7 @@ logging.root.setLevel(logging.INFO)
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from adapters.registry import list_daw_adapters
@@ -144,6 +144,10 @@ class ExecutionPlanPreviewBody(BaseModel):
     listening_report: dict = {}
 
 
+class ConfirmTaskBody(BaseModel):
+    task_id: str
+
+
 @app.get("/health")
 async def health():
     llm_provider = os.getenv("LLM_PROVIDER", "ollama")
@@ -242,6 +246,28 @@ async def runtime_resume():
     if _worker is None:
         return {"status": "booting", "worker_slug": _settings.worker_slug, "runtime": {"drain_requested": False, "current_task_id": None, "last_status": "booting"}}
     return {"status": "ok", "worker_slug": _settings.worker_slug, "runtime": _worker.clear_drain()}
+
+
+@app.post("/runtime/confirm-task")
+async def runtime_confirm_task(
+    body: ConfirmTaskBody,
+    x_actor: str = Header(...),
+    x_operator_token: str | None = Header(default=None),
+):
+    if _client is None:
+        return {"status": "booting", "detail": "Worker HTTP client not ready yet."}
+    headers = {
+        "Accept": "application/json",
+        "X-Actor": x_actor,
+    }
+    if x_operator_token:
+        headers["X-Operator-Token"] = x_operator_token
+    response = await _client.post(
+        f"{_settings.project_state_url}/workers/tasks/{body.task_id}/confirm",
+        headers=headers,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 @app.post("/session-manifest/preview")

@@ -195,8 +195,21 @@ class FakePool:
             return len(self.worker_nodes)
         if "SELECT COUNT(*) FROM worker_tasks WHERE status = 'claimed'" in query and "lease_expires_at" not in query:
             return sum(1 for row in self.worker_tasks if row.get("status") == "claimed")
+        if "SELECT COUNT(*) FROM worker_tasks WHERE status IN ('claimed','awaiting-approval','approved')" in query and "lease_expires_at" not in query:
+            return sum(1 for row in self.worker_tasks if row.get("status") in {"claimed", "awaiting-approval", "approved"})
+        if "SELECT COUNT(*) FROM worker_tasks WHERE status IN ('queued','claimed','awaiting-approval','approved')" in query:
+            return sum(1 for row in self.worker_tasks if row.get("status") in {"queued", "claimed", "awaiting-approval", "approved"})
         if "SELECT COUNT(*) FROM worker_tasks WHERE status IN ('queued','claimed')" in query:
             return sum(1 for row in self.worker_tasks if row.get("status") in {"queued", "claimed"})
+        if "SELECT COUNT(*) FROM worker_tasks WHERE status IN ('claimed','awaiting-approval','approved') AND lease_expires_at IS NOT NULL" in query:
+            cutoff = args[0]
+            return sum(
+                1
+                for row in self.worker_tasks
+                if row.get("status") in {"claimed", "awaiting-approval", "approved"}
+                and row.get("lease_expires_at") is not None
+                and row.get("lease_expires_at") < cutoff
+            )
         if "SELECT COUNT(*) FROM worker_tasks WHERE status = 'claimed' AND lease_expires_at IS NOT NULL" in query:
             cutoff = args[0]
             return sum(
@@ -316,10 +329,12 @@ class FakePool:
             return [
                 FakeRow(row)
                 for row in self.worker_tasks
-                if row.get("status") == "claimed"
+                if row.get("status") in {"claimed", "awaiting-approval", "approved"}
                 and row.get("lease_expires_at") is not None
                 and row.get("lease_expires_at") < cutoff
             ]
+        if "SELECT * FROM worker_tasks WHERE status IN ('claimed','awaiting-approval','approved')" in query:
+            return [FakeRow(row) for row in self.worker_tasks if row.get("status") in {"claimed", "awaiting-approval", "approved"}]
         if "SELECT * FROM worker_tasks WHERE status='claimed'" in query:
             return [FakeRow(row) for row in self.worker_tasks if row.get("status") == "claimed"]
         if "SELECT * FROM audit_log" in query:

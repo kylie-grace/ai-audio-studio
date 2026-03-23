@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { AlertBanner } from "./components/AlertBanner";
+import { ConfirmTaskModal } from "./components/ConfirmTaskModal";
 import { PrimaryTabStrip } from "./components/PrimaryTabStrip";
 import { TabErrorBoundary } from "./components/TabErrorBoundary";
 import { useDashboardModel } from "./hooks/useDashboardModel";
@@ -67,6 +68,14 @@ export function App() {
         activeTab={activeTab}
         onSelect={(tabId) => setActiveTab(tabId as TabId)}
         badgeCounts={tabBadgeCounts}
+      />
+
+      <ConfirmTaskModal
+        apiProjectStateBase={model.API.projectState}
+        apiStudioWorkerBase={model.API.studioWorker}
+        operatorName={model.operatorName}
+        operatorToken={model.operatorToken}
+        onResolved={() => model.refreshData()}
       />
 
       {approvalArrivalMessage && activeTab !== "operations" ? (

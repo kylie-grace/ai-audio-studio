@@ -1,0 +1,7 @@
+{
+  "name": "ai-audio-studio-soundflow-bootstrap",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "description": "SoundFlow bootstrap package for AI Audio Studio revision execution"
+}
