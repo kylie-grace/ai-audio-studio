@@ -1,10 +1,9 @@
+# AI Audio Studio Platform
 <p align="center"><img src="brand/icon.svg" width="96" alt="AI Audio Studio" /></p>
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
-© 2026 Kylie-Grace Mars-Snyder. Licensed under [AGPL-3.0](LICENSE). See [docs/USAGE.md](docs/USAGE.md) for usage intent and commercial collaboration details.
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0) © 2026 Kylie-Grace Mars-Snyder. Licensed under [AGPL-3.0](LICENSE). See [docs/USAGE.md](docs/USAGE.md) for usage intent and commercial collaboration details.
 
-# AI Audio Studio Platform
 
 > **Operator-ready MVP, not a finished product.** The platform runs cleanly end-to-end: Docker stack, live dashboard, approval-gated job FSM, CRM, worker execution, and LAN/HTTPS access. The five core automation modules are functional. What's still being built is the novice onboarding layer — some setup still requires editing environment files rather than pointing and clicking. If you're comfortable with a terminal and Docker, it's usable today. If you're expecting a polished installer, that's the next phase.
 
