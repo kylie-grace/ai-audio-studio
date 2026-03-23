@@ -28,10 +28,11 @@ class SessionPrepPool:
 
 @pytest.mark.anyio
 async def test_session_prep_flow(async_client_factory, session_prep_module, tmp_path, monkeypatch):
-    source_dir = tmp_path / "source"
-    source_dir.mkdir()
+    shared_root = tmp_path / "projects"
+    source_dir = shared_root / "incoming" / "smoke-source"
+    source_dir.mkdir(parents=True)
     (source_dir / "kick.wav").write_text("audio")
-    monkeypatch.setenv("SHARED_PROJECTS_PATH", str(tmp_path / "projects"))
+    monkeypatch.setenv("SHARED_PROJECTS_PATH", str(shared_root))
     session_prep_module._pool = SessionPrepPool()
 
     client = await async_client_factory(session_prep_module.app)

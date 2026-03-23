@@ -26,8 +26,11 @@ class DeliveryPackagerPool:
 
 @pytest.mark.anyio
 async def test_delivery_packager_flow(async_client_factory, delivery_packager_module, tmp_path, monkeypatch):
-    asset = tmp_path / "mix.wav"
+    shared_root = tmp_path / "projects"
+    asset = shared_root / "smoke-project" / "mix.wav"
+    asset.parent.mkdir(parents=True)
     asset.write_text("audio")
+    monkeypatch.setenv("SHARED_PROJECTS_PATH", str(shared_root))
     monkeypatch.setenv("DELIVERY_PATH", str(tmp_path / "deliveries"))
     delivery_packager_module._pool = DeliveryPackagerPool()
 
