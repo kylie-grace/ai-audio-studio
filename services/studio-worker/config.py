@@ -157,8 +157,10 @@ def _path_access_report(path_text: str) -> dict:
             temp_path.unlink()
             report["write_tested"] = True
         except OSError as exc:
+            import logging as _logging
+            _logging.getLogger(__name__).warning("Write check failed for %s: %s", path_text, exc)
             report["writable"] = False
-            report["detail"] = f"{path_text} is not writable: {exc}"
+            report["detail"] = f"{path_text} is not writable"
             return report
     report["detail"] = f"{path_text} readable={report['readable']} writable={report['writable']}"
     return report

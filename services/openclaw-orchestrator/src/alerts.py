@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import smtplib
 import ssl
@@ -11,6 +12,8 @@ import urllib.request
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 DEFAULT_N8N_ALERT_PATH = "/webhook/studio/alerts"
 DEFAULT_EMAIL_FROM = "openclaw@localhost"
@@ -170,15 +173,17 @@ def _post_json(url: str, payload: dict[str, Any]) -> dict[str, Any]:
             }
     except urllib.error.HTTPError as exc:
         body = exc.read(512).decode("utf-8", errors="ignore")
+        _log.warning("Alert webhook HTTP error: %s", exc)
         return {
             "status": "failed",
-            "detail": body or str(exc),
+            "detail": body or "Alert delivery failed",
             "http_status": exc.code,
         }
     except urllib.error.URLError as exc:
+        _log.warning("Alert webhook URL error: %s", exc.reason)
         return {
             "status": "failed",
-            "detail": str(exc.reason),
+            "detail": "Alert delivery failed",
         }
 
 
@@ -219,9 +224,10 @@ def _send_email(event: dict[str, Any], recipients: list[str]) -> dict[str, Any]:
                 client.login(smtp_username, smtp_password)
             client.send_message(message)
     except Exception as exc:  # pragma: no cover
+        _log.warning("Alert email delivery failed: %s", exc)
         return {
             "status": "failed",
-            "detail": str(exc),
+            "detail": "Alert email delivery failed",
         }
 
     return {

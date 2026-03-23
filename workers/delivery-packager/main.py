@@ -29,12 +29,13 @@ def _safe_package_name(name: str) -> str:
 
 
 def _resolve_allowed_path(file_path: str) -> Path:
+    allowed_base = Path(os.environ.get("SHARED_PROJECTS_PATH", "/data/projects")).resolve()
     try:
         resolved = Path(file_path).resolve()
     except (ValueError, OSError):
         raise HTTPException(status_code=400, detail="Invalid file path")
-    if ".." in Path(file_path).parts:
-        raise HTTPException(status_code=400, detail="File path must not contain '..'")
+    if not resolved.is_relative_to(allowed_base):
+        raise HTTPException(status_code=400, detail="File path is outside the allowed directory")
     return resolved
 
 
