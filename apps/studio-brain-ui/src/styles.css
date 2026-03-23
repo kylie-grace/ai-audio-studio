@@ -164,6 +164,28 @@ code {
   overflow: hidden;
 }
 
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  box-shadow: 0 16px 32px var(--color-shadow-card);
+}
+
+.brand-subtitle {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .top-identity::after {
   content: "";
   position: absolute;
@@ -185,6 +207,77 @@ code {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.hero-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.launchpad-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.launch-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--panel-line);
+  background:
+    linear-gradient(180deg, var(--panel-top), rgb(255 255 255 / 0.018)),
+    var(--panel-ink);
+  color: var(--text-strong);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.launch-card:hover,
+.launch-card.is-active {
+  transform: translateY(-1px);
+  box-shadow:
+    0 20px 44px var(--color-shadow-card),
+    inset 0 1px 0 var(--color-overlay-light);
+}
+
+.launch-ok {
+  border-color: var(--status-ok-border);
+}
+
+.launch-warn {
+  border-color: var(--status-warn-border);
+}
+
+.launch-info {
+  border-color: var(--status-info-border);
+}
+
+.launch-muted {
+  border-color: var(--status-mute-border);
+}
+
+.launch-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.launch-card-head strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 1.65rem;
+  line-height: 1;
+  letter-spacing: -0.04em;
 }
 
 .tab-strip {
@@ -406,6 +499,10 @@ code {
 
 .loading-shell {
   margin-bottom: 18px;
+}
+
+.metric.metric-summary {
+  grid-column: span 2;
 }
 
 .loading-grid {
@@ -2326,6 +2423,7 @@ code {
 }
 
 @media (max-width: 1220px) {
+  .launchpad-grid,
   .top-rail,
   .command-grid,
   .workflow-strip,
@@ -2382,6 +2480,10 @@ code {
   .settings-modal .onboarding-grid,
   .settings-modal .module-settings-grid {
     grid-template-columns: 1fr;
+  }
+
+  .metric.metric-summary {
+    grid-column: auto;
   }
 }
 

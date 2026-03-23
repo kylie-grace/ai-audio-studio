@@ -27,28 +27,89 @@ export function App() {
     activeTaskCount,
     primaryTabs,
     tabBadgeCounts,
+    workspaceSettings,
+    displayedFrontDoor,
+    readyConnectionCount,
+    pendingConnections,
+    topPendingConnection,
+    integrationFlags,
+    moduleEnabledCount,
   } = model;
+
+  const launchpadItems = [
+    {
+      id: "operations" as TabId,
+      label: "Run the day",
+      detail:
+        activeAlertCount || data.approvals.length
+          ? `${activeAlertCount} alerts and ${data.approvals.length} approvals need review.`
+          : "No live blockers. Review runtime and approvals from one place.",
+      badge: activeAlertCount + data.approvals.length,
+      tone: activeAlertCount || data.approvals.length ? "warn" : "ok",
+    },
+    {
+      id: "context" as TabId,
+      label: "Review projects",
+      detail:
+        data.projects.length
+          ? `${data.projects.length} active projects with context, artifacts, and review state.`
+          : "No active projects yet. Use this space for session, delivery, and review context.",
+      badge: data.projects.length,
+      tone: data.projects.length ? "info" : "muted",
+    },
+    {
+      id: "automation" as TabId,
+      label: "Check automations",
+      detail:
+        `${integrationFlags} integrations enabled, ${readyConnectionCount}/${data.workspace.connection_center.length} connection surfaces ready.`,
+      badge: pendingConnections.length,
+      tone: pendingConnections.length ? "warn" : "ok",
+    },
+    {
+      id: "settings" as TabId,
+      label: "Finish setup",
+      detail:
+        topPendingConnection
+          ? `${topPendingConnection.name} still needs attention.`
+          : "Workspace identity, paths, and worker posture are configured.",
+      badge: pendingConnections.length,
+      tone: topPendingConnection ? "warn" : "ok",
+    },
+  ];
 
   return (
     <main className="app-shell">
       <section className="top-rail">
         <div className="top-identity">
-          <p className="eyebrow">AI Audio Studio</p>
+          <div className="brand-row">
+            <img className="brand-mark" src="/brand-icon.svg" alt="AI Audio Studio" />
+            <div>
+              <p className="eyebrow">AI Audio Studio</p>
+              <p className="brand-subtitle">Studio orchestration control plane</p>
+            </div>
+          </div>
           <h1>Studio Brain Control Room</h1>
           <p className="lede">
             Operator console for the full Mac-first stack: platform health, orchestration, approvals, context, and the optional worker surface.
           </p>
+          <div className="hero-pill-row">
+            <span className="tag">front door: {displayedFrontDoor.replace(/^https?:\/\//, "")}</span>
+            <span className="tag">mode: {workspaceSettings.deployment_mode === "single_machine" ? "single machine" : "control plane + worker"}</span>
+            <span className="tag">{moduleEnabledCount} modules enabled</span>
+          </div>
         </div>
         <div className="top-status-grid">
+          <article className="metric metric-summary">
+            <span className="metric-label">Workspace posture</span>
+            <strong>{workspaceSettings.studio_name || "Unconfigured studio"}</strong>
+            <span className="metric-subtle">
+              {primaryMode(data.workers)} · {readyConnectionCount}/{data.workspace.connection_center.length} connection surfaces ready
+            </span>
+          </article>
           <article className={`metric ${model.statusTone(data.loadState)}`}>
             <span className="metric-label">Control plane</span>
             <strong>{data.loadState}</strong>
             <span className="metric-subtle">{data.error ?? "Polling every 15 seconds."}</span>
-          </article>
-          <article className="metric">
-            <span className="metric-label">Refreshed</span>
-            <strong>{data.refreshedAt ?? "waiting"}</strong>
-            <span className="metric-subtle">{primaryMode(data.workers)}</span>
           </article>
           <article className="metric">
             <span className="metric-label">Services</span>
@@ -56,11 +117,33 @@ export function App() {
             <span className="metric-subtle">{secureHint}</span>
           </article>
           <article className={`metric ${activeAlertCount ? "warn" : "ok"}`}>
-            <span className="metric-label">Active alerts</span>
-            <strong>{activeAlertCount}</strong>
+            <span className="metric-label">Live queue</span>
+            <strong>{data.approvals.length + activeTaskCount}</strong>
             <span className="metric-subtle">{data.approvals.length} approvals · {activeTaskCount} live tasks</span>
           </article>
         </div>
+      </section>
+
+      <section className="launchpad-grid" aria-label="Primary operator routes">
+        {launchpadItems.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`launch-card launch-${item.tone}${activeTab === item.id ? " is-active" : ""}`}
+            onClick={() => setActiveTab(item.id)}
+          >
+            <div className="launch-card-head">
+              <div>
+                <span className="metric-label">{item.label}</span>
+                <strong>{item.badge}</strong>
+              </div>
+              <span className={`status-pill ${item.tone === "warn" ? "warn" : item.tone === "ok" ? "ok" : "muted"}`}>
+                {item.tone === "warn" ? "attention" : item.tone === "ok" ? "ready" : item.tone}
+              </span>
+            </div>
+            <p className="metric-subtle">{item.detail}</p>
+          </button>
+        ))}
       </section>
 
       <PrimaryTabStrip

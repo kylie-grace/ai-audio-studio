@@ -45,6 +45,13 @@ export function useConciergeMode(options: UseConciergeModeOptions) {
   const [conciergeMode, setConciergeMode] = useState<"llm" | "fallback">("llm");
   const [conciergePending, setConciergePending] = useState(false);
   const [conciergeError, setConciergeError] = useState<string | null>(null);
+  const suggestedPrompts = [
+    remainingBuildGaps.some((item) => item.state !== "ready") ? `What should I fix first in ${remainingBuildGaps.find((item) => item.state !== "ready")?.title ?? "setup"}?` : "What should I do first?",
+    connectionCenter.some((item) => item.status !== "ready") ? "Which connection should I finish next?" : "Is the control room ready for a novice?",
+    data.runtimeRecovery.summary.failed_task_count || data.runtimeRecovery.summary.expired_claim_count
+      ? "How do I recover stuck runtime?"
+      : "What is the safest next action?",
+  ].filter((prompt, index, prompts) => Boolean(prompt) && prompts.indexOf(prompt) === index) as string[];
 
   useEffect(() => {
     window.sessionStorage.setItem(CONCIERGE_TURNS_KEY, JSON.stringify(conciergeTurns.slice(-8)));
@@ -100,43 +107,45 @@ export function useConciergeMode(options: UseConciergeModeOptions) {
     if (/(hello|hi|hey|status|what's up|whats up)/.test(lower)) {
       return {
         role: "assistant" as const,
-        text: `The assistant backend is unavailable, so this is local fallback guidance. The control plane is ${data.loadState}, ${healthyCount}/${data.services.length} services are healthy, ${activeAlertCount} live alert thresholds are active, and ${pendingConnections.length} connection areas still need attention.`,
+        text: `The assistant backend is unavailable, so this is local fallback guidance. The control plane is ${data.loadState}, ${healthyCount}/${data.services.length} services are healthy, ${activeAlertCount} live alert thresholds are active, and ${pendingConnections.length} connection areas still need attention. If you want a safe starting point, open Settings for setup gaps, Automation for starter packs, or Operations for runtime recovery.`,
         actions: [{ id: "refresh", label: "Refresh" }, { id: "goto-operations", label: "Open operations" }, { id: "goto-settings", label: "Open settings" }],
       };
     }
     if (/(missing|gap|left|remain|roadmap|unfinished|feature)/.test(lower)) {
       return {
         role: "assistant" as const,
-        text: `The assistant backend is unavailable, so this is local fallback guidance. The main remaining product gaps are ${remainingBuildGaps.filter((item) => item.state !== "ready").map((item) => item.title).join(", ")}. The first connection that still needs direct setup is ${topPending?.name ?? "none right now"}.`,
-        actions: [{ id: "goto-settings", label: "Review setup" }, { id: "goto-automation", label: "Review automation" }],
+        text: `The assistant backend is unavailable, so this is local fallback guidance. The main remaining product gaps are ${remainingBuildGaps.filter((item) => item.state !== "ready").map((item) => item.title).join(", ")}. The first connection that still needs direct setup is ${topPending?.name ?? "none right now"}. Start with Settings, then Automation, then Operations if runtime recovery is needed.`,
+        actions: [{ id: "goto-settings", label: "Review setup" }, { id: "goto-automation", label: "Review automation" }, { id: "goto-operations", label: "Open operations" }],
       };
     }
     if (/(connect|integration|gmail|instagram|facebook|n8n|oauth)/.test(lower)) {
       const matching = connectionCenter.find((item) => lower.includes(item.slug.replace(/-/g, " "))) ?? connectionCenter.find((item) => lower.includes(item.slug)) ?? topPending;
       return {
         role: "assistant" as const,
-        text: matching ? `The assistant backend is unavailable, so this is local fallback guidance. ${matching.name} is ${matching.status}. ${matching.detail} Next: ${matching.steps.slice(0, 2).join(" ")}` : "The connection center can guide front door, n8n, Gmail, social, and worker setup.",
+        text: matching
+          ? `The assistant backend is unavailable, so this is local fallback guidance. ${matching.name} is ${matching.status}. ${matching.detail} Next: ${matching.steps.slice(0, 2).join(" ")} If Gmail or social is the target, keep outbound flows disabled until credentials are real.`
+          : "The connection center can guide front door, n8n, Gmail, social, and worker setup.",
         actions: [{ id: "goto-settings", label: "Open connection center" }],
       };
     }
     if (/(smoke|validate worker|validate setup|dry run)/.test(lower)) {
       return {
         role: "assistant" as const,
-        text: "The safest next step is the workstation dry-run smoke. It rehearses manifest, mix, listening, render, and execution planning without touching a real project.",
+        text: "The safest next step is the workstation dry-run smoke. It rehearses manifest, mix, listening, render, and execution planning without touching a real project. If the smoke fails, open Operations first so you can recover runtime before trying live execution.",
         actions: [{ id: "run-worker-smoke", label: "Run worker smoke" }],
       };
     }
     if (/(drain|pause worker|maintenance)/.test(lower)) {
       return {
         role: "assistant" as const,
-        text: "Use drain before maintenance so the worker stops claiming new tasks without killing in-flight state.",
+        text: "Use drain before maintenance so the worker stops claiming new tasks without killing in-flight state. After maintenance, resume polling and refresh Operations to confirm the queue is clear.",
         actions: [{ id: workstationRuntime?.runtime.drain_requested ? "resume-worker" : "drain-worker", label: workstationRuntime?.runtime.drain_requested ? "Resume worker" : "Drain worker" }],
       };
     }
     return {
       role: "assistant" as const,
-      text: `The assistant backend is unavailable, so this is local fallback guidance. Right now the most useful next action is ${topPending ? `to work through ${topPending.name}` : "to review Operations for live state"}.`,
-      actions: [{ id: "goto-settings", label: "Open settings" }, { id: "goto-operations", label: "Open operations" }],
+      text: `The assistant backend is unavailable, so this is local fallback guidance. Right now the most useful next action is ${topPending ? `to work through ${topPending.name}` : "to review Operations for live state"}. If you are unsure, open Settings first, then Automation, then Operations.`,
+      actions: [{ id: "goto-settings", label: "Open settings" }, { id: "goto-automation", label: "Open automation" }, { id: "goto-operations", label: "Open operations" }],
     };
   }
 
@@ -173,6 +182,7 @@ export function useConciergeMode(options: UseConciergeModeOptions) {
     conciergeMode,
     conciergePending,
     conciergeError,
+    suggestedPrompts,
     runConciergeAction,
     submitConciergePrompt,
   };

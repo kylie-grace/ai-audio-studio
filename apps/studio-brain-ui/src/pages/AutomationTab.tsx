@@ -13,6 +13,7 @@ export function AutomationTab(props: AutomationTabProps) {
     bootstrapStatusLabel,
     enabledRuleCount,
     configuredAlertCount,
+    setActiveTab,
     maintenancePending,
     reseedAutomationDefaults,
     activeStarterPack,
@@ -32,9 +33,28 @@ export function AutomationTab(props: AutomationTabProps) {
     credentialWarnings,
   } = props;
   const [dismissCredentialBanner, setDismissCredentialBanner] = useState(false);
+  const hasCredentialWarnings = Boolean(credentialWarnings?.length);
+  const postureLabel = activeStarterPack?.name ?? "No live automation posture selected";
+  const postureDetail = activeStarterPack
+    ? hasCredentialWarnings
+      ? "The live starter pack is active, but outbound email or social credentials are still incomplete. Internal automations can run; credential-gated flows stay operator-reviewed."
+      : "The live starter pack is active. Reapply it if rules drift, or open Operations to recover runtime issues."
+    : "Apply the operator-baseline starter pack or reseed defaults to restore the shipped rule set before handing the system to a novice.";
+  const postureAction = activeStarterPack
+    ? hasCredentialWarnings
+      ? { label: "review settings", handler: () => setActiveTab?.("settings") }
+      : { label: "open operations", handler: () => setActiveTab?.("operations") }
+    : { label: "open settings", handler: () => setActiveTab?.("settings") };
 
   return (
     <div className="tab-panel">
+      <AlertBanner
+        tone={activeStarterPack ? (hasCredentialWarnings ? "warn" : "ok") : "warn"}
+        title={postureLabel}
+        detail={postureDetail}
+        actionLabel={postureAction.label}
+        onAction={postureAction.handler}
+      />
       {!dismissCredentialBanner && credentialWarnings?.length ? (
         <div className="banner-stack">
           {credentialWarnings.map((warning: any) => (
@@ -93,7 +113,7 @@ export function AutomationTab(props: AutomationTabProps) {
             </button>
           </div>
           <p className="panel-note">{data.bootstrapStatus.detail}</p>
-          <p className="panel-note">Active posture: {activeStarterPack?.name ?? "custom or mixed rule state"}</p>
+          <p className="panel-note">{activeStarterPack ? `Active posture: ${activeStarterPack.name}` : "Active posture: custom or mixed rule state"}</p>
           {maintenanceMessage ? <p className="feedback ok">{maintenanceMessage}</p> : null}
           {maintenanceError ? <p className="feedback bad">{maintenanceError}</p> : null}
         </article>
@@ -140,7 +160,12 @@ export function AutomationTab(props: AutomationTabProps) {
                 </div>
               ))
             ) : (
-              <EmptyState title="No starter packs yet" detail="Starter packs will appear here after automation defaults are seeded." />
+              <EmptyState
+                title="No starter packs yet"
+                detail="Starter packs will appear here after automation defaults are seeded."
+                actionLabel="reseed defaults"
+                onAction={reseedAutomationDefaults}
+              />
             )}
           </div>
           {starterPackMessage ? <p className="feedback ok">{starterPackMessage}</p> : null}
@@ -180,7 +205,12 @@ export function AutomationTab(props: AutomationTabProps) {
                 </div>
               ))
             ) : (
-              <EmptyState title="No rules returned" detail="Rule inventory is empty right now. Re-seed defaults or verify OpenClaw health." />
+              <EmptyState
+                title="No rules returned"
+                detail="Rule inventory is empty right now. Re-seed defaults or verify OpenClaw health."
+                actionLabel="reseed defaults"
+                onAction={reseedAutomationDefaults}
+              />
             )}
           </div>
         </article>
@@ -214,7 +244,12 @@ export function AutomationTab(props: AutomationTabProps) {
                 </div>
               ))
             ) : (
-              <EmptyState title="No workflow history yet" detail="Starter automations will appear here after the bootstrap pack is active." />
+              <EmptyState
+                title="No workflow history yet"
+                detail="Starter automations will appear here after the bootstrap pack is active."
+                actionLabel="reapply live posture"
+                onAction={() => activeStarterPack && applyStarterPack(activeStarterPack.slug)}
+              />
             )}
           </div>
         </article>
@@ -240,7 +275,12 @@ export function AutomationTab(props: AutomationTabProps) {
                 </div>
               ))
             ) : (
-              <EmptyState title="No rule packs available" detail="Seeded rule packs are not available yet. Verify bootstrap and OpenClaw health." />
+              <EmptyState
+                title="No rule packs available"
+                detail="Seeded rule packs are not available yet. Verify bootstrap and OpenClaw health."
+                actionLabel="reseed defaults"
+                onAction={reseedAutomationDefaults}
+              />
             )}
           </div>
         </article>

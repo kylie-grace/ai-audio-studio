@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AlertBanner } from "./AlertBanner";
 import { EmptyState } from "./EmptyState";
@@ -30,6 +30,24 @@ function previewSnippet(job: any) {
   return job.action;
 }
 
+function humanizeModule(value: string) {
+  return value
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function approvalRouteLabel(job: any) {
+  if (job.module === "lead-intake") return "Lead intake → project review";
+  if (job.module === "inbox-triage") return "Inbox triage → draft review";
+  if (job.module === "content-pipeline") return "Brief → draft → approval";
+  if (job.module === "revision-parser") return "Revision note → DAW change plan";
+  if (job.module === "delivery-packager") return "QC gate → package → handoff";
+  if (job.module === "session-prep") return "Stems → session prep → worker task";
+  if (job.module === "audio-qc") return "Render → QC review";
+  if (job.module === "mix-planner") return "Project notes → mix plan";
+  return job.preview?.kind ? humanizeModule(String(job.preview.kind)) : humanizeModule(String(job.module));
+}
+
 export function ApprovalQueue(props: ApprovalQueueProps) {
   const {
     approvals,
@@ -53,6 +71,24 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
   const [showOperatorInputs, setShowOperatorInputs] = useState(false);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
 
+  const visibleModuleCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    visibleApprovals.forEach((job) => {
+      const key = job.module || job.preview?.kind || "other";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    });
+    return Array.from(counts.entries()).sort((left, right) => right[1] - left[1]).slice(0, 6);
+  }, [visibleApprovals]);
+
+  useEffect(() => {
+    if (!visibleApprovals.length) {
+      if (expandedApprovalId !== null) setExpandedApprovalId(null);
+      return;
+    }
+    if (expandedApprovalId && visibleApprovals.some((job) => job.id === expandedApprovalId)) return;
+    setExpandedApprovalId(visibleApprovals[0].id);
+  }, [expandedApprovalId, visibleApprovals]);
+
   return (
     <section className="workspace-grid">
       <article className="panel panel-span-8">
@@ -63,6 +99,17 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
             <p className="panel-note">Review requests first. Expand only the cards you need to inspect or act on.</p>
           </div>
           <span className="count-pill">showing {visibleApprovals.length} of {approvals.length}</span>
+        </div>
+        <div className="summary-pill-row top-gap">
+          {visibleModuleCounts.length ? (
+            visibleModuleCounts.map(([module, count]) => (
+              <span key={module} className="summary-pill">
+                {humanizeModule(module)} · {count}
+              </span>
+            ))
+          ) : (
+            <span className="summary-pill">No pending approval modules</span>
+          )}
         </div>
         {actionMessage ? <AlertBanner tone="ok" title="Approval updated" detail={actionMessage} /> : null}
         {actionError ? <AlertBanner tone="bad" title="Approval action failed" detail={actionError} /> : null}
@@ -99,6 +146,11 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
                         {job.preview?.project?.client_name ? <span>{job.preview.project.client_name}</span> : null}
                       </div>
                       <p className="muted">{previewSnippet(job)}</p>
+                      <div className="meta-inline">
+                        <span>{approvalRouteLabel(job)}</span>
+                        {job.preview?.kind ? <span>{humanizeModule(String(job.preview.kind))}</span> : null}
+                        {job.preview?.project?.service_type ? <span>{job.preview.project.service_type}</span> : null}
+                      </div>
                     </div>
                     <div className="row-meta">
                       <span className={`status-pill ${approved ? "ok" : "warn"}`}>{approved ? "queued" : "awaiting approval"}</span>
@@ -173,6 +225,11 @@ export function ApprovalQueue(props: ApprovalQueueProps) {
                           ) : null}
                         </div>
                       ) : null}
+                      <div className="summary-pill-row">
+                        <span className="summary-pill">{approvalRouteLabel(job)}</span>
+                        {job.preview?.kind ? <span className="summary-pill">{humanizeModule(String(job.preview.kind))}</span> : null}
+                        {job.preview?.project?.client_name ? <span className="summary-pill">{job.preview.project.client_name}</span> : null}
+                      </div>
                       <div className="approval-card-footer">
                         {rejectingId === job.id ? (
                           <label className="field compact-field approval-reject-field">

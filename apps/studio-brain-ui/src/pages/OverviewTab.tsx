@@ -77,6 +77,47 @@ export function OverviewTab(props: OverviewTabProps) {
   } = props;
   const [dawStatus, setDawStatus] = useState<Record<string, { connected: boolean; last_seen: string | null }> | null>(null);
   const [dawStatusLoaded, setDawStatusLoaded] = useState(false);
+  const runtimeRecoveryCount =
+    data.runtimeRecovery.summary.failed_task_count +
+    data.runtimeRecovery.summary.expired_claim_count +
+    data.runtimeRecovery.summary.stale_worker_count;
+  const assistantGuidance =
+    runtimeRecoveryCount > 0
+      ? {
+          tone: "warn" as const,
+          title: "Runtime recovery needs attention",
+          detail: `There are ${data.runtimeRecovery.summary.failed_task_count} failed tasks, ${data.runtimeRecovery.summary.expired_claim_count} expired claims, and ${data.runtimeRecovery.summary.stale_worker_count} stale workers. Open Operations to release or requeue before starting new work.`,
+          actionLabel: "open operations",
+          action: () => setActiveTab("operations"),
+        }
+      : data.workspace.onboarding_required || readinessSummary.needs_attention_count
+        ? {
+            tone: "info" as const,
+            title: "Setup still has a few gaps",
+            detail: `Finish the remaining onboarding items in Settings so the assistant can give turn-key guidance. ${data.workspace.missing_fields.length} field(s) still need attention.`,
+            actionLabel: "open settings",
+            action: () => setActiveTab("settings"),
+          }
+        : conciergeMode === "fallback"
+          ? {
+              tone: "warn" as const,
+              title: "Assistant is using fallback guidance",
+              detail: "The dashboard still works, but answers are coming from deterministic local guidance until the concierge backend is healthy.",
+              actionLabel: "refresh",
+              action: () => void runConciergeAction("refresh"),
+            }
+          : {
+              tone: "ok" as const,
+              title: "Assistant is ready",
+              detail: "Ask for the next safe step, a setup gap summary, or a recovery plan.",
+              actionLabel: "open automation",
+              action: () => setActiveTab("automation"),
+            };
+  const assistantPromptSuggestions = [
+    runtimeRecoveryCount > 0 ? "How do I recover stuck runtime?" : "What should I do first?",
+    data.workspace.onboarding_required ? "What setup steps are still missing?" : "Is automation posture ready?",
+    conciergeMode === "fallback" ? "How do I use the fallback assistant?" : "What is the safest next action?",
+  ].filter((prompt, index, prompts) => Boolean(prompt) && prompts.indexOf(prompt) === index) as string[];
 
   useEffect(() => {
     let active = true;
@@ -149,45 +190,59 @@ export function OverviewTab(props: OverviewTabProps) {
           <p className="panel-note">
             Ask about setup, missing features, shared storage posture, integrations, approvals, or project state. Replies come from live control-room context and Ollama when available.
           </p>
+          <AlertBanner
+            tone={assistantGuidance.tone}
+            title={assistantGuidance.title}
+            detail={assistantGuidance.detail}
+            actionLabel={assistantGuidance.actionLabel}
+            onAction={assistantGuidance.action}
+          />
           <div className="table-stack top-gap">
-            <div className="assistant-thread">
-              {conciergeTurns.slice(-8).map((turn: any, index: number) => (
-                <div key={`${turn.role}-${index}`} className={`assistant-bubble ${turn.role === "assistant" ? "assistant" : "user"}`}>
-                  <span className="assistant-speaker">{turn.role === "assistant" ? "assistant" : operatorName || "operator"}</span>
-                  <p>{turn.text}</p>
-                  {turn.actions?.length ? (
-                    <div className="action-row top-gap">
-                      {turn.actions.map((action: any) => (
-                        <button
-                          key={action.id}
-                          type="button"
-                          className="action-button btn ghost"
-                          onClick={() => void runConciergeAction(action.id)}
-                        >
-                          {action.label}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-              {conciergePending ? (
-                <div className="assistant-bubble assistant">
-                  <span className="assistant-speaker">assistant</span>
-                  <div className="assistant-thinking" aria-label="Assistant is thinking">
-                    <span />
-                    <span />
-                    <span />
+            {conciergeTurns.length ? (
+              <div className="assistant-thread">
+                {conciergeTurns.slice(-8).map((turn: any, index: number) => (
+                  <div key={`${turn.role}-${index}`} className={`assistant-bubble ${turn.role === "assistant" ? "assistant" : "user"}`}>
+                    <span className="assistant-speaker">{turn.role === "assistant" ? "assistant" : operatorName || "operator"}</span>
+                    <p>{turn.text}</p>
+                    {turn.actions?.length ? (
+                      <div className="action-row top-gap">
+                        {turn.actions.map((action: any) => (
+                          <button
+                            key={action.id}
+                            type="button"
+                            className="action-button btn ghost"
+                            onClick={() => void runConciergeAction(action.id)}
+                          >
+                            {action.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
-                </div>
-              ) : null}
-            </div>
+                ))}
+                {conciergePending ? (
+                  <div className="assistant-bubble assistant">
+                    <span className="assistant-speaker">assistant</span>
+                    <div className="assistant-thinking" aria-label="Assistant is thinking">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <EmptyState
+                title="Ask the control room assistant"
+                detail="Try asking what is missing, what to do first, or how to recover runtime. Use one of the suggested prompts below if you want a starting point."
+              />
+            )}
           </div>
           <div className="wizard-footer-actions top-gap">
             <input
               value={conciergeInput}
               onChange={(event) => setConciergeInput(event.target.value)}
-              placeholder="What is still missing? Run worker smoke. How do I finish Gmail?"
+              placeholder="What should I do first? Ask for setup, recovery, or automation guidance."
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
@@ -199,8 +254,23 @@ export function OverviewTab(props: OverviewTabProps) {
               {conciergePending ? "thinking" : "send"}
             </button>
           </div>
+          {assistantPromptSuggestions.length ? (
+            <div className="assistant-quick-actions top-gap">
+              {assistantPromptSuggestions.map((prompt) => (
+                <button
+                  key={prompt}
+                  className="action-button btn ghost"
+                  type="button"
+                  onClick={() => void submitConciergePrompt(prompt)}
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="assistant-quick-actions">
             <button className="action-button btn ghost" type="button" onClick={() => void runConciergeAction("run-worker-smoke")}>worker smoke</button>
+            <button className="action-button btn ghost" type="button" onClick={() => void runConciergeAction("goto-automation")}>automation</button>
             <button className="action-button btn ghost" type="button" onClick={() => void runConciergeAction("goto-settings")}>setup</button>
             <button className="action-button btn ghost" type="button" onClick={() => void runConciergeAction("goto-operations")}>operations</button>
             <button className="action-button btn ghost" type="button" onClick={() => void runConciergeAction("test-alerts")}>test alerts</button>

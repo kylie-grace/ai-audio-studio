@@ -6,6 +6,7 @@ Expose `ai-audio-studio` cleanly on the local network with:
 - immediate full-LAN access by IP
 - an optional hostname-based HTTPS front door for operators
 - direct service ports preserved for engineering and worker traffic
+- a clear distinction between operator access and backend callback traffic
 
 ## Network Posture
 
@@ -20,6 +21,7 @@ Use these layers intentionally:
 - `Direct ports` remain valid for engineering, debugging, and worker callbacks.
   Examples: `:5678`, `:8080`, `:8090`, `:8100`, `:8190`
 - `single_machine` is the default bring-up path; `control_plane_plus_worker` is the split deployment when a second Mac is available.
+- `single_machine + local-worker` keeps operator access and worker execution on one host while preserving the same front-door story
 
 Recommended operator progression:
 1. Start with IP access and confirm the dashboard loads.
@@ -61,6 +63,12 @@ Immediate access pattern:
 - project-state: `http://<control-plane-ip>:8080`
 - crm-api: `http://<control-plane-ip>:8090`
 - openclaw: `http://<control-plane-ip>:8100`
+
+This is enough for:
+- first bring-up
+- single-machine use
+- early operator validation
+- remote worker callback testing before hostname/TLS is in place
 
 ## Add Hostname And HTTPS
 
@@ -129,6 +137,21 @@ Fallback URLs:
 Engineering and worker traffic:
 - direct ports remain plain HTTP on the LAN
 - `studio-worker` should point at the control-plane machine by IP or resolvable hostname
+- remote workers do not need to wait for HTTPS if plain LAN reachability is already correct
+
+## Recommended Access Mapping
+
+Use this mental model:
+
+- operators use the dashboard front door
+- engineers can still use direct service ports
+- workers call backend services directly, not through the operator dashboard
+
+Typical mapping:
+
+- operator browser -> `https://$STUDIO_DOMAIN` or `http://<control-plane-ip>:3000`
+- worker callbacks -> `http://<control-plane-ip>:8080` and related direct ports
+- n8n/webhook sources -> whichever front door or direct URL you intentionally publish
 
 ## Notes
 
@@ -136,4 +159,6 @@ Engineering and worker traffic:
 - Full-network IP access is the baseline deployment posture when `BIND_HOST=0.0.0.0`.
 - Hostname/TLS is the polish layer, not a prerequisite for first successful bring-up.
 - `single_machine` is valid. A second worker Mac is optional.
+- `single_machine + local-worker` does not change the operator URL story; it only adds local execution capacity.
+- `control_plane_plus_worker` should feel like adding capacity, not switching to a different product model.
 - If you are replacing an older host or legacy dashboard, follow [legacy-cutover.md](legacy-cutover.md) before retiring it.

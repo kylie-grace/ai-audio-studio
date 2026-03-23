@@ -3,10 +3,14 @@
 ## Now
 - Keep turning the dashboard into a true control room: one front door, full service visibility, approvals, alerts, bootstrap state, service drilldowns, and operator actions without exposing novice users to raw service ports.
 - Treat `single_machine` as the default deployment, but do not lock the product to Mac mini language. The operator should explicitly choose what host machine the stack is running on.
-- Keep the studio worker optional capacity for DAW-side execution on the same machine or a remote worker node.
+- Keep the studio worker positioned as optional capacity for DAW-side execution on the same machine or a remote worker node, not as a mandatory second half of the product.
 - Finish the legacy cutover so the old infra mental model is retired and the product is described consistently as `ai-audio-studio`.
 - Preserve the current reality in docs: strong control-plane MVP, not yet novice-complete product.
 - Document the network posture clearly: full-LAN IP access works immediately, hostname/TLS is the preferred operator path, and direct ports remain for engineering and worker traffic.
+- Keep the public docs and runbooks aligned around one canonical deployment story:
+  - `single_machine`
+  - `single_machine + local-worker`
+  - `control_plane_plus_worker`
 
 ## Next
 - Persist and surface richer project review packets so the control room can show latest candidate, QC posture, listening focus, and recommended operator action from one place.
@@ -23,6 +27,14 @@
 - Keep the new connection center honest so Gmail, n8n, social, and worker setup are presented as explicit step-by-step onboarding flows instead of raw booleans.
 - Make the control room chat a first-class operator surface so users can ask for setup help, runtime status, storage-aware context, and safe actions without editing raw settings directly.
 - Keep the assistant honest about mode and latency: live Ollama-backed when available, explicit fallback guidance when the model cannot answer in-budget on current hardware.
+- Make remote worker onboarding feel additive, not architectural:
+  - shared storage contract spelled out clearly
+  - callback URL posture explicit
+  - host-native `launchd` and Docker worker stories both documented cleanly
+- Keep simplifying the public docs so a new operator can answer three questions fast:
+  - what machine is hosting the control plane
+  - where should operators access it
+  - do we actually need a worker right now
 
 ## Productionizing
 - Finish DAW adapters beyond dry run, with SoundFlow and ReaScript execution validated on a real studio Mac.
@@ -43,6 +55,7 @@
 - Tighten HTTPS/LAN onboarding so trusting the local Caddy certificate is a first-run step, not hidden setup knowledge.
 - Keep the migration runner and startup guards in place so schema drift cannot silently accumulate across upgrades.
 - Reduce the number of machine-local settings that must stay in env files to secrets, ports, tokens, and path wiring only.
+- Keep docs and runbooks polished enough that a studio owner can confidently choose between one-machine and split-machine deployment without reading code.
 
 ## Dedicated Plans
 - DAW execution, auto-mix, listening loop, and workstation onboarding are broken out in [DAW_EXECUTION_PLAN.md](DAW_EXECUTION_PLAN.md).

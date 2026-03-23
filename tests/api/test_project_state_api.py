@@ -153,7 +153,7 @@ class FakePool:
                     "detected": {"ready": False},
                 },
                 status="idle",
-                last_seen_at=now.replace(minute=max(now.minute - 10, 0)),
+                last_seen_at=now - timedelta(minutes=10),
             ),
             FakeRow(
                 id="worker-3",

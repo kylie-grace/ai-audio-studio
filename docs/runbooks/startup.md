@@ -2,17 +2,30 @@
 
 ## Prerequisites
 
-- Mac mini or primary studio Mac powered on
+- Primary host Mac powered on
 - Docker Desktop running
 - Ollama installed natively on the Mac that will host LLM inference
 - `/Volumes/StudioShare/` mounted if you are using shared project paths
 - `infra/.env` created from `infra/env.example`
 - `python3 -m pip install -r requirements-test.txt` if you want the full API test suite to exercise the optional FastAPI/asyncpg surfaces instead of import-skipping them
 
-## Start The Stack
+## Deployment Posture First
+
+Choose one of these before you start:
+
+- `single_machine`
+  - one Mac runs the control plane
+- `single_machine + local-worker`
+  - one Mac runs the control plane and the local worker profile
+- `control_plane_plus_worker`
+  - one Mac runs the control plane and a second machine gets added later as a worker
+
+Recommended first run: `single_machine`
+
+## Start The Control Plane
 
 ```bash
-cd ~/studio-ai-platform
+cd ~/ai-audio-studio
 
 # Start native Ollama and pull the required models
 export OLLAMA_MAX_LOADED_MODELS=1
@@ -25,7 +38,7 @@ launchctl load ~/Library/LaunchAgents/com.ai-audio-studio.ollama.plist
 
 # For full-LAN access, set BIND_HOST=0.0.0.0 in infra/.env before starting
 
-# Start the local control plane
+# Start the control plane
 docker compose --env-file infra/.env -f infra/docker-compose.yml up -d
 
 # Add the DAW profile when you want the DAW-oriented services too
@@ -34,7 +47,7 @@ docker compose --profile daw --env-file infra/.env -f infra/docker-compose.yml u
 # First-time only: import the starter n8n workflow pack
 bash scripts/bootstrap_n8n.sh infra/.env
 
-# Optional: include the local worker when one Mac should also execute worker tasks
+# Optional: include the local worker when this same machine should execute worker tasks
 docker compose --profile local-worker --env-file infra/.env -f infra/docker-compose.yml up -d
 
 # Watch logs during startup if needed
@@ -42,6 +55,8 @@ docker compose --env-file infra/.env -f infra/docker-compose.yml logs -f
 ```
 
 The main stack now includes the HTTPS front door and schema-migration runner. `docker-compose.edge.yml` remains as a compatibility overlay, not the preferred bring-up path.
+
+If you want a second worker machine, do that after the control plane is healthy by following [studio-worker.md](studio-worker.md). Remote worker bring-up is intentionally a second step, not part of the initial critical path.
 
 ## First Access Path
 
@@ -96,6 +111,7 @@ Notes:
 - Internal n8n starters are activated during bootstrap reconciliation; credential-gated outbound flows stay disabled until credentials exist
 - The dashboard is the preferred operator entrypoint
 - Direct service ports remain valid for engineering and worker traffic
+- Single-machine bring-up is the primary success path; remote worker setup is additive
 
 ## Hostname And TLS Posture
 

@@ -2,9 +2,26 @@
 
 ## Purpose
 
-Run a lightweight worker service on the same host or on a second workstation so the control plane can hand off bounded filesystem and DAW-adjacent tasks without moving the whole stack.
+Run a lightweight worker service when you want the control plane to hand off bounded filesystem and DAW-adjacent tasks.
 
-## Initial scope
+Important posture:
+- the worker is optional
+- the control plane is the product center of gravity
+- add a worker when you want more execution capacity, a different workstation, or clearer separation between orchestration and DAW work
+
+## When You Actually Need A Worker
+
+Use a worker when:
+- the same machine should claim bounded execution tasks through the `local-worker` profile
+- a separate studio workstation should handle DAW or filesystem work
+- you want plugin inventory and workstation validation from a second machine
+
+Do not add a worker yet when:
+- you are still bringing up the control plane for the first time
+- you only need the dashboard, approvals, CRM, rules, alerts, and settings
+- you do not yet have shared storage or clear path wiring between machines
+
+## Current scope
 
 Current worker capabilities:
 - `session-prep`
@@ -20,12 +37,34 @@ Current worker capabilities:
 Queued tasks are claimed from `project-state` over HTTP and executed against mounted local paths.
 The code is split into `config`, `paths`, `runner`, `tasks`, and `adapters` so DAW execution can be added without reworking the worker loop.
 
+## Choose A Worker Mode
+
+### 1. Local Worker On The Same Machine
+
+Use this when one Mac runs the whole stack and should also claim worker tasks.
+
+- simplest execution posture
+- no second machine required
+- best default when you want "one box does everything"
+
+### 2. Remote Worker In Docker
+
+Use this when a second workstation should expose `studio-worker` over the LAN.
+
+- control plane stays on the primary host
+- worker advertises a reachable LAN callback URL
+- shared project and delivery paths must already exist
+
+### 3. Host-Native Worker On macOS
+
+Use this when you want direct host DAW access and persistent `launchd` management instead of Docker for the worker process.
+
 ## Prerequisites
 
 - Docker Desktop installed on the worker workstation
 - Shared storage mounted at the same path as the control plane, or `PATH_TRANSLATION_JSON` configured
-- The Mac mini control plane reachable on the LAN
-- If you are on a single Mac, you do not need this worker at all.
+- The control-plane machine reachable on the LAN
+- If you are on a single Mac and do not need worker task execution yet, you do not need this worker at all.
 - For split deployments, `WORKER_API_BASE_URL` must be set to the worker machine's reachable LAN URL. Do not leave it blank.
 
 ## Configure
@@ -47,6 +86,8 @@ DELIVERY_PATH=/Volumes/StudioShare/deliveries
 PATH_TRANSLATION_JSON={}
 ```
 
+`MAC_MINI_BASE_URL` is legacy variable naming. Treat it as "control-plane base URL" regardless of whether the host is a Mac mini, Mac Studio, or another workstation.
+
 If mount points differ between the Mac mini and studio Mac:
 
 ```bash
@@ -65,7 +106,7 @@ WAVELAB_APP_PATH="C:\\Program Files\\Steinberg\\WaveLab 12\\WaveLab 12.exe"
 
 Windows workers are supported in configuration and path translation, but live DAW runtime validation is still pending. Treat that path as scaffolded until a real Windows workstation has been exercised.
 
-## Start
+## Start A Remote Docker Worker
 
 ```bash
 docker compose --env-file infra/.env -f infra/docker-compose.worker.yml up -d
@@ -77,7 +118,7 @@ Remote worker compose defaults now assume LAN exposure:
 - `WORKER_API_BASE_URL` must be set to the worker machine's real LAN URL, for example `http://192.168.1.60:8190`
 - the worker will warn if that callback URL is blank, and the split-compose file now requires it explicitly
 
-For `single_machine` or host-native REAPER automation on the same Mac:
+## Start A Host-Native Worker On The Same Mac
 
 ```bash
 bash scripts/install_host_studio_worker.sh
@@ -94,6 +135,12 @@ bash scripts/start_host_studio_worker.sh infra/env.example
 ## Shared storage
 
 The worker assumes shared storage is already mounted. This repo does not provision SMB/NFS for you.
+
+Treat shared storage as part of the deployment contract:
+- the control plane and worker must both be able to reach the project and delivery paths
+- identical mount points are simplest
+- if mount points differ, `PATH_TRANSLATION_JSON` is required
+- the worker validates path reachability, but it cannot invent or mount the storage for you
 
 Recommended baseline:
 - control plane and worker both mount the same share root, ideally `/Volumes/StudioShare`
@@ -161,6 +208,8 @@ launchctl kickstart -k gui/$(id -u)/com.aiaudiostudio.worker
 
 ## Verify
 
+Remote worker health checks:
+
 - Studio worker health: `http://<studio-mac-ip>:8190/health`
 - Workstation profile: `http://<studio-mac-ip>:8190/workstation/profile`
 - Workstation validation: `http://<studio-mac-ip>:8190/workstation/validate`
@@ -179,6 +228,13 @@ launchctl kickstart -k gui/$(id -u)/com.aiaudiostudio.worker
 - Host worker status: `http://127.0.0.1:8191/status`
 - End-to-end queued Reaper validation: `python3 scripts/validate_host_reaper_queue.py`
 
+Recommended verification order:
+1. verify worker `/health`
+2. verify `/workstation/validate`
+3. verify the worker appears in `project-state`
+4. run the dry-run smoke
+5. only then enable live DAW execution
+
 ## Behavior
 
 - The worker registers itself on boot
@@ -195,3 +251,12 @@ launchctl kickstart -k gui/$(id -u)/com.aiaudiostudio.worker
 - DAW execution tasks now pause in `awaiting-approval` until an operator explicitly confirms them from the control room or via `POST /runtime/confirm-task`
 - Pro Tools-oriented operators can start from `workers/soundflow-bootstrap/` as the minimal SoundFlow package skeleton for revision execution payloads
 - `windows` workers are scaffolded in path translation, plugin scanning, and workstation validation, but still need live DAW runtime validation before being treated as production-ready
+
+## Recommended Deployment Decision
+
+Use this order unless you already know better:
+
+1. bring up the control plane only
+2. validate dashboard and LAN access
+3. add `local-worker` if one machine should do bounded execution too
+4. add a remote worker only when you want dedicated studio-machine capacity

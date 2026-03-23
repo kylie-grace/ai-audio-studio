@@ -58,6 +58,14 @@ function leadFitTone(score: number | null | undefined) {
   return "bad";
 }
 
+function statusTone(value: string | null | undefined) {
+  if (!value) return "muted";
+  if (/(pass|ready|complete|done|ok|active)/i.test(value)) return "ok";
+  if (/(review|queued|pending|draft|warning)/i.test(value)) return "warn";
+  if (/(fail|blocked|error|missing)/i.test(value)) return "bad";
+  return "muted";
+}
+
 export function ContextTab(props: ContextTabProps) {
   const {
     data,
@@ -95,6 +103,55 @@ export function ContextTab(props: ContextTabProps) {
   const [section, setSection] = useState<ContextSectionId>("projects");
 
   const visibleProjects = useMemo(() => data.projects.slice(0, 10), [data.projects]);
+  const projectWorkflowSummary = useMemo(() => {
+    const artifactKindCounts = new Map<string, number>();
+    (projectDetail?.artifact_inventory ?? []).forEach((entry: any) => {
+      const artifact = entry.artifact ?? {};
+      const kind = String(artifact.kind ?? artifact.type ?? entry.source ?? "artifact");
+      artifactKindCounts.set(kind, (artifactKindCounts.get(kind) ?? 0) + 1);
+    });
+
+    const reviewPacket = projectDetail?.review_packet;
+    return {
+      stages: [
+        {
+          label: "Intake",
+          detail: `${selectedProject?.lead_count ?? 0} leads`,
+          tone: selectedProject?.lead_count ? "ok" : "warn",
+        },
+        {
+          label: "Production",
+          detail: `${projectDetail?.jobs.length ?? 0} jobs · ${projectDetail?.worker_tasks.length ?? 0} tasks`,
+          tone: (projectDetail?.jobs.length ?? 0) || (projectDetail?.worker_tasks.length ?? 0) ? "ok" : "warn",
+        },
+        {
+          label: "Review",
+          detail: `${projectDetail?.review_summary.passing_qc_count ?? 0}/${projectDetail?.review_summary.qc_report_count ?? 0} qc · ${projectDetail?.revisions.length ?? 0} revisions`,
+          tone: (projectDetail?.review_summary.qc_report_count ?? 0) ? "warn" : "muted",
+        },
+        {
+          label: "Delivery",
+          detail: `${deliveryHistory.length} delivery artifacts`,
+          tone: deliveryHistory.length ? "ok" : "warn",
+        },
+      ],
+      reviewSignals: [
+        reviewPacket?.latest_manifest_status ? `manifest ${reviewPacket.latest_manifest_status}` : null,
+        reviewPacket?.latest_revision_status ? `revision ${reviewPacket.latest_revision_status}` : null,
+        reviewPacket?.latest_mix_plan_status ? `mix ${reviewPacket.latest_mix_plan_status}` : null,
+        reviewPacket?.latest_qc?.overall_pass === true ? "qc pass" : reviewPacket?.latest_qc?.overall_pass === false ? "qc review" : null,
+        reviewPacket?.latest_listening_status ? `listening ${reviewPacket.latest_listening_status}` : null,
+        reviewPacket?.latest_render_review_status ? `render ${reviewPacket.latest_render_review_status}` : null,
+      ].filter(Boolean) as string[],
+      artifactKinds: Array.from(artifactKindCounts.entries())
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 6),
+    };
+  }, [
+    deliveryHistory.length,
+    projectDetail,
+    selectedProject?.lead_count,
+  ]);
 
   return (
     <div className="tab-panel">
@@ -327,6 +384,13 @@ export function ContextTab(props: ContextTabProps) {
                 </div>
                 <span className="count-pill">{data.projects.length}</span>
               </div>
+              <div className="summary-pill-row top-gap">
+                {projectWorkflowSummary.stages.map((stage) => (
+                  <span key={stage.label} className={`summary-pill ${stage.tone}`}>
+                    {stage.label} · {stage.detail}
+                  </span>
+                ))}
+              </div>
               <div className="table-stack">
                 {visibleProjects.length ? (
                   visibleProjects.map((project: any) => (
@@ -341,6 +405,7 @@ export function ContextTab(props: ContextTabProps) {
                         <div className="muted">{project.service_type}</div>
                         <div className="meta-inline">
                           <span>{project.status}</span>
+                          {project.lead_count ? <span>{project.lead_count} leads</span> : null}
                           {project.budget_signal && project.budget_signal !== "unknown" ? <span>budget: {project.budget_signal}</span> : null}
                           {project.timeline ? <span>{project.timeline}</span> : null}
                           {project.updated_at ? <span>updated {summarizeTime(project.updated_at)}</span> : null}
@@ -365,6 +430,22 @@ export function ContextTab(props: ContextTabProps) {
                 </div>
                 <span className="count-pill">{projectDetail?.review_summary.artifact_count ?? projectDetail?.artifact_inventory.length ?? 0} artifacts</span>
               </div>
+              <div className="summary-pill-row top-gap">
+                {projectWorkflowSummary.stages.map((stage) => (
+                  <span key={`${stage.label}-${stage.detail}`} className={`summary-pill ${stage.tone}`}>
+                    {stage.label} · {stage.detail}
+                  </span>
+                ))}
+              </div>
+              {projectWorkflowSummary.reviewSignals.length ? (
+                <div className="summary-pill-row top-gap">
+                  {projectWorkflowSummary.reviewSignals.map((signal) => (
+                    <span key={signal} className={`summary-pill ${statusTone(signal)}`}>
+                      {signal}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <div className="workspace-grid nested-grid">
                 <div className="panel-span-4">
                   <div className="mini-card">
@@ -390,6 +471,15 @@ export function ContextTab(props: ContextTabProps) {
                   </div>
                 </div>
               </div>
+              {projectWorkflowSummary.artifactKinds.length ? (
+                <div className="summary-pill-row top-gap">
+                  {projectWorkflowSummary.artifactKinds.map(([kind, count]) => (
+                    <span key={kind} className="summary-pill">
+                      {kind} · {count}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <div className="table-stack top-gap">
                 {projectDetailState === "loading" ? <LoadingSkeleton rows={4} /> : null}
                 {projectDetail?.artifact_inventory.slice(0, 10).map((entry: any, index: number) => {
@@ -401,6 +491,14 @@ export function ContextTab(props: ContextTabProps) {
                         <strong>{fileLabel(artifactPath)}</strong>
                         <div className="muted">{String(artifact.kind ?? artifact.type ?? "artifact")} · {entry.source}</div>
                         <div className="muted">{artifactPath ?? JSON.stringify(artifact)}</div>
+                        {(entry.module || entry.task_type || entry.job_id || entry.task_id) ? (
+                          <div className="meta-inline">
+                            {entry.module ? <span>{entry.module}</span> : null}
+                            {entry.task_type ? <span>{entry.task_type}</span> : null}
+                            {entry.job_id ? <span>job {String(entry.job_id).slice(0, 8)}</span> : null}
+                            {entry.task_id ? <span>task {String(entry.task_id).slice(0, 8)}</span> : null}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="row-meta">
                         <span className="muted">{entry.created_at ? summarizeTime(entry.created_at) : "n/a"}</span>
@@ -461,6 +559,15 @@ export function ContextTab(props: ContextTabProps) {
                   {projectDetail ? `${projectDetail.review_summary.passing_qc_count}/${projectDetail.review_summary.qc_report_count} qc pass · ${projectDetail.review_summary.artifact_count} artifacts` : "loading"}
                 </span>
               </div>
+              {projectDetail?.review_packet.focus_flags?.length ? (
+                <div className="summary-pill-row top-gap">
+                  {projectDetail.review_packet.focus_flags.slice(0, 6).map((flag: string) => (
+                    <span key={flag} className={`summary-pill ${statusTone(flag)}`}>
+                      {flag}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <div className="workspace-grid nested-grid">
                 <div className="panel-span-6 table-stack">
                   <div className="table-row">

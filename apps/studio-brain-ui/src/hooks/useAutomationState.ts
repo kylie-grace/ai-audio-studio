@@ -30,14 +30,14 @@ export function useAutomationState({ data, refreshData }: UseAutomationStateOpti
       warnings.push({
         id: "gmail",
         title: "Gmail automation credentials are incomplete",
-        detail: "Inbox read/send flows are scaffolded, but one or more Gmail integration flags are still off in workspace settings.",
+        detail: "Inbox read/send flows are scaffolded, but one or more Gmail integration flags are still off in workspace settings. Open Settings to finish the read-only and send-only credential path before expecting email automation.",
       });
     }
     if (!settings.integrations.instagram && !settings.integrations.facebook) {
       warnings.push({
         id: "social",
         title: "Publishing credentials are not configured",
-        detail: "Content drafting is available, but social publishing should remain operator-reviewed until Instagram or Facebook credentials are wired.",
+        detail: "Content drafting is available, but social publishing should remain operator-reviewed until Instagram or Facebook credentials are wired. Keep outbound publishing disabled until a real token is present.",
       });
     }
     if (data.services.some((service) => service.key === "ollama" && service.state !== "healthy")) {
@@ -58,6 +58,30 @@ export function useAutomationState({ data, refreshData }: UseAutomationStateOpti
     }
     return warnings;
   }, [data]);
+  const automationGuidance = useMemo(() => {
+    if (!activeStarterPack) {
+      return {
+        tone: "warn" as const,
+        title: "No live automation posture selected",
+        detail: "Apply the operator-baseline starter pack or reseed defaults before handing the dashboard to a novice.",
+        actionLabel: "reseed defaults",
+      };
+    }
+    if (credentialWarnings.length) {
+      return {
+        tone: "warn" as const,
+        title: "Outbound automations are gated",
+        detail: "Internal workflows can run, but Gmail or social publishing still needs credential setup. Keep those paths operator-reviewed until they are verified.",
+        actionLabel: "review settings",
+      };
+    }
+    return {
+      tone: "ok" as const,
+      title: `${activeStarterPack.name} is active`,
+      detail: "Use this posture as the known-good baseline. Reapply it whenever rules drift.",
+      actionLabel: "open operations",
+    };
+  }, [activeStarterPack, credentialWarnings]);
 
   async function applyStarterPack(slug: string) {
     if (!window.confirm(`Apply ${slug} to the live automation posture? This can disable rules outside the selected pack.`)) return;
@@ -109,6 +133,7 @@ export function useAutomationState({ data, refreshData }: UseAutomationStateOpti
     enabledRuleCount,
     visibleRules,
     activeStarterPack,
+    automationGuidance,
     starterPackPending,
     starterPackMessage,
     starterPackError,

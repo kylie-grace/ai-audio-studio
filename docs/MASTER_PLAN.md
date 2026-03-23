@@ -10,6 +10,14 @@
 - approval-gated automation for communication, production, review, and delivery
 
 It must not be framed as Mac-mini-only.
+It must also not be framed as "requires a second worker machine."
+
+The clean product story is:
+- one control plane
+- optional worker capacity
+- LAN-first access
+- hostname/TLS as the polished operator front door
+- machine choice determined by the studio's real hardware, not by legacy prototype assumptions
 
 The operator should be able to declare:
 - what machine the control plane is running on
@@ -22,6 +30,8 @@ The operator should be able to declare:
 Primary modes:
 - `single_machine`
   - one powerful workstation runs control plane and optional DAW execution
+- `single_machine + local-worker`
+  - one machine runs the control plane and also claims bounded worker tasks
 - `control_plane_plus_worker`
   - one always-on host runs orchestration
   - one or more worker nodes execute DAW/file-heavy tasks
@@ -55,6 +65,13 @@ Current truth:
 - `windows` support is scaffolded in path translation and workstation validation, but still needs a real workstation validation pass
 - `Wavelab` detection is scaffolded; live adapter/runtime validation is still pending
 
+Docs and onboarding should present this honestly:
+- `single_machine` is the default first-run recommendation
+- local worker mode is the simplest path to "one box does everything"
+- remote worker mode is an expansion path for studios that want dedicated execution capacity
+- LAN IP access should be documented as the immediate success path
+- hostname/TLS should be documented as the preferred steady-state operator path
+
 ## Remaining execution order
 
 1. Persist richer listening/render review records beyond preview-only objects.
@@ -64,12 +81,15 @@ Current truth:
 5. Add Wavelab discovery and mastering scaffolding.
 6. Finish Windows worker runtime validation and mount/path runbooks on a real workstation.
 7. Finish Gmail/social communications and novice-safe automation packs.
-8. Refresh docs, cut over fully, and run final validation.
+8. Finish operator-safe settings coverage so normal setup no longer depends on broad env editing.
+9. Keep refining deployment docs and runbooks until they read like one product, not a collection of internal notes.
+10. Run final validation against the fully cut-over deployment story.
 
 Newly surfaced implementation gaps:
 - listening and render review are still mostly preview-time objects rather than persisted review records
 - Windows worker support now has explicit path translation and validation scaffolding, but still needs live workstation validation and runtime adapter proof
 - workstation setup now includes validation plus a dry-run planning smoke, but the remaining gap is DAW-specific live smoke coverage for Pro Tools/SoundFlow and WaveLab
+- public docs previously drifted toward an older two-machine mental model; they should keep converging on the clearer "control plane + optional worker capacity" posture
 
 ## Definition of done
 
@@ -84,4 +104,6 @@ The system is complete when:
 - Pro Tools/SoundFlow is operator-safe and validated
 - Wavelab posture is explicit and supported where viable
 - remote worker architecture is documented for both Mac and Windows
+- single-machine, local-worker, and remote-worker deployment stories are equally clear in public docs
+- LAN, hostname, and TLS posture are obvious from the first page an operator reads
 - final operator docs match reality

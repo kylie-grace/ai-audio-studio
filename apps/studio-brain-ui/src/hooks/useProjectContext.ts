@@ -28,8 +28,19 @@ export function useProjectContext({ data, operatorName, operatorToken, refreshDa
   const selectedProject = data.projects.find((project) => project.id === selectedProjectId) ?? data.projects[0] ?? null;
   const selectedWorker = data.workers.find((worker) => worker.slug === selectedWorkerSlug) ?? data.workers[0] ?? null;
 
+  function pickDefaultProjectId() {
+    const activeProject = data.projects.find((project) => project.status === "active");
+    return activeProject?.id ?? data.projects[0]?.id ?? "";
+  }
+
   useEffect(() => {
-    if (!selectedProjectId && data.projects[0]?.id) setSelectedProjectId(data.projects[0].id);
+    if (!data.projects.length) {
+      if (selectedProjectId) setSelectedProjectId("");
+      return;
+    }
+    if (selectedProjectId && data.projects.some((project) => project.id === selectedProjectId)) return;
+    const nextProjectId = pickDefaultProjectId();
+    if (nextProjectId && nextProjectId !== selectedProjectId) setSelectedProjectId(nextProjectId);
   }, [data.projects, selectedProjectId]);
 
   useEffect(() => {
