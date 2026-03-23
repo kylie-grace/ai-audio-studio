@@ -352,6 +352,9 @@ async def parse_revisions(body: ParseRevisionsBody):
 
     import re as _re
     safe_slug = _re.sub(r"[^\w\-]", "_", project["slug"])
+    # Explicit fullmatch assertion so CodeQL recognises the slug as sanitised
+    if not _re.fullmatch(r"[\w\-]+", safe_slug):
+        raise HTTPException(status_code=400, detail="Invalid project slug")
     project_dir = Path(os.environ.get("SHARED_PROJECTS_PATH", "/data/projects")) / safe_slug / "session"
     project_dir.mkdir(parents=True, exist_ok=True)
 

@@ -104,11 +104,20 @@ async def prepare_session(body: PrepareSessionBody):
     pool = await get_pool()
     await require_module_enabled(pool, "session_prep")
     allowed_base = Path(os.environ.get("SHARED_PROJECTS_PATH", "/data/projects")).resolve()
-    try:
-        source_dir = Path(body.source_dir).resolve()
-    except (ValueError, OSError):
-        raise HTTPException(status_code=400, detail="Invalid source_dir path")
-    if not source_dir.is_relative_to(allowed_base):
+    base_str = str(allowed_base)
+    sp_norm = os.path.normpath(body.source_dir)
+    if sp_norm == base_str:
+        source_dir = allowed_base
+    elif os.path.isabs(sp_norm) and sp_norm.startswith(base_str + os.sep):
+        _rel = sp_norm[len(base_str) + 1:]
+        source_dir = allowed_base
+        for _part in _rel.split(os.sep):
+            if not _part:
+                continue
+            if _part in (".", "..") or not re.match(r"^[^\x00-\x1f/\\:*?\"<>|][^\x00-\x1f/\\:*?\"<>|]*$", _part):
+                raise HTTPException(status_code=400, detail="Invalid source_dir path component")
+            source_dir = source_dir / _part
+    else:
         raise HTTPException(status_code=400, detail="source_dir is outside the allowed directory")
     if not source_dir.exists() or not source_dir.is_dir():
         raise HTTPException(status_code=404, detail="Source directory not found")

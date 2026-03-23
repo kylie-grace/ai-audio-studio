@@ -28,15 +28,38 @@ def _safe_package_name(name: str) -> str:
     return sanitized.strip(".")
 
 
+_SAFE_PATH_PART = _re.compile(r"^[^\x00-\x1f/\\:*?\"<>|][^\x00-\x1f/\\:*?\"<>|]*$")
+
+
 def _resolve_allowed_path(file_path: str) -> Path:
+    """Return a path within SHARED_PROJECTS_PATH validated component by component.
+
+    Accepts absolute paths that begin with SHARED_PROJECTS_PATH or relative
+    paths. Each component is checked against a safe-character allowlist so
+    no user-controlled data reaches a file-system operation un-validated.
+    """
     allowed_base = Path(os.environ.get("SHARED_PROJECTS_PATH", "/data/projects")).resolve()
-    try:
-        resolved = Path(file_path).resolve()
-    except (ValueError, OSError):
-        raise HTTPException(status_code=400, detail="Invalid file path")
-    if not resolved.is_relative_to(allowed_base):
-        raise HTTPException(status_code=400, detail="File path is outside the allowed directory")
-    return resolved
+    base_str = str(allowed_base)
+    # Normalise using pure string operations — do not call FS methods on user data
+    norm = os.path.normpath(file_path)
+    if norm == base_str:
+        return allowed_base
+    if os.path.isabs(norm):
+        prefix = base_str + os.sep
+        if not norm.startswith(prefix):
+            raise HTTPException(status_code=400, detail="File path is outside the allowed directory")
+        rel = norm[len(prefix):]
+    else:
+        rel = norm
+    # Validate each component and reconstruct from the trusted base
+    safe = allowed_base
+    for part in rel.split(os.sep):
+        if not part:
+            continue
+        if part in (".", "..") or not _SAFE_PATH_PART.match(part):
+            raise HTTPException(status_code=400, detail="Invalid path component in file path")
+        safe = safe / part
+    return safe
 
 
 @asynccontextmanager
