@@ -55,18 +55,19 @@ services:
       - "${BIND_HOST:-127.0.0.1}:5432:5432"
 
   pgbouncer:
-    image: edoburu/pgbouncer:1.23.1
+    image: pgbouncer/pgbouncer:latest
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${POSTGRES_DB:-studiodb}
-      DB_USER: ${POSTGRES_USER:-studio}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-changeme_strong_password_here}
-      LISTEN_PORT: 6432
-      POOL_MODE: transaction
-      MAX_CLIENT_CONN: 200
-      DEFAULT_POOL_SIZE: 20
-      AUTH_TYPE: md5
+      DATABASES_HOST: postgres
+      DATABASES_PORT: 5432
+      DATABASES_DBNAME: ${POSTGRES_DB:-studiodb}
+      DATABASES_USER: ${POSTGRES_USER:-studio}
+      DATABASES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_strong_password_here}
+      PGBOUNCER_LISTEN_PORT: 6432
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: 200
+      PGBOUNCER_DEFAULT_POOL_SIZE: 20
+      PGBOUNCER_AUTH_TYPE: any
+      PGBOUNCER_IGNORE_STARTUP_PARAMETERS: extra_float_digits,statement_timeout
     depends_on:
       postgres:
         condition: service_healthy

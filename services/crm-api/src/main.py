@@ -75,7 +75,7 @@ def _resolve_allowed_path(file_path: str) -> Path:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _pool
-    _pool = await asyncpg.create_pool(os.environ["POSTGRES_DSN"], min_size=1, max_size=5)
+    _pool = await asyncpg.create_pool(os.environ["POSTGRES_DSN"], min_size=1, max_size=5, statement_cache_size=0)
     await ensure_workspace_settings_table(_pool)
     await seed_default_style_profile(_pool)
     await seed_default_workspace_settings(_pool)

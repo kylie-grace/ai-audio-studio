@@ -32,7 +32,7 @@ WORKSPACE_SETTINGS_CACHE_TTL = 60.0
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _pool
-    _pool = await asyncpg.create_pool(os.environ["POSTGRES_DSN"], min_size=1, max_size=5)
+    _pool = await asyncpg.create_pool(os.environ["POSTGRES_DSN"], min_size=1, max_size=5, statement_cache_size=0)
     yield
     if _pool is not None:
         await _pool.close()

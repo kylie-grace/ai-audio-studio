@@ -30,7 +30,7 @@ async def require_schema_migration(pool: asyncpg.Pool) -> None:
 async def lifespan(app: FastAPI):
     global _pool
     dsn = os.environ["POSTGRES_DSN"]
-    _pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10)
+    _pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10, statement_cache_size=0)
     await require_schema_migration(_pool)
     app.state.pool = _pool
     from .routers.workers import recover_expired_claims
